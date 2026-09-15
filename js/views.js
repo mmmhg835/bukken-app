@@ -134,6 +134,7 @@ function filterBar(all, shown, byRoom) {
       el('div', { class: 'fgroup' },
         select(listUI.sort, byRoom ? ROOM_SORTS : BUILDING_SORTS,
           (v) => { listUI.sort = v; rerender(); }, 'fsel')),
+      el('button', { class: 'btn btn-add', onclick: () => go('import') }, '貼り付けて取り込む'),
       el('button', {
         class: 'btn btn-primary btn-add',
         onclick: () => { const b = store.addBuilding(); go('b', b.id); },

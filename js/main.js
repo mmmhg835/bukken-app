@@ -8,6 +8,7 @@ import {
 import { initLightbox } from './gallery.js';
 import { renderAnalysis } from './analytics-view.js';
 import { renderLifeplan } from './lifeplan-view.js';
+import { renderImport } from './import-view.js';
 import { parsePairing } from './pairing.js';
 import { applyTheme, watchSystemTheme, themeButton } from './theme.js';
 import { applySkin } from './skin.js';
@@ -16,7 +17,7 @@ const main = $('#main');
 
 function parseHash() {
   const [view = 'list', id = null] = location.hash.replace(/^#\/?/, '').split('/');
-  const known = ['list', 'b', 'r', 'compare', 'analysis', 'plan', 'map', 'settings', 'setup'];
+  const known = ['list', 'b', 'r', 'import', 'compare', 'analysis', 'plan', 'map', 'settings', 'setup'];
   return { view: known.includes(view) ? view : 'list', id };
 }
 
@@ -32,8 +33,8 @@ function render() {
   const key = `${route.view}/${route.id ?? ''}`;
   const keepScroll = key === lastKey ? window.scrollY : 0;
   lastKey = key;
-  // 建物・部屋の詳細は「一覧」タブの配下として扱う
-  const tabOf = { b: 'list', r: 'list' }[route.view] || route.view;
+  // 建物・部屋の詳細と取り込みは「一覧」タブの配下として扱う
+  const tabOf = { b: 'list', r: 'list', import: 'list' }[route.view] || route.view;
   $$('#tabs .tab').forEach((t) => t.classList.toggle('is-active', t.dataset.view === tabOf));
 
   // QR から来た設定リンクは画面を描く前に取り込む（起動済みのアプリで踏まれた場合もここを通る）
@@ -41,7 +42,8 @@ function render() {
     if (route.id && !consuming) consumePairing(route.id);
     return;
   }
-  if (route.view === 'compare') renderCompare(main);
+  if (route.view === 'import') renderImport(main);
+  else if (route.view === 'compare') renderCompare(main);
   else if (route.view === 'analysis') renderAnalysis(main, render);
   else if (route.view === 'plan') renderLifeplan(main, render, route.id || 'plan');
   else if (route.view === 'map') renderMap(main);
