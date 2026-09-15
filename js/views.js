@@ -373,7 +373,7 @@ export function renderSettings(root) {
     cfgField('owner', 'GitHub ユーザー名 / Organization', cfg, '例: tatsuyoshi'),
     cfgField('repo', 'データ用リポジトリ名（Private 推奨）', cfg, '例: bukken-data'),
     cfgField('branch', 'ブランチ', cfg, 'main'),
-    cfgField('token', 'アクセストークン（この端末のブラウザにのみ保存）', cfg, 'github_pat_...', 'password'),
+    tokenField(cfg),
     el('div', { class: 'field wide', style: 'flex-direction:row;gap:8px;flex-wrap:wrap' },
       el('button', {
         class: 'btn btn-primary', onclick: async () => {
@@ -385,7 +385,11 @@ export function renderSettings(root) {
             status.textContent = `接続OK: ${info.fullName}（${info.private ? 'Private' : 'Public'}）`;
             toast('GitHub に接続しました');
             rerender();
-          } catch (e) { status.textContent = `接続エラー: ${e.message}`; toast(e.message, true); }
+          } catch (e) {
+            status.textContent = e.message;
+            status.style.color = 'var(--bad)';
+            toast('接続に失敗しました。下の説明を確認してください。', true);
+          }
         },
       }, '保存して接続テスト'),
       el('button', { class: 'btn', onclick: async () => { await store.sync(); toast('同期しました'); rerender(); } }, '今すぐ同期'),
@@ -426,6 +430,42 @@ export function renderSettings(root) {
         store.lastError ? el('div', { style: 'color:var(--bad);margin-top:6px' }, store.lastError) : null,
       )),
   ));
+}
+
+/** トークン欄。iOS の自動入力に差し替えられないよう autocomplete を切り、内容を目視確認できるようにする */
+function tokenField(cfg) {
+  const saved = store.config.token;
+  const input = el('input', {
+    type: 'password', value: cfg.token ?? '', placeholder: 'github_pat_...',
+    autocomplete: 'off', autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false',
+    name: 'gh-access-token', inputmode: 'text',
+    oninput: (e) => { cfg.token = e.target.value.trim(); info(); },
+  });
+  const meta = el('div', { class: 'tiny muted' });
+  const toggle = el('button', {
+    class: 'btn btn-sm', type: 'button',
+    onclick: () => {
+      input.type = input.type === 'password' ? 'text' : 'password';
+      toggle.textContent = input.type === 'password' ? '表示' : '隠す';
+    },
+  }, '表示');
+  const info = () => {
+    const v = input.value.trim();
+    if (!v) {
+      meta.textContent = saved
+        ? `保存済みのトークン: …${saved.slice(-4)}（${saved.length}文字）`
+        : 'まだトークンが保存されていません';
+    } else {
+      const looksOk = v.startsWith('github_pat_') && v.length >= 80;
+      meta.textContent = `入力中: ${v.length}文字 ${looksOk ? '✓ 形式は正しそうです' : '⚠ github_pat_ で始まる80文字以上か確認してください'}`;
+    }
+  };
+  info();
+  return el('div', { class: 'field wide' },
+    el('label', {}, 'アクセストークン（この端末のブラウザにのみ保存）'),
+    el('div', { style: 'display:flex;gap:8px;align-items:center' }, input, toggle),
+    meta,
+  );
 }
 
 function cfgField(key, label, cfg, ph, type = 'text') {

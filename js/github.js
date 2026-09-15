@@ -17,11 +17,16 @@ export class GitHubRepo {
   }
 
   async #req(url, opts = {}) {
-    const res = await fetch(url, opts);
+    let res;
+    try {
+      res = await fetch(url, opts);
+    } catch {
+      throw new Error('ネットワークに接続できませんでした。通信状況を確認してください。');
+    }
     if (!res.ok) {
       let detail = '';
       try { detail = (await res.json()).message || ''; } catch { /* ignore */ }
-      const err = new Error(`GitHub ${res.status}: ${detail || res.statusText}`);
+      const err = new Error(explain(res.status, detail, res.statusText));
       err.status = res.status;
       throw err;
     }
@@ -94,6 +99,25 @@ export class GitHubRepo {
       if (e.status === 404) return null;
       throw e;
     }
+  }
+}
+
+/** 失敗の原因が設定画面だけで分かるよう、ステータスを日本語に翻訳する */
+function explain(status, detail, statusText) {
+  switch (status) {
+    case 401:
+      return 'トークンが無効です（401）。貼り付けが途中で切れていないか、期限が切れていないか確認してください。'
+        + 'トークンは github_pat_ で始まる80文字以上の文字列です。';
+    case 403:
+      return 'トークンの権限が足りません（403）。Permissions の Contents を Read and write にしてください。';
+    case 404:
+      return 'リポジトリまたはファイルが見つかりません（404）。ユーザー名・リポジトリ名の綴りと、'
+        + 'トークンの Repository access にそのリポジトリが含まれているかを確認してください。';
+    case 409:
+    case 422:
+      return `他の端末の変更と衝突しました（${status}）。`;
+    default:
+      return `GitHub エラー ${status}: ${detail || statusText}`;
   }
 }
 
