@@ -1,9 +1,11 @@
 # 物件検討ボード
 
+**https://mmmhg835.github.io/bukken-app/**
+
 検討中の物件を **写真つきで比較・管理** するための PWA（Mac / iPhone 両対応）。
 
 - **アプリ本体（このリポジトリ・Public）**: HTML / CSS / Vanilla JS のみ。ビルド不要。個人情報は一切含まない。
-- **データ（別リポジトリ・Private）**: `properties.json` と `images/<物件ID>/*.jpg`。
+- **データ（[mmmhg835/bukken-data](https://github.com/mmmhg835/bukken-data)・Private）**: `properties.json` と `images/<物件ID>/*.jpg`。
 
 アプリはブラウザから GitHub Contents API を直接叩いてデータリポジトリを読み書きするため、
 **サーバー不要**で Mac と iPhone の内容が同期されます。画像をアップロードすると、その場で

@@ -5,9 +5,10 @@ Claude と ChatGPT で交互に開発するときは、相手に最初にこれ�
 ---
 
 物件検討用の PWA を開発しています。2つのリポジトリに分かれています。
+公開URL: https://mmmhg835.github.io/bukken-app/
 
-- `<owner>/bukken-app` （Public）… アプリ本体。HTML/CSS/素の ES モジュールのみ。**ビルドツールなし**
-- `<owner>/bukken-data` （Private）… `properties.json` と `images/<物件ID>/*.jpg`
+- `mmmhg835/bukken-app` （Public）… アプリ本体。HTML/CSS/素の ES モジュールのみ。**ビルドツールなし**
+- `mmmhg835/bukken-data` （Private）… `properties.json` と `images/<物件ID>/*.jpg`
 
 設計は `docs/ARCHITECTURE.md` に全部書いてあります。**作業前に必ず読んでください。**
 
