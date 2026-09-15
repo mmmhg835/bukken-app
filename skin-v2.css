@@ -56,7 +56,10 @@
   :root[data-skin="v2"] .tab.is-active{
     background:var(--accent-soft); color:var(--accent); border-bottom:0; font-weight:700;
   }
-  :root[data-skin="v2"] .main{ padding:30px 34px 60px; max-width:1320px }
+  /* グリッドの子は min-width:auto のままだと中身の幅で広がり、
+     表やグラフがあるだけでページ全体が横に伸びてしまう */
+  :root[data-skin="v2"] .main{ padding:30px 34px 60px; max-width:1320px; min-width:0; width:100% }
+  :root[data-skin="v2"] body > *{ min-width:0 }
 }
 
 /* ===== モバイルは下部タブ ===== */
