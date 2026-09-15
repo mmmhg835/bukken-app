@@ -605,3 +605,8 @@ table.offercmp td.muted{color:var(--text-3)}
   border-radius:var(--r-sm);padding:6px 8px;font-size:12px;max-width:92px}
 /* 手取りはライフプラン側の集計値なので、入力欄と同じ幅で数字だけを置く */
 .netval{min-width:96px;text-align:right;font-weight:800;font-size:14px}
+
+/* ===== 売却試算 ===== */
+/* いま選んでいる年の行だけ、表の中で見つけられるようにする */
+table.cmp tr.is-current td{background:var(--accent-soft);font-weight:700}
+table.cmp tr.is-current td.lab{background:var(--accent-soft)}

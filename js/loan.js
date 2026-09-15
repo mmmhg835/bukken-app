@@ -72,6 +72,42 @@ export function calcLoan(price, terms) {
   };
 }
 
+/**
+ * k か月返したあとの状態。売却時の手残りを出すには、そのときの残債が要る。
+ * 返済表を回さず閉じた式で出す（40年分を毎回ループすると画面が重くなるため）。
+ *
+ * @returns {{balance, paidTotal, paidPrincipal, paidInterest, months}} すべて万円
+ */
+export function scheduleAt(price, terms, months) {
+  const c = calcLoan(price, terms);
+  const t = { ...DEFAULT_TERMS, ...terms };
+  const n = c.months;
+  const k = Math.max(0, Math.min(Math.round(months), n));
+  const P = c.principal;
+  const r = (Number(t.rate) || 0) / 100 / 12;
+  if (P <= 0 || k === 0) {
+    return { balance: P, paidTotal: 0, paidPrincipal: 0, paidInterest: 0, months: k };
+  }
+
+  if (t.method === 'principal') {
+    // 元金均等：元金は毎月一定。利息は残高に比例するので等差数列の和になる
+    const base = P / n;
+    const balance = Math.max(0, P - base * k);
+    const interest = r * (k * P - base * (k * (k - 1)) / 2);
+    const paidPrincipal = P - balance;
+    return { balance, paidTotal: paidPrincipal + interest, paidPrincipal, paidInterest: interest, months: k };
+  }
+
+  // 元利均等：B_k = P(1+r)^k - M((1+r)^k - 1)/r
+  const M = c.monthly;
+  const balance = r === 0
+    ? Math.max(0, P - M * k)
+    : Math.max(0, P * (1 + r) ** k - M * ((1 + r) ** k - 1) / r);
+  const paidTotal = M * k;
+  const paidPrincipal = P - balance;
+  return { balance, paidTotal, paidPrincipal, paidInterest: paidTotal - paidPrincipal, months: k };
+}
+
 function zero(principal, n, t) {
   return {
     principal, months: n, monthly: 0, monthlyFirst: 0, monthlyLast: 0,

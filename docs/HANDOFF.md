@@ -18,9 +18,9 @@ Claude と ChatGPT で交互に開発しています。相手に最初にこれ�
 
 | | |
 |---|---|
-| 現在の版 | アプリ v39 / データスキーマ v16 |
-| 規模 | JS 約5,900行・24モジュール |
-| 画面 | 一覧 / 比較 / 分析 / ライフプラン / 地図 / 設定（ライフプランは ライフプラン・返済負担比率・グラフ の3サブタブ）。一覧の配下に 建物詳細・部屋詳細・取り込み |
+| 現在の版 | アプリ v40 / データスキーマ v17 |
+| 規模 | JS 約6,400行・26モジュール |
+| 画面 | 一覧 / 比較 / 分析 / ライフプラン / 地図 / 設定（ライフプランは ライフプラン・返済負担比率・グラフ・売却 の4サブタブ）。一覧の配下に 建物詳細・部屋詳細・取り込み |
 | デザイン | 新デザイン（既定）とクラシックを設定で切替。`skin-v2.css` に新案を隔離 |
 
 ## 守ってほしいこと
@@ -48,6 +48,7 @@ Claude と ChatGPT で交互に開発しています。相手に最初にこれ�
 node tools/smoke.mjs          # 全モジュールの読み込みと整合性
 node tools/verify-loan.mjs    # ローン計算（返済表と突き合わせ）
 node tools/verify-parse.mjs   # 貼り付け取り込みの解析
+node tools/verify-sale.mjs    # 売却試算（ローン残高を返済表と突き合わせ）
 node tools/verify-lifeplan.mjs # 家計の初期値
 node tools/serve.mjs 8765     # 画面確認
 ```
@@ -76,7 +77,8 @@ node tools/serve.mjs 8765     # 画面確認
 | 分析画面の構成 | `js/analytics-view.js` |
 | 家計の項目・計算 | `js/lifeplan.js`（変更後は `verify-lifeplan.mjs`） |
 | 数値の入力欄 | `js/ui.js` の `numberInput()` |
-| ライフプランの画面 | `js/lifeplan-view.js`（サブタブ plan / burden / graph） |
+| ライフプランの画面 | `js/lifeplan-view.js`（サブタブ plan / burden / graph / sale） |
+| 売却の計算 | `js/sale.js`（変更後は `verify-sale.mjs`）／画面は `js/sale-view.js` |
 | ローン計算 | `js/loan.js`（変更後は必ず `verify-loan.mjs`） |
 | 販売活動の指標 | `js/price.js` の `analyze()` |
 | グラフの描画 | `js/chart.js`（ステップ・散布・ヒストグラム・折れ線・積み上げ棒） |

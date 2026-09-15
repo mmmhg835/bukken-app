@@ -4,8 +4,9 @@
 import { DEFAULT_TERMS } from './loan.js';
 import { buildingDefaults, SPEC_GROUPS, BUILDING_EQUIPMENT } from './spec.js';
 import { defaultLifeplan, categoryOf } from './lifeplan.js';
+import { DEFAULT_SALE } from './sale.js';
 
-export const CURRENT_SCHEMA = 16;
+export const CURRENT_SCHEMA = 17;
 
 export function migrate(data) {
   let d = structuredClone(data);
@@ -24,9 +25,11 @@ export function migrate(data) {
   if (d.schemaVersion < 14) d = v13ToV14(d);
   if (d.schemaVersion < 15) d = v14ToV15(d);
   if (d.schemaVersion < 16) d = v15ToV16(d);
+  if (d.schemaVersion < 17) d = v16ToV17(d);
   d.settings ||= {};
   d.settings.loan = { ...DEFAULT_TERMS, ...(d.settings.loan || {}) };
   d.settings.places ||= [];   // 職場・駅など、地図上の参照地点
+  d.settings.sale = { ...DEFAULT_SALE, ...(d.settings.sale || {}) };
   d.schemaVersion = CURRENT_SCHEMA;
   return d;
 }
@@ -252,6 +255,19 @@ function v15ToV16(d) {
     if (g[key]) delete g[key].net;
   }
   d.schemaVersion = 16;
+  return d;
+}
+
+/**
+ * v17: 売却の前提と、部屋ごとの想定売却価格を追加。
+ * 売るときの諸費用は買うときと中身が違う（仲介手数料・印紙・抵当権抹消）ので、
+ * settings.loan.costRate とは別に持つ。
+ */
+function v16ToV17(d) {
+  d.settings ||= {};
+  d.settings.sale = { ...DEFAULT_SALE, ...(d.settings.sale || {}) };
+  for (const r of d.rooms || []) r.salePrice ??= null;   // null なら現在価格を使う
+  d.schemaVersion = 17;
   return d;
 }
 

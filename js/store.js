@@ -165,6 +165,7 @@ class Store extends EventTarget {
       kanrihi: null, shuzen: null,
       refMonthly: null, refLoanPrincipal: null, refLoanInterest: null, loan: null,
       offerPrice: null,   // 指値。ライフプランの試算でだけ価格に代えて使う
+      salePrice: null,    // 想定売却価格。null なら現在価格を使う
       reform: '', viewNote: '', roomNote: '', imageRange: '', url: '', memo: '',
       cover: null, coverThumb: null, images: [], ...partial,
     };
@@ -190,6 +191,9 @@ class Store extends EventTarget {
     Object.assign(this.data.settings.loan, patch);
     this.markDirty();
   }
+
+  // ===== 売却の前提 =====
+  get saleTerms() { return this.data.settings.sale; }
 
   // ===== 家計シミュレーション =====
   get lifeplan() {

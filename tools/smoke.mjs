@@ -34,8 +34,8 @@ Object.defineProperty(globalThis, 'location', {
 
 const FILES = [
   'util', 'loan', 'spec', 'price', 'chart', 'idb', 'image', 'github', 'migrate', 'store',
-  'ui', 'gallery', 'map', 'pairing', 'theme', 'analysis', 'lifeplan', 'sales', 'parse',
-  'analytics-view', 'lifeplan-view', 'import-view', 'views', 'main',
+  'ui', 'gallery', 'map', 'pairing', 'theme', 'analysis', 'lifeplan', 'sales', 'parse', 'sale',
+  'analytics-view', 'lifeplan-view', 'import-view', 'sale-view', 'views', 'main',
 ];
 
 let bad = 0;
@@ -181,6 +181,21 @@ const checks = [
     // 元の部屋を書き換えていないこと（一覧や分析の現在価格が変わってしまう）
     if (room.price !== 16500) throw new Error('元の部屋の価格を書き換えている');
   }],
+  ['売却', () => {
+    const { saleResult, saleSchedule, breakEvenYear, DEFAULT_SALE } = mods.sale;
+    const terms = mods.loan.DEFAULT_TERMS;
+    const room = { price: 16500, kanrihi: 2.3, shuzen: 2.1 };
+    const sale = { ...DEFAULT_SALE, years: 10, price: 17000 };
+    const r = saleResult(room, terms, sale);
+    if (Math.abs(r.cashBack - (r.netProceeds - r.balance)) > 1e-9) throw new Error('手残りの式が合わない');
+    if (Math.abs(r.netCost - (r.upfront + r.paidTotal - r.cashBack)) > 1e-9) throw new Error('実質負担の式が合わない');
+    // 同じ価格なら、年が経つほど残債が減って手残りは増える
+    const rows = saleSchedule(room, terms, sale, 30);
+    for (let i = 1; i < rows.length; i++) {
+      if (!(rows[i].cashBack > rows[i - 1].cashBack)) throw new Error('手残りが年々増えていない');
+    }
+    if (breakEvenYear(rows) == null) throw new Error('手残りが0以上になる年を出せていない');
+  }],
   ['import', () => {
     const { parseListing } = mods.parse;
     const { mergeInto } = mods['import-view'];
@@ -257,6 +272,7 @@ const screens = [
   ['ライフプラン', () => mods['lifeplan-view'].renderLifeplan(stubEl(), () => {}, 'plan')],
   ['返済負担比率', () => mods['lifeplan-view'].renderLifeplan(stubEl(), () => {}, 'burden')],
   ['グラフ', () => mods['lifeplan-view'].renderLifeplan(stubEl(), () => {}, 'graph')],
+  ['売却', () => mods['lifeplan-view'].renderLifeplan(stubEl(), () => {}, 'sale')],
 ];
 
 mods.views.bindRouter(() => {}, () => {});

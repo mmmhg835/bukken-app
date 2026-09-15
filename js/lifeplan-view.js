@@ -8,12 +8,13 @@ import {
   WHO, netIncomeByWho,
 } from './lifeplan.js';
 import { lineChart, stackedBarChart, chartLegend, SERIES_COLORS } from './chart.js';
+import { saleView } from './sale-view.js';
 
 import { derive } from './util.js';
 
 const ui = { afterLoans: false, openGroups: null };
 
-const SUBTABS = [['plan', 'ライフプラン'], ['burden', '返済負担比率'], ['graph', 'グラフ']];
+const SUBTABS = [['plan', 'ライフプラン'], ['burden', '返済負担比率'], ['graph', 'グラフ'], ['sale', '売却']];
 
 /**
  * @param {string} sub 'plan' | 'burden'。物件と収入の前提を共有したまま切り替える
@@ -44,7 +45,8 @@ export function renderLifeplan(root, rerender, sub = 'plan') {
       ? offerComparison(plan, room, offerRoom, building, res, baseRes) : null,
     view === 'burden' ? burdenView(plan, offerRoom || room, res, mark, rerender)
       : view === 'graph' ? graphView(plan, offerRoom || room, building, res, offerRoom ? room : null)
-        : planView(plan, offerRoom || room, building, res, mark, rerender),
+        : view === 'sale' ? saleView(plan, offerRoom || room, rerender)
+          : planView(plan, offerRoom || room, building, res, mark, rerender),
   );
 }
 
