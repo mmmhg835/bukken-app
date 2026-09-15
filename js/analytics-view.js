@@ -1,0 +1,245 @@
+// 分析タブ。軸をボタンで切り替えながら、登録済みの部屋の傾向を見る。
+import { store } from './store.js';
+import { el, fmt, mount } from './util.js';
+import { section } from './ui.js';
+import {
+  METRICS, ATTRS, GROUPINGS, buildRows, linearFit, residuals,
+  groupStats, histogram, monthlyTrend, areaOf,
+} from './analysis.js';
+import { scatterChart, histogramChart, stepChart, chartLegend, SERIES_COLORS } from './chart.js';
+import { CLOSED_STATUS } from './price.js';
+
+const ui = { metric: 'tsubo', attr: 'area', group: 'building', fit: true, histMetric: 'tsubo' };
+
+export function renderAnalysis(root, rerender) {
+  const rows = buildRows(store);
+  if (rows.length < 1) {
+    mount(root, el('div', { class: 'empty' }, '分析できる部屋がありません。まず物件を登録してください。'));
+    return;
+  }
+
+  mount(root,
+    scatterSection(rows, rerender),
+    valueSection(rows),
+    areaSection(rows),
+    distributionSection(rows, rerender),
+    trendSection(rows),
+  );
+}
+
+/* ===== 切り替えボタン ===== */
+function switcher(label, options, current, onPick, rerender) {
+  return el('div', { class: 'axisrow' },
+    el('span', { class: 'axislabel' }, label),
+    el('div', { class: 'axisbtns' }, Object.entries(options).map(([key, def]) =>
+      el('button', {
+        class: 'axisbtn' + (key === current ? ' is-on' : ''),
+        onclick: () => { onPick(key); rerender(); },
+      }, def.label))),
+  );
+}
+
+/* =========================================================
+   相関（散布図）
+   ========================================================= */
+function scatterSection(rows, rerender) {
+  const metric = METRICS[ui.metric], attr = ATTRS[ui.attr], group = GROUPINGS[ui.group];
+
+  const valid = rows.filter((x) => Number.isFinite(metric.get(x)) && Number.isFinite(attr.get(x)));
+  const fit = ui.fit ? linearFit(valid.map((x) => ({ x: attr.get(x), y: metric.get(x) }))) : null;
+
+  const byGroup = new Map();
+  for (const x of valid) {
+    const k = group.get(x);
+    if (!byGroup.has(k)) byGroup.set(k, []);
+    byGroup.get(k).push({
+      x: attr.get(x), y: metric.get(x),
+      label: `${x.b.name} ${x.r.label}`,
+    });
+  }
+  const series = [...byGroup.entries()].map(([name, points], i) => ({
+    name, points, color: SERIES_COLORS[i % SERIES_COLORS.length],
+  }));
+
+  const chart = valid.length
+    ? el('div', { class: 'chartwrap' },
+      scatterChart(series, {
+        xLabel: `${attr.label}（${attr.unit}）`,
+        yLabel: `${metric.label}（${metric.unit}）`,
+        fit, xTick: attr.tick, height: 340,
+      }),
+      series.length > 1 ? chartLegend(series) : null)
+    : el('div', { class: 'help' }, `${attr.label} と ${metric.label} の両方が入っている部屋がありません。`);
+
+  const stat = fit
+    ? el('div', { class: 'fitline' },
+      el('span', {}, `相関係数 r = ${fit.r.toFixed(2)}（${strength(fit.r)}）`),
+      el('span', {}, `${attr.label}が1${attr.unit}増えると ${metric.label} は ${signed(fit.slope)}${metric.unit}`),
+      el('span', {}, `相場の幅 ±${fmt.n(fit.sd, 1)}${metric.unit}`),
+      el('span', { class: 'muted' }, `対象 ${fit.n}件`),
+    )
+    : el('div', { class: 'tiny muted', style: 'margin-top:8px' },
+      valid.length < 3 ? '近似直線は3件以上のデータが揃うと表示されます。' : '');
+
+  return el('div', { class: 'section' },
+    el('h3', {}, '傾向分析'),
+    el('div', { class: 'card', style: 'padding:14px' },
+      switcher('表示単位', METRICS, ui.metric, (k) => { ui.metric = k; }, rerender),
+      switcher('物件属性', ATTRS, ui.attr, (k) => { ui.attr = k; }, rerender),
+      switcher('色分け', GROUPINGS, ui.group, (k) => { ui.group = k; }, rerender),
+      el('label', { class: 'tiny muted', style: 'display:flex;gap:6px;align-items:center;margin-top:4px' },
+        el('input', {
+          type: 'checkbox', checked: ui.fit,
+          onchange: (e) => { ui.fit = e.target.checked; rerender(); },
+        }),
+        '近似直線と相場の幅を表示する'),
+      chart, stat,
+    ));
+}
+
+const strength = (r) => {
+  const a = Math.abs(r);
+  return a >= 0.8 ? 'とても強い' : a >= 0.6 ? '強い' : a >= 0.4 ? 'ややあり' : a >= 0.2 ? '弱い' : 'ほぼ無関係';
+};
+const signed = (v) => `${v > 0 ? '+' : ''}${fmt.n(v, v > 100 || v < -100 ? 0 : 2)}`;
+
+/* =========================================================
+   割安度（回帰線からの乖離）
+   ========================================================= */
+function valueSection(rows) {
+  const { fit, list } = residuals(rows, ui.metric, ui.attr);
+  if (!fit) return null;
+  const metric = METRICS[ui.metric], attr = ATTRS[ui.attr];
+
+  return el('div', { class: 'section' },
+    el('h3', {}, '割安・割高'),
+    el('div', { class: 'help', style: 'margin-bottom:10px' },
+      `${attr.label}から期待される${metric.label}に対し、実際がどれだけ離れているかです。`
+      + 'マイナスが大きいほど、同じ条件の中では割安です。'),
+    el('div', { class: 'tablewrap' },
+      el('table', { class: 'cmp valuetable' },
+        el('thead', {}, el('tr', {},
+          el('th', { class: 'lab' }, '部屋'),
+          el('th', {}, `実際の${metric.label}`),
+          el('th', {}, '相場からの期待値'),
+          el('th', {}, '差'),
+          el('th', {}, '乖離率'),
+        )),
+        el('tbody', {}, list.map((d) => el('tr', {},
+          el('td', { class: 'lab' },
+            el('div', { class: 'tiny muted' }, d.row.b.name),
+            el('div', {}, d.row.r.label)),
+          el('td', {}, fmt.n(d.actual, 1)),
+          el('td', {}, fmt.n(d.expected, 1)),
+          el('td', { class: d.diff < 0 ? 'best' : 'worse' }, `${d.diff > 0 ? '+' : ''}${fmt.n(d.diff, 1)}`),
+          el('td', { class: d.diff < 0 ? 'best' : 'worse' }, `${d.ratio > 0 ? '+' : ''}${(d.ratio * 100).toFixed(1)}%`),
+        ))),
+      )),
+  );
+}
+
+/* =========================================================
+   エリア別の相場
+   ========================================================= */
+function areaSection(rows) {
+  const hasAddress = rows.some((x) => x.b.address);
+  const key = hasAddress ? 'town' : 'building';
+  const stats = groupStats(rows, key, ui.metric);
+  const metric = METRICS[ui.metric];
+
+  return el('div', { class: 'section' },
+    el('h3', {}, hasAddress ? 'エリア別の相場' : '建物別の相場'),
+    !hasAddress
+      ? el('div', { class: 'help', style: 'margin-bottom:10px' },
+        '建物に住所を入れると、町名ごとの相場に切り替わります。')
+      : null,
+    el('div', { class: 'tablewrap' },
+      el('table', { class: 'cmp valuetable' },
+        el('thead', {}, el('tr', {},
+          el('th', { class: 'lab' }, '区分'),
+          el('th', {}, '件数'),
+          el('th', {}, '割合'),
+          el('th', {}, `平均${metric.label}`),
+          el('th', {}, '中央値'),
+          el('th', {}, '最安'),
+          el('th', {}, '最高'),
+        )),
+        el('tbody', {}, [
+          ...stats.map((s) => el('tr', {},
+            el('td', { class: 'lab' }, s.name),
+            el('td', {}, `${s.count}件`),
+            el('td', {}, `${s.ratio.toFixed(0)}%`),
+            el('td', {}, fmt.n(s.avg, 1)),
+            el('td', {}, fmt.n(s.median, 1)),
+            el('td', { class: 'best' }, fmt.n(s.min, 1)),
+            el('td', {}, fmt.n(s.max, 1)),
+          )),
+          totalRow(rows, metric),
+        ]),
+      )),
+  );
+}
+
+function totalRow(rows, metric) {
+  const vals = rows.map((x) => metric.get(x)).filter(Number.isFinite);
+  if (!vals.length) return null;
+  const avg = vals.reduce((s, v) => s + v, 0) / vals.length;
+  return el('tr', { class: 'totalrow' },
+    el('td', { class: 'lab' }, '全体'),
+    el('td', {}, `${vals.length}件`),
+    el('td', {}, '100%'),
+    el('td', {}, fmt.n(avg, 1)),
+    el('td', {}, fmt.n([...vals].sort((a, b) => a - b)[Math.floor(vals.length / 2)], 1)),
+    el('td', {}, fmt.n(Math.min(...vals), 1)),
+    el('td', {}, fmt.n(Math.max(...vals), 1)),
+  );
+}
+
+/* =========================================================
+   分布（ヒストグラム）
+   ========================================================= */
+function distributionSection(rows, rerender) {
+  const metric = METRICS[ui.histMetric];
+  const vals = rows.map((x) => ({ v: metric.get(x), closed: CLOSED_STATUS.includes(x.r.listingStatus) }))
+    .filter((d) => Number.isFinite(d.v));
+  if (!vals.length) return null;
+
+  const { bins } = histogram(vals.map((d) => d.v));
+  const filled = bins.map((b) => {
+    const inBin = vals.filter((d) => d.v >= b.from && d.v < b.to + (b === bins[bins.length - 1] ? 1e-9 : 0));
+    return { ...b, a: inBin.filter((d) => !d.closed).length, b: inBin.filter((d) => d.closed).length };
+  });
+
+  return el('div', { class: 'section' },
+    el('h3', {}, '価格帯の分布'),
+    el('div', { class: 'card', style: 'padding:14px' },
+      switcher('分類', METRICS, ui.histMetric, (k) => { ui.histMetric = k; }, rerender),
+      el('div', { class: 'chartwrap' },
+        histogramChart(filled, { xLabel: `${metric.label}（${metric.unit}）`, height: 260 })),
+      el('div', { class: 'chart-legend' },
+        el('span', {}, el('i', { style: `background:${SERIES_COLORS[0]}` }), '募集中'),
+        el('span', {}, el('i', { style: 'background:var(--text-3)' }), '募集終了・成約'),
+      )),
+  );
+}
+
+/* =========================================================
+   時系列の推移
+   ========================================================= */
+function trendSection(rows) {
+  const trend = monthlyTrend(rows, 'tsubo');
+  if (trend.length < 2) {
+    return el('div', { class: 'section' },
+      el('h3', {}, '相場の推移'),
+      el('div', { class: 'help' },
+        '各部屋の「販売活動」に価格の推移を入れると、月ごとの平均坪単価の動きがここに出ます。'
+        + '過去の募集情報を入れるほど、相場が上がっているのか下がっているのかが見えるようになります。'));
+  }
+  return el('div', { class: 'section' },
+    el('h3', {}, '相場の推移（月平均の坪単価）'),
+    el('div', { class: 'chartwrap' },
+      stepChart([{ name: '平均坪単価', points: trend, open: true }], { height: 260 })),
+    el('div', { class: 'tiny muted', style: 'margin-top:8px' },
+      `${trend.length}か月分のデータ。登録されている価格改定をすべて月単位で平均しています。`),
+  );
+}

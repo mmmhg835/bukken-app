@@ -120,3 +120,150 @@ export function chartLegend(series) {
   });
   return box;
 }
+
+
+/* =========================================================
+   散布図（相関を見る）
+   ========================================================= */
+
+/**
+ * @param {Array} series [{name, color, points:[{x,y,label}]}]
+ * @param {object} opts { xLabel, yLabel, xUnit, yUnit, fit, height, xTick }
+ *   fit は linearFit() の結果。渡すと近似直線と±1σの帯を描く
+ */
+export function scatterChart(series, opts = {}) {
+  const { xLabel = '', yLabel = '', fit = null, height = 320, xTick = null } = opts;
+  const pts = series.flatMap((s) => s.points);
+  if (!pts.length) return n('svg', { viewBox: '0 0 10 10' });
+
+  const W = 780, H = height;
+  const pad = { t: 14, r: 18, b: 44, l: 74 };
+  const iw = W - pad.l - pad.r, ih = H - pad.t - pad.b;
+
+  const span = (vals) => {
+    let lo = Math.min(...vals), hi = Math.max(...vals);
+    if (lo === hi) { lo -= Math.abs(lo || 1) * 0.1; hi += Math.abs(hi || 1) * 0.1; }
+    const p = (hi - lo) * 0.08;
+    return [lo - p, hi + p];
+  };
+  const [x0, x1] = span(pts.map((p) => p.x));
+  const [y0, y1] = span(pts.map((p) => p.y));
+  const X = (v) => pad.l + ((v - x0) / (x1 - x0)) * iw;
+  const Y = (v) => pad.t + ih - ((v - y0) / (y1 - y0)) * ih;
+
+  const svg = n('svg', { viewBox: `0 0 ${W} ${H}`, class: 'chart', preserveAspectRatio: 'xMidYMid meet' });
+
+  // グリッドと目盛り
+  const yStep = niceStep(y1 - y0, 5);
+  for (let v = Math.ceil(y0 / yStep) * yStep; v <= y1; v += yStep) {
+    svg.append(
+      n('line', { x1: pad.l, x2: W - pad.r, y1: Y(v), y2: Y(v), class: 'chart-grid' }),
+      n('text', { x: pad.l - 8, y: Y(v) + 4, class: 'chart-lab', 'text-anchor': 'end' }, trim(v)),
+    );
+  }
+  const xStep = niceStep(x1 - x0, 6);
+  for (let v = Math.ceil(x0 / xStep) * xStep; v <= x1; v += xStep) {
+    svg.append(
+      n('line', { x1: X(v), x2: X(v), y1: pad.t, y2: pad.t + ih, class: 'chart-grid' }),
+      n('text', { x: X(v), y: H - 24, class: 'chart-lab', 'text-anchor': 'middle' }, xTick ? xTick(v) : trim(v)),
+    );
+  }
+
+  // 近似直線と相場の帯（±1σ）
+  if (fit) {
+    const line = (d) => [[x0, fit.slope * x0 + fit.intercept + d], [x1, fit.slope * x1 + fit.intercept + d]];
+    const [a1, b1] = line(fit.sd), [a2, b2] = line(-fit.sd);
+    svg.append(n('path', {
+      d: `M ${X(a1[0])} ${Y(a1[1])} L ${X(b1[0])} ${Y(b1[1])} L ${X(b2[0])} ${Y(b2[1])} L ${X(a2[0])} ${Y(a2[1])} Z`,
+      fill: 'var(--accent)', opacity: '.10',
+    }));
+    const [p, q] = line(0);
+    svg.append(n('line', {
+      x1: X(p[0]), y1: Y(p[1]), x2: X(q[0]), y2: Y(q[1]),
+      stroke: 'var(--accent)', 'stroke-width': 2, 'stroke-dasharray': '6 4', opacity: '.85',
+    }));
+  }
+
+  svg.append(
+    n('line', { x1: pad.l, x2: W - pad.r, y1: pad.t + ih, y2: pad.t + ih, class: 'chart-axis' }),
+    n('line', { x1: pad.l, x2: pad.l, y1: pad.t, y2: pad.t + ih, class: 'chart-axis' }),
+    n('text', { x: pad.l + iw / 2, y: H - 6, class: 'chart-lab', 'text-anchor': 'middle' }, xLabel),
+    n('text', { x: 14, y: pad.t + ih / 2, class: 'chart-lab', 'text-anchor': 'middle',
+      transform: `rotate(-90 14 ${pad.t + ih / 2})` }, yLabel),
+  );
+
+  series.forEach((s, si) => {
+    const color = s.color || SERIES_COLORS[si % SERIES_COLORS.length];
+    for (const p of s.points) {
+      const c = n('circle', { cx: X(p.x), cy: Y(p.y), r: 6, fill: color, opacity: '.85',
+        stroke: 'var(--surface)', 'stroke-width': 1.5, class: 'dot' });
+      c.append(n('title', {}, `${p.label || s.name}\n${xLabel} ${trim(p.x)} / ${yLabel} ${trim(p.y)}`));
+      svg.append(c);
+    }
+  });
+
+  return svg;
+}
+
+/* =========================================================
+   度数分布（ヒストグラム）
+   ========================================================= */
+
+/**
+ * @param {Array} bins histogram() の bins に { a, b } の内訳を足したもの
+ *   a = 手前の色で積む件数、b = 奥の色で積む件数
+ */
+export function histogramChart(bins, opts = {}) {
+  const { xLabel = '', height = 260, fmt: fmtX = trim, legend = ['募集中', '募集終了'] } = opts;
+  if (!bins.length) return n('svg', { viewBox: '0 0 10 10' });
+
+  const W = 780, H = height;
+  const pad = { t: 14, r: 16, b: 52, l: 52 };
+  const iw = W - pad.l - pad.r, ih = H - pad.t - pad.b;
+  const maxN = Math.max(...bins.map((b) => b.a + b.b), 1);
+
+  const svg = n('svg', { viewBox: `0 0 ${W} ${H}`, class: 'chart', preserveAspectRatio: 'xMidYMid meet' });
+  const Y = (v) => pad.t + ih - (v / maxN) * ih;
+
+  const step = niceStep(maxN, 4) || 1;
+  for (let v = 0; v <= maxN; v += step) {
+    svg.append(
+      n('line', { x1: pad.l, x2: W - pad.r, y1: Y(v), y2: Y(v), class: 'chart-grid' }),
+      n('text', { x: pad.l - 8, y: Y(v) + 4, class: 'chart-lab', 'text-anchor': 'end' }, String(Math.round(v))),
+    );
+  }
+
+  const bw = iw / bins.length;
+  const every = Math.ceil(bins.length / 10);
+  bins.forEach((b, i) => {
+    const x = pad.l + i * bw + bw * 0.12;
+    const w = bw * 0.76;
+    const hA = (b.a / maxN) * ih, hB = (b.b / maxN) * ih;
+    if (hB) svg.append(n('rect', { x, y: Y(b.a + b.b), width: w, height: hB, fill: 'var(--text-3)', opacity: '.75', rx: 2 }));
+    if (hA) svg.append(n('rect', { x, y: Y(b.a), width: w, height: hA, fill: SERIES_COLORS[0], rx: 2 }));
+    const rect = n('rect', { x, y: pad.t, width: w, height: ih, fill: 'transparent' });
+    rect.append(n('title', {}, `${fmtX(b.from)} 〜 ${fmtX(b.to)}\n${legend[0]} ${b.a}件 / ${legend[1]} ${b.b}件`));
+    svg.append(rect);
+    if (i % every === 0) {
+      svg.append(n('text', {
+        x: x + w / 2, y: H - 26, class: 'chart-lab', 'text-anchor': 'end',
+        transform: `rotate(-40 ${x + w / 2} ${H - 26})`,
+      }, fmtX(b.from)));
+    }
+  });
+
+  svg.append(
+    n('line', { x1: pad.l, x2: W - pad.r, y1: pad.t + ih, y2: pad.t + ih, class: 'chart-axis' }),
+    n('text', { x: pad.l + iw / 2, y: H - 4, class: 'chart-lab', 'text-anchor': 'middle' }, xLabel),
+  );
+  return svg;
+}
+
+/** 目盛りに出す数値を読みやすく丸める */
+function trim(v) {
+  const a = Math.abs(v);
+  if (a >= 10000) return Math.round(v).toLocaleString('ja-JP');
+  if (a >= 100) return String(Math.round(v));
+  if (a >= 10) return v.toFixed(1);
+  return v.toFixed(2);
+}

@@ -297,3 +297,22 @@ table.cmp tr:hover td.lab{background:var(--surface-2)}
 @media (prefers-color-scheme:dark){
   :root:not([data-theme="light"]) .leaflet-tile{filter:brightness(.85) contrast(1.03)}
 }
+
+/* ===== 分析タブ ===== */
+.axisrow{display:flex;align-items:flex-start;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+.axislabel{font-size:12px;color:var(--text-2);font-weight:700;padding-top:7px;min-width:62px;flex-shrink:0}
+.axisbtns{display:flex;flex-wrap:wrap;gap:5px;flex:1;min-width:0}
+.axisbtn{border:1px solid var(--line);background:var(--bg);color:var(--text-2);
+  border-radius:var(--r-sm);padding:6px 12px;font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap}
+.axisbtn:hover{border-color:var(--text-3)}
+.axisbtn.is-on{background:var(--accent);border-color:var(--accent);color:#fff}
+
+.fitline{display:flex;flex-wrap:wrap;gap:6px 18px;margin-top:10px;font-size:12.5px;color:var(--text-2)}
+.fitline span{white-space:nowrap}
+.chart .dot{cursor:pointer}
+.chart .dot:hover{opacity:1;r:8}
+
+.valuetable td,.valuetable th{text-align:right}
+.valuetable td.lab,.valuetable th.lab{text-align:left;min-width:150px}
+.valuetable td.worse{color:var(--bad);font-weight:700}
+.valuetable tr.totalrow td{font-weight:800;background:var(--surface-2)}

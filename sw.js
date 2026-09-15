@@ -1,13 +1,13 @@
 // アプリ本体だけをキャッシュする軽量 Service Worker。
 // 物件データと画像は IndexedDB 側でキャッシュしているのでここでは扱わない。
-const VERSION = 'v12';
+const VERSION = 'v13';
 const CACHE = `bukken-app-${VERSION}`;
 const SHELL = [
   './', './index.html', './app.css',
   './js/main.js', './js/views.js', './js/store.js', './js/github.js',
   './js/util.js', './js/idb.js', './js/image.js', './js/pairing.js',
   './js/ui.js', './js/gallery.js', './js/loan.js', './js/map.js', './js/migrate.js',
-  './js/price.js', './js/chart.js', './js/sales.js', './js/spec.js', './js/theme.js',
+  './js/price.js', './js/chart.js', './js/sales.js', './js/spec.js', './js/theme.js', './js/analysis.js', './js/analytics-view.js',
   './manifest.webmanifest',
 ];
 
