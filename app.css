@@ -366,3 +366,41 @@ table.cmp tr.secrow .secrow-fill{background:var(--surface-2)}
 .sec-caret{display:inline-block;transition:transform .15s ease;font-size:10px;color:var(--text-3)}
 .sec-caret.is-open{transform:rotate(90deg)}
 table.cmp tbody tr:not(.secrow) td.lab{font-weight:600;color:var(--text-2);font-size:12.5px}
+
+/* ===== ライフプラン ===== */
+.picksel-wide{min-width:min(340px,100%)}
+.pos{color:var(--good)}
+.neg{color:var(--bad)}
+
+.stackbar{display:flex;height:30px;border-radius:8px;overflow:hidden;margin-top:14px;
+  border:1px solid var(--line);background:var(--surface-2)}
+.stackseg{display:grid;place-items:center;font-size:10.5px;font-weight:700;color:#fff;
+  background:var(--text-3);min-width:3px;overflow:hidden;white-space:nowrap;
+  border-right:1px solid rgba(255,255,255,.18)}
+.stackseg.is-saving{background:var(--good)}
+.stackseg.is-housing{background:var(--accent)}
+.stackseg.is-left{background:repeating-linear-gradient(45deg,var(--line),var(--line) 5px,transparent 5px,transparent 10px)}
+.stackseg:last-child{border-right:0}
+
+.lpgroup{margin-bottom:9px;overflow:hidden}
+.lpgroup-head{display:flex;align-items:center;gap:9px;padding:12px 14px;cursor:pointer}
+.lpgroup-head:hover{background:var(--surface-2)}
+.lpgroup-name{font-weight:700;font-size:14px}
+.lpgroup-total{font-weight:800;font-size:15px;letter-spacing:-.01em}
+.lpgroup-body{border-top:1px solid var(--line);padding:10px 14px 14px}
+
+.lpitem{display:flex;align-items:center;gap:7px;padding:5px 0;flex-wrap:wrap}
+.lpitem.is-locked{padding:7px 0;border-bottom:1px solid var(--line)}
+.lpitem-name{flex:1;min-width:130px;border:1px solid transparent;background:transparent;
+  border-radius:7px;padding:6px 8px;font-size:13.5px;color:var(--text)}
+input.lpitem-name:hover{border-color:var(--line)}
+input.lpitem-name:focus{border-color:var(--accent);background:var(--bg);outline:none}
+.lpitem-amount{font-weight:700;font-size:13.5px}
+.lpitem-input{width:88px;border:1px solid var(--line);background:var(--bg);border-radius:7px;
+  padding:6px 8px;text-align:right;font-size:13.5px;font-weight:600}
+.chipbtn{border:1px solid var(--line);background:var(--bg);color:var(--text-3);border-radius:999px;
+  padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap}
+.chipbtn:hover{border-color:var(--text-3);color:var(--text-2)}
+.chipbtn.is-on{background:var(--good);border-color:var(--good);color:#fff}
+.chipbtn.is-del:hover{border-color:var(--bad);color:var(--bad)}
+table.cmp tr.is-current td{background:var(--accent-soft)}

@@ -3,8 +3,9 @@
 // v2 で「建物（buildings）」と「部屋（rooms）」に分けた。
 import { DEFAULT_TERMS } from './loan.js';
 import { buildingDefaults, SPEC_GROUPS } from './spec.js';
+import { defaultLifeplan } from './lifeplan.js';
 
-export const CURRENT_SCHEMA = 5;
+export const CURRENT_SCHEMA = 6;
 
 export function migrate(data) {
   let d = structuredClone(data);
@@ -12,6 +13,7 @@ export function migrate(data) {
   if (d.schemaVersion < 3) d = v2ToV3(d);
   if (d.schemaVersion < 4) d = v3ToV4(d);
   if (d.schemaVersion < 5) d = v4ToV5(d);
+  if (d.schemaVersion < 6) d = v5ToV6(d);
   d.settings ||= {};
   d.settings.loan = { ...DEFAULT_TERMS, ...(d.settings.loan || {}) };
   d.settings.places ||= [];   // 職場・駅など、地図上の参照地点
@@ -66,6 +68,14 @@ function v4ToV5(d) {
   const untouched = Object.entries(old).every(([k, v]) => cur[k] === v);
   if (untouched) d.settings.loan = { ...DEFAULT_TERMS };
   d.schemaVersion = 5;
+  return d;
+}
+
+/** v6: 家計シミュレーションの項目を追加。初期値はスライドの内訳をそのまま入れる */
+function v5ToV6(d) {
+  d.settings ||= {};
+  d.settings.lifeplan ||= defaultLifeplan();
+  d.schemaVersion = 6;
   return d;
 }
 

@@ -204,6 +204,29 @@ SUUMO の「元金 27.5万 / 金利 9.7万」は **0.7% / 50年 / 元金均等�
 node tools/verify-loan.mjs
 ```
 
+## 家計シミュレーション
+
+`js/lifeplan.js` が計算、`js/lifeplan-view.js` が画面。初期値は
+「1.18億円の住宅購入 家計シミュレーション」スライドの内訳をそのまま入れてある
+（収入120万／支出119.1万／残り+0.9万）。`tools/verify-lifeplan.mjs` で突き合わせられる。
+
+```
+settings.lifeplan = {
+  income: [{ id, name, amount }],
+  bonus: { annual, include },          // 既定では計画に含めない（上振れバッファ）
+  groups: [{ id, name, kind, items: [{ id, name, amount, saving, temporary }] }],
+  selectedRoomId,                      // null なら住居費の手入力値を使う
+}
+```
+
+- `kind: 'housing'` のグループは、部屋を選ぶと**ローン返済＋管理費＋修繕積立金に差し替わる**
+- `saving: true` の項目は消費ではなく資産形成として扱い、貯蓄率に算入する
+  （NISA・積立保険・旅行積立・家具家電積立。毎月使い切る支出ではないため）
+- `temporary: true` は期限付きの支出（車ローン・奨学金）。完済後シナリオで除外できる
+
+`affordablePrice()` は、毎月の残りがちょうど0になる購入価格を二分探索で逆算する。
+返済額は年数と金利に対して単調なので、閉じた式を解かずに済む。
+
 ## 地図
 
 `js/map.js`。**API キーが不要**な組み合わせを選んでいる。

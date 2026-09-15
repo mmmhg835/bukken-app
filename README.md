@@ -44,6 +44,8 @@ js/loan.js            住宅ローン試算（元利均等・元金均等）
 js/price.js           販売活動の分析（販売期間・価格改定・値下げ幅）
 js/chart.js           グラフ描画（ステップ・散布図・ヒストグラム、依存なしSVG）
 js/analysis.js        集計と回帰（相場・割安度・エリア別）
+js/lifeplan.js        家計シミュレーションの計算
+js/lifeplan-view.js   ライフプランタブの画面
 js/analytics-view.js  分析タブの画面
 js/sales.js           部屋詳細の「販売活動」セクション
 js/map.js             地図表示と住所ジオコーディング（国土地理院）

@@ -1,0 +1,297 @@
+// ライフプランタブ。項目を編集しながら、物件ごとの月次収支を試算する。
+import { store } from './store.js';
+import { el, fmt, mount, toast, uid } from './util.js';
+import { kv, select, toggle, segmented } from './ui.js';
+import { calcPlan, housingCost, affordablePrice } from './lifeplan.js';
+import { derive } from './util.js';
+
+const ui = { afterLoans: false, openGroups: null };
+
+export function renderLifeplan(root, rerender) {
+  const plan = store.lifeplan;
+  const room = plan.selectedRoomId ? store.room(plan.selectedRoomId) : null;
+  const building = room ? store.building(room.buildingId) : null;
+  const res = calcPlan(plan, room, building, store.loanTerms, { excludeTemporary: ui.afterLoans });
+
+  if (!ui.openGroups) ui.openGroups = new Set(['住居費']);
+  const mark = () => { store.markDirty(); rerender(); };
+
+  mount(root,
+    propertyPicker(plan, room, building, rerender),
+    summary(res, plan, rerender),
+    housingDetail(res, room, building),
+    groupsSection(plan, res, mark, rerender),
+    incomeSection(plan, mark),
+    scenarioSection(plan, room, building),
+  );
+}
+
+/* ===== 物件の選択 ===== */
+function propertyPicker(plan, room, building, rerender) {
+  const options = [['', '現在の想定（手入力の住居費）']];
+  for (const b of store.buildings) {
+    for (const r of store.roomsOf(b.id)) {
+      options.push([r.id, `${b.name} ${r.label}　${fmt.man1(r.price)}万円`]);
+    }
+  }
+  return el('div', { class: 'section' },
+    el('h3', {}, '試算する物件'),
+    el('div', { class: 'panel' },
+      el('div', { class: 'panel-controls' },
+        el('div', { class: 'ctlrow' },
+          el('span', { class: 'ctllabel' }, el('i', { class: 'ctlicon' }, '⌂'), '物件'),
+          el('div', { style: 'display:flex;gap:16px;align-items:center;flex-wrap:wrap' },
+            select(plan.selectedRoomId ?? '', options, (v) => {
+              plan.selectedRoomId = v || null;
+              store.markDirty();
+              rerender();
+            }, 'picksel picksel-wide'),
+            room
+              ? el('a', {
+                href: '#', class: 'tiny',
+                onclick: (e) => { e.preventDefault(); location.hash = `#/r/${room.id}`; },
+              }, '物件の詳細を見る')
+              : null,
+          )),
+        el('div', { class: 'ctlrow' },
+          el('span', { class: 'ctllabel' }, el('i', { class: 'ctlicon' }, '◷'), 'シナリオ'),
+          toggle('期限付きの支出（車ローン・奨学金）が終わった後で試算',
+            ui.afterLoans, (v) => { ui.afterLoans = v; rerender(); })),
+      )),
+  );
+}
+
+/* ===== サマリー ===== */
+function summary(res, plan, rerender) {
+  const positive = res.balance >= 0;
+  return el('div', { class: 'section' },
+    el('div', { class: 'calcgrid' },
+      kv('収入合計', `${fmt.n(res.income, 1)}万円`, '手取り／月'),
+      kv('支出合計', `${fmt.n(res.expense, 1)}万円`, '住居費・生活費・積立'),
+      kv('毎月の残り', el('span', { class: positive ? 'pos' : 'neg' },
+        `${positive ? '+' : ''}${fmt.n(res.balance, 1)}万円`), positive ? '黒字' : '赤字'),
+      kv('先取りの資産形成', `${fmt.n(res.saving, 1)}万円`, `貯蓄率 ${res.savingRate.toFixed(1)}%`),
+      kv('毎月積み上がる額', `${fmt.n(res.totalLeft, 1)}万円`, '先取り＋残り'),
+      kv('年間', `${fmt.n(res.yearlySaving, 0)}万円`, '積み上がる額 × 12'),
+    ),
+    el('div', { class: 'stackbar' }, res.groups.map((g, i) =>
+      g.total > 0
+        ? el('span', {
+          class: 'stackseg' + (g.kind === 'saving' ? ' is-saving' : g.kind === 'housing' ? ' is-housing' : ''),
+          style: `flex:${g.total}`, title: `${g.name} ${fmt.n(g.total, 1)}万円`,
+        }, g.total / res.income > 0.09 ? g.name : '')
+        : null),
+      res.balance > 0
+        ? el('span', { class: 'stackseg is-left', style: `flex:${res.balance}`, title: `残り ${fmt.n(res.balance, 1)}万円` })
+        : null),
+    plan.bonus
+      ? el('div', { class: 'tiny muted', style: 'margin-top:10px' },
+        `賞与 年${fmt.n(plan.bonus.annual, 1)}万円は`
+        + (plan.bonus.include ? '計画に含めています。' : '計画に含めていません（上振れバッファ）。'),
+        el('button', {
+          class: 'btn btn-sm', style: 'margin-left:10px',
+          onclick: () => { plan.bonus.include = !plan.bonus.include; store.markDirty(); rerender(); },
+        }, plan.bonus.include ? '計画から外す' : '計画に含める'))
+      : null,
+  );
+}
+
+/* ===== 住居費の内訳 ===== */
+function housingDetail(res, room, building) {
+  if (!res.housingFromRoom) {
+    return el('div', { class: 'section' },
+      el('div', { class: 'hint' },
+        '物件を選ぶと、その部屋のローン返済・管理費・修繕積立金から住居費を自動計算します。'));
+  }
+  const manual = store.lifeplan.groups.find((g) => g.kind === 'housing').items
+    .reduce((s, it) => s + (Number(it.amount) || 0), 0);
+  const diff = res.housingFromRoom.total - manual;
+  const t = { ...store.loanTerms, ...(room.loan || {}) };
+
+  return el('div', { class: 'section' },
+    el('h3', {}, `${building.name} ${room.label} の住居費`),
+    el('div', { class: 'calcgrid' },
+      ...res.housingFromRoom.items.map((it) => kv(it.name, `${fmt.n(it.amount, 1)}万円`)),
+      kv('住居費 合計', `${fmt.n(res.housingFromRoom.total, 1)}万円`,
+        `ローン ${t.rate}% ${t.years}年`),
+      kv('現在の想定との差', el('span', { class: diff <= 0 ? 'pos' : 'neg' },
+        `${diff > 0 ? '+' : ''}${fmt.n(diff, 1)}万円`), `手入力 ${fmt.n(manual, 1)}万円`),
+    ));
+}
+
+/* ===== 支出グループ ===== */
+function groupsSection(plan, res, mark, rerender) {
+  return el('div', { class: 'section' },
+    el('h3', {}, '支出の内訳'),
+    plan.groups.map((g) => {
+      const calc = res.groups.find((x) => x.id === g.id);
+      const open = ui.openGroups.has(g.name);
+      const locked = calc?.fromRoom;
+
+      return el('div', { class: 'card lpgroup' },
+        el('div', {
+          class: 'lpgroup-head',
+          onclick: () => { open ? ui.openGroups.delete(g.name) : ui.openGroups.add(g.name); rerender(); },
+        },
+          el('span', { class: 'sec-caret' + (open ? ' is-open' : '') }, '▸'),
+          el('span', { class: 'lpgroup-name' }, g.name),
+          locked ? el('span', { class: 'badge badge-ok' }, '物件から自動') : null,
+          el('span', { class: 'spacer' }),
+          el('span', { class: 'lpgroup-total' }, `${fmt.n(calc?.total ?? 0, 1)}万円`),
+        ),
+        open
+          ? el('div', { class: 'lpgroup-body' },
+            (locked ? calc.items : g.items).map((it) => itemRow(g, it, mark, rerender, locked)),
+            locked
+              ? el('div', { class: 'tiny muted', style: 'padding:8px 2px' },
+                '選択中の物件から計算しています。手入力に戻すには、上で「現在の想定」を選んでください。')
+              : el('button', {
+                class: 'btn btn-sm', style: 'margin-top:8px',
+                onclick: () => {
+                  g.items.push({ id: uid('it'), name: '新しい項目', amount: 0 });
+                  ui.openGroups.add(g.name); mark();
+                },
+              }, '＋ 項目を追加'),
+          )
+          : null,
+      );
+    }),
+    el('button', {
+      class: 'btn btn-sm', style: 'margin-top:4px',
+      onclick: () => {
+        plan.groups.push({ id: uid('g'), name: '新しい分類', kind: 'expense', items: [] });
+        mark();
+      },
+    }, '＋ 分類を追加'),
+  );
+}
+
+function itemRow(group, item, mark, rerender, locked) {
+  if (locked) {
+    return el('div', { class: 'lpitem is-locked' },
+      el('span', { class: 'lpitem-name' }, item.name),
+      el('span', { class: 'lpitem-amount' }, `${fmt.n(item.amount, 1)}万円`),
+    );
+  }
+  return el('div', { class: 'lpitem' },
+    el('input', {
+      type: 'text', class: 'lpitem-name', value: item.name,
+      oninput: (e) => { item.name = e.target.value; store.markDirty(); },
+    }),
+    el('input', {
+      type: 'number', step: 'any', inputmode: 'decimal', class: 'lpitem-input', value: item.amount ?? '',
+      oninput: (e) => { item.amount = e.target.value === '' ? 0 : Number(e.target.value); mark(); },
+    }),
+    el('span', { class: 'tiny muted' }, '万円'),
+    el('button', {
+      class: 'chipbtn' + (item.saving ? ' is-on' : ''),
+      title: '資産形成・積立として扱う（貯蓄率に算入）',
+      onclick: () => { item.saving = !item.saving; mark(); },
+    }, '積立'),
+    el('button', {
+      class: 'chipbtn' + (item.temporary ? ' is-on' : ''),
+      title: '期限付きの支出（完済すると無くなる）',
+      onclick: () => { item.temporary = !item.temporary; mark(); },
+    }, '期限付'),
+    el('button', {
+      class: 'chipbtn is-del',
+      onclick: () => {
+        group.items.splice(group.items.indexOf(item), 1);
+        mark();
+      },
+    }, '削除'),
+  );
+}
+
+/* ===== 収入 ===== */
+function incomeSection(plan, mark) {
+  return el('div', { class: 'section' },
+    el('h3', {}, '収入'),
+    el('div', { class: 'card lpgroup-body', style: 'padding:14px' },
+      plan.income.map((it) => el('div', { class: 'lpitem' },
+        el('input', {
+          type: 'text', class: 'lpitem-name', value: it.name,
+          oninput: (e) => { it.name = e.target.value; store.markDirty(); },
+        }),
+        el('input', {
+          type: 'number', step: 'any', inputmode: 'decimal', class: 'lpitem-input', value: it.amount ?? '',
+          oninput: (e) => { it.amount = e.target.value === '' ? 0 : Number(e.target.value); mark(); },
+        }),
+        el('span', { class: 'tiny muted' }, '万円'),
+        el('button', {
+          class: 'chipbtn is-del',
+          onclick: () => { plan.income.splice(plan.income.indexOf(it), 1); mark(); },
+        }, '削除'),
+      )),
+      el('div', { class: 'lpitem' },
+        el('span', { class: 'lpitem-name' }, '賞与（年額）'),
+        el('input', {
+          type: 'number', step: 'any', inputmode: 'decimal', class: 'lpitem-input',
+          value: plan.bonus?.annual ?? '',
+          oninput: (e) => { plan.bonus.annual = Number(e.target.value) || 0; mark(); },
+        }),
+        el('span', { class: 'tiny muted' }, '万円/年'),
+      ),
+      el('button', {
+        class: 'btn btn-sm', style: 'margin-top:8px',
+        onclick: () => { plan.income.push({ id: uid('i'), name: '新しい収入', amount: 0 }); mark(); },
+      }, '＋ 収入を追加'),
+    ));
+}
+
+/* =========================================================
+   物件ごとの比較と、買える上限の逆算
+   ========================================================= */
+function scenarioSection(plan, currentRoom, currentBuilding) {
+  const rows = [];
+  for (const b of store.buildings) {
+    for (const r of store.roomsOf(b.id)) {
+      const res = calcPlan(plan, r, b, store.loanTerms, { excludeTemporary: ui.afterLoans });
+      rows.push({ b, r, res, housing: housingCost(r, b, store.loanTerms) });
+    }
+  }
+  if (!rows.length) return null;
+  rows.sort((a, x) => x.res.balance - a.res.balance);
+
+  const afford = affordablePrice(plan, currentRoom || rows[0].r, currentBuilding || rows[0].b, store.loanTerms);
+
+  return el('div', { class: 'section' },
+    el('h3', {}, '物件ごとの月次収支'),
+    el('div', { class: 'hint' },
+      '登録済みの部屋すべてについて、その物件を買った場合の毎月の残りを並べています。'),
+    el('div', { class: 'tablewrap' },
+      el('table', { class: 'cmp valuetable' },
+        el('thead', {}, el('tr', {},
+          el('th', { class: 'lab' }, '部屋'),
+          el('th', {}, '価格'),
+          el('th', {}, 'ローン'),
+          el('th', {}, '管理＋修繕'),
+          el('th', {}, '住居費'),
+          el('th', {}, '毎月の残り'),
+          el('th', {}, '積み上がる額'),
+        )),
+        el('tbody', {}, rows.map(({ b, r, res, housing }) => el('tr', {
+          class: r.id === plan.selectedRoomId ? 'is-current' : null,
+        },
+          el('td', { class: 'lab' },
+            el('div', { class: 'tiny muted' }, b.name),
+            el('a', { href: '#', onclick: (e) => { e.preventDefault(); location.hash = `#/r/${r.id}`; } }, r.label)),
+          el('td', {}, `${fmt.man1(r.price)}万`),
+          el('td', {}, `${fmt.n(housing.items[0].amount, 1)}万`),
+          el('td', {}, `${fmt.n(housing.items[1].amount + housing.items[2].amount, 1)}万`),
+          el('td', {}, `${fmt.n(housing.total, 1)}万`),
+          el('td', { class: res.balance >= 0 ? 'best' : 'worse' },
+            `${res.balance >= 0 ? '+' : ''}${fmt.n(res.balance, 1)}万`),
+          el('td', {}, `${fmt.n(res.totalLeft, 1)}万`),
+        ))),
+      )),
+    el('div', { class: 'calcgrid', style: 'margin-top:14px' },
+      kv('住居費に回せる上限', `${fmt.n(afford.budget, 1)}万円`, '毎月の残りが0になる水準'),
+      kv('うちローンに回せる額', `${fmt.n(afford.loanBudget, 1)}万円`, '管理費・修繕を差し引いた額'),
+      kv('買える価格の上限', `${fmt.man1(Math.round(afford.price))}万円`,
+        `${store.loanTerms.rate}% ${store.loanTerms.years}年で試算`),
+    ),
+    el('div', { class: 'tiny muted', style: 'margin-top:8px' },
+      '上限は毎月の残りがちょうど0になる価格です。余裕を持たせるなら、ここから引いて考えてください。'),
+  );
+}

@@ -188,6 +188,9 @@ class Store extends EventTarget {
     this.markDirty();
   }
 
+  // ===== 家計シミュレーション =====
+  get lifeplan() { return this.data.settings.lifeplan; }
+
   // ===== 参照地点（職場・駅など） =====
   get places() { return this.data.settings.places || []; }
 

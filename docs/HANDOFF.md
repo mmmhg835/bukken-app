@@ -39,6 +39,7 @@ Claude と ChatGPT で交互に開発するときは、相手に最初にこれ�
 | ローン計算の仕様変更 | `js/loan.js`（変更後は `node tools/verify-loan.mjs` を実行） |
 | 販売活動の指標を追加 | `js/price.js` の `analyze()` |
 | グラフの見た目 | `js/chart.js` |
+| 家計の項目を変更 | `js/lifeplan.js` の `defaultLifeplan()`（変更後は `node tools/verify-lifeplan.mjs`） |
 | 分析の軸を追加 | `js/analysis.js` の `METRICS` / `ATTRS` / `GROUPINGS` |
 | 分析画面の構成 | `js/analytics-view.js` |
 | 比較対象の選択 | `js/views.js` の `selector()` |
