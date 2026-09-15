@@ -1,7 +1,7 @@
 // ライフプランタブ。項目を編集しながら、物件ごとの月次収支を試算する。
 import { store } from './store.js';
 import { el, fmt, mount, toast, uid, preserveFocus } from './util.js';
-import { kv, select, toggle, segmented } from './ui.js';
+import { kv, select, toggle, segmented, numberInput } from './ui.js';
 import {
   calcPlan, housingCost, affordablePrice, waterfall,
   CATEGORIES, isOn, categoryOf, incomePatterns, project, milestones,
@@ -315,10 +315,9 @@ function burdenView(plan, room, res, mark, rerender) {
 
 function incomeSettings(plan, mark) {
   const g = plan.grossIncome;
-  const field = (who, key, fkey) => el('input', {
-    type: 'number', step: 'any', inputmode: 'decimal', class: 'lpitem-input',
-    value: g[who][key] ?? '', 'data-fkey': `${fkey}-${who}`,
-    oninput: (e) => { g[who][key] = e.target.value === '' ? 0 : Number(e.target.value); mark(); },
+  const field = (who, key, fkey) => numberInput({
+    value: g[who][key], cls: 'lpitem-input', fkey: `${fkey}-${who}`,
+    onInput: (num) => { g[who][key] = num ?? 0; mark(); },
   });
   const row = (who) => el('div', { class: 'incrow' },
     el('input', {
@@ -433,10 +432,9 @@ function itemRow(group, item, mark, rerender, locked) {
       type: 'text', class: 'lpitem-name', value: item.name,
       oninput: (e) => { item.name = e.target.value; store.markDirty(); },
     }),
-    el('input', {
-      type: 'number', step: 'any', inputmode: 'decimal', class: 'lpitem-input',
-      value: item.amount ?? '', 'data-fkey': `amt-${item.id}`,
-      oninput: (e) => { item.amount = e.target.value === '' ? 0 : Number(e.target.value); mark(); },
+    numberInput({
+      value: item.amount, cls: 'lpitem-input', fkey: `amt-${item.id}`,
+      onInput: (num) => { item.amount = num ?? 0; mark(); },
     }),
     el('span', { class: 'tiny muted' }, '万円'),
     el('select', {
@@ -455,10 +453,9 @@ function itemRow(group, item, mark, rerender, locked) {
     item.temporary
       ? el('span', { class: 'remain' },
         'あと',
-        el('input', {
-          type: 'number', step: '1', min: '0', inputmode: 'numeric',
-          value: item.remainingYears ?? '', 'data-fkey': `rem-${item.id}`,
-          oninput: (e) => { item.remainingYears = e.target.value === '' ? null : Number(e.target.value); mark(); },
+        numberInput({
+          value: item.remainingYears, fkey: `rem-${item.id}`, integer: true,
+          onInput: (num) => { item.remainingYears = num; mark(); },
         }),
         '年')
       : null,
@@ -486,10 +483,9 @@ function incomeSection(plan, mark) {
           type: 'text', class: 'lpitem-name', value: it.name,
           oninput: (e) => { it.name = e.target.value; store.markDirty(); },
         }),
-        el('input', {
-          type: 'number', step: 'any', inputmode: 'decimal', class: 'lpitem-input',
-          value: it.amount ?? '', 'data-fkey': `inc-${it.id}`,
-          oninput: (e) => { it.amount = e.target.value === '' ? 0 : Number(e.target.value); mark(); },
+        numberInput({
+          value: it.amount, cls: 'lpitem-input', fkey: `inc-${it.id}`,
+          onInput: (num) => { it.amount = num ?? 0; mark(); },
         }),
         el('span', { class: 'tiny muted' }, '万円'),
         el('button', {
@@ -500,10 +496,9 @@ function incomeSection(plan, mark) {
       el('div', { class: 'lpitem' + (plan.bonus?.include ? '' : ' is-off') },
         miniSwitch(!!plan.bonus?.include, (v) => { plan.bonus.include = v; mark(); }),
         el('span', { class: 'lpitem-name' }, '賞与（年額）'),
-        el('input', {
-          type: 'number', step: 'any', inputmode: 'decimal', class: 'lpitem-input',
-          value: plan.bonus?.annual ?? '', 'data-fkey': 'bonus',
-          oninput: (e) => { plan.bonus.annual = Number(e.target.value) || 0; mark(); },
+        numberInput({
+          value: plan.bonus?.annual, cls: 'lpitem-input', fkey: 'bonus',
+          onInput: (num) => { plan.bonus.annual = num ?? 0; mark(); },
         }),
         el('span', { class: 'tiny muted' }, '万円/年'),
         el('span', { class: 'tiny muted' },

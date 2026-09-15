@@ -113,6 +113,29 @@ const checks = [
     if (get('room', 'floor') !== 20) throw new Error('所在階を読めていない');
     if (get('building', 'totalFloors') !== 40) throw new Error('総階数を所在階と取り違えている');
   }],
+  ['numberInput', () => {
+    const { sanitizeNumeric, numOrNull } = mods.util;
+    const cases = [
+      ['1.5', '1.5'], ['1.', '1.'], ['0.', '0.'], ['.5', '.5'],
+      ['１．５', '1.5'],                 // 全角で打たれても通す
+      ['1.2.3', '1.23'],                // 2つ目以降の小数点は落とす
+      ['12a3', '123'], ['-3', '-3'],
+      ['3-4', '34'],                    // 途中で打たれたマイナスは押し間違いとみなして捨てる
+      ['', ''],
+    ];
+    for (const [input, want] of cases) {
+      const got = sanitizeNumeric(input);
+      if (got !== want) throw new Error(`sanitize ${JSON.stringify(input)} → ${JSON.stringify(got)}（期待 ${JSON.stringify(want)}）`);
+    }
+    if (sanitizeNumeric('2.5', { integer: true }) !== '25') throw new Error('整数欄で小数点が残っている');
+    // 入力途中でも壊れないこと（ここで null を返すと打った小数点が消える）
+    if (numOrNull('1.') !== 1) throw new Error('「1.」を読めていない');
+    if (numOrNull('') !== null || numOrNull('-') !== null || numOrNull('.') !== null) {
+      throw new Error('未入力を null として扱えていない');
+    }
+    if (numOrNull('0') !== 0) throw new Error('0 を null にしてしまっている');
+    if (numOrNull('1.5') !== 1.5) throw new Error('小数を読めていない');
+  }],
   ['import', () => {
     const { parseListing } = mods.parse;
     const { mergeInto } = mods['import-view'];

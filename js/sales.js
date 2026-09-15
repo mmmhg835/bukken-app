@@ -1,7 +1,7 @@
 // 部屋詳細の「販売活動」セクション。掲載状況・価格推移の入力と指標・グラフ。
 import { store } from './store.js';
 import { el, fmt, toast, mount, preserveFocus } from './util.js';
-import { kv, select } from './ui.js';
+import { kv, select, numberInput } from './ui.js';
 import { analyze, syncPrice, formatDate, today, LISTING_STATUS, CLOSED_STATUS } from './price.js';
 import { stepChart } from './chart.js';
 
@@ -104,10 +104,9 @@ function historyEditor(room, repaint) {
       type: 'date', value: h.date ?? '', 'data-fkey': `hist-date-${i}`,
       oninput: (e) => { h.date = e.target.value || null; repaint(); },
     }),
-    el('input', {
-      type: 'number', step: 'any', inputmode: 'decimal', value: h.price ?? '',
-      placeholder: '価格（万円）', 'data-fkey': `hist-price-${i}`,
-      oninput: (e) => { h.price = e.target.value === '' ? null : Number(e.target.value); repaint(); },
+    numberInput({
+      value: h.price, fkey: `hist-price-${i}`, placeholder: '価格（万円）',
+      onInput: (num) => { h.price = num; repaint(); },
     }),
     el('input', {
       type: 'text', value: h.note ?? '', placeholder: 'メモ（例: 値下げ / 登録時）',

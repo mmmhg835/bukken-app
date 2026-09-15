@@ -2,7 +2,7 @@
 import { calcLoan, DEFAULT_TERMS } from './loan.js';
 
 /** 表示用の版数。更新が届いているかを設定画面で確認できるようにしている */
-export const APP_VERSION = 'v35';
+export const APP_VERSION = 'v36';
 
 export const TSUBO_SQM = 3.305785;          // 1坪 = 3.305785㎡
 export const STATUSES = ['検討中', '内見済', '本命', '申込検討', '見送り'];
@@ -89,22 +89,60 @@ export function mount(node, ...children) {
 }
 
 /**
- * 再描画をまたいで入力欄のフォーカスとカーソル位置を保つ。
+ * 全角の数字・記号を半角にし、数値として成り立たない文字を落とす。
+ * 入力途中の「1.」「-」はそのまま残す。ここで捨てると打っている最中に消えてしまう。
+ */
+export function sanitizeNumeric(raw, { integer = false } = {}) {
+  let s = String(raw ?? '').normalize('NFKC').replace(/[^\d.\-]/g, '');
+  if (integer) s = s.replace(/\./g, '');
+  const neg = s.startsWith('-');
+  s = s.replace(/-/g, '');                       // マイナスは先頭の1つだけ
+  const dot = s.indexOf('.');
+  if (dot >= 0) s = s.slice(0, dot + 1) + s.slice(dot + 1).replace(/\./g, '');
+  return (neg ? '-' : '') + s;
+}
+
+/** 入力途中（''・'-'・'.'・'1.'）でも壊れない数値の読み取り */
+export function numOrNull(s) {
+  const t = String(s ?? '').trim();
+  if (t === '' || t === '-' || t === '.' || t === '-.') return null;
+  const v = Number(t);
+  return isNaN(v) ? null : v;
+}
+
+/**
+ * 再描画のあと、元の欄へ自動でフォーカスを戻している最中かどうか。
+ * 数値欄はタップ時に全選択するが、この戻しでは選択し直さない
+ * （1文字打つたびに全選択されてしまうため）。
+ */
+let restoringFocus = false;
+export const isRestoringFocus = () => restoringFocus;
+
+/**
+ * 再描画をまたいで入力欄のフォーカス・カーソル位置・打ちかけの文字列を保つ。
  * 金額を1文字打つたびに描き直す画面では、これが無いと続けて入力できない。
  * 対象の要素には data-fkey で安定した識別子を付けておく。
+ *
+ * 打ちかけの文字列まで戻すのは、「1.」のように数値として未完成な状態を
+ * 描き直しで正規化すると、打った小数点がその場で消えてしまうため。
  */
 export function preserveFocus(render) {
   const active = document.activeElement;
   const key = active?.dataset?.fkey;
   const start = active?.selectionStart ?? null;
   const end = active?.selectionEnd ?? null;
+  const typed = active?.dataset?.raw != null ? active.value : null;
   render();
   if (!key) return;
   const next = document.querySelector(`[data-fkey="${CSS.escape(key)}"]`);
   if (!next) return;
-  next.focus();
-  // input[type=number] では setSelectionRange が使えないので無視してよい
-  try { if (start != null) next.setSelectionRange(start, end); } catch { /* noop */ }
+  restoringFocus = true;
+  try {
+    next.focus();
+    if (typed != null) next.value = typed;
+    if (start != null) next.setSelectionRange(start, end);
+  } catch { /* type によっては選択範囲を扱えないので無視してよい */ }
+  restoringFocus = false;
 }
 
 export function toast(msg, isErr = false) {

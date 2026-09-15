@@ -1,5 +1,5 @@
 // 画面をまたいで使う小さな部品。
-import { el, fmt } from './util.js';
+import { el, fmt, sanitizeNumeric, numOrNull, isRestoringFocus } from './util.js';
 
 export function labeled(label, node) {
   return el('label', { class: 'tiny muted', style: 'display:flex;gap:6px;align-items:center' }, label, node);
@@ -18,23 +18,65 @@ export function kv(k, v, sub = null) {
 }
 
 /**
+ * 数値の入力欄。
+ *
+ * `type="number"` は使わない。入力途中の「1.」や「0.」を value から読み取れず
+ * 空文字が返るため、1文字ごとに描き直す画面では打った小数点がその場で消える。
+ * text + inputmode=decimal にして、打っている文字列をそのまま持たせる。
+ * data-raw は「打ちかけの文字列を保つ欄」の目印で、preserveFocus が見る。
+ *
+ * @param {object} o
+ * @param {number|null} o.value 現在値
+ * @param {Function} o.onInput (数値|null, 文字列) を受け取る
+ * @param {boolean} [o.integer] 小数点を受け付けない欄（年数など）
+ */
+export function numberInput({ value, onInput, fkey = null, integer = false, cls = null, placeholder = null }) {
+  const input = el('input', {
+    type: 'text', class: cls, placeholder,
+    inputmode: integer ? 'numeric' : 'decimal',
+    autocomplete: 'off', autocorrect: 'off', spellcheck: 'false',
+    'data-raw': '', 'data-fkey': fkey,
+    value: value ?? '',
+    // タップしたら全選択する。既存の数字を消してから打ち直す手間をなくすため
+    onfocus: (e) => {
+      if (isRestoringFocus()) return;
+      const t = e.target;
+      setTimeout(() => { try { t.select(); } catch { /* noop */ } }, 0);
+    },
+    oninput: (e) => {
+      const t = e.target;
+      const before = t.value;
+      const after = sanitizeNumeric(before, { integer });
+      if (after !== before) {
+        // 弾いた文字のぶんだけカーソルを戻す（末尾へ飛ぶのを防ぐ）
+        const pos = Math.max(0, (t.selectionStart ?? after.length) - (before.length - after.length));
+        t.value = after;
+        try { t.setSelectionRange(pos, pos); } catch { /* noop */ }
+      }
+      onInput(numOrNull(after), after);
+    },
+  });
+  return input;
+}
+
+/**
  * オブジェクトの1項目を編集する入力欄。
  * @param {object} obj 対象
  * @param {[string,string,string,boolean]} spec [キー, ラベル, type, 横幅いっぱいか]
  * @param {Function} onChange
  */
 export function field(obj, [key, label, type = 'text', wide = false], onChange) {
-  const isNum = type === 'number';
-  const input = type === 'textarea'
-    ? el('textarea', { oninput: (e) => { obj[key] = e.target.value; onChange(key); } }, obj[key] ?? '')
-    : el('input', {
-      type, value: obj[key] ?? '', step: isNum ? 'any' : null, inputmode: isNum ? 'decimal' : null,
-      oninput: (e) => {
-        const raw = e.target.value;
-        obj[key] = isNum ? (raw === '' ? null : Number(raw)) : raw;
-        onChange(key);
-      },
-    });
+  const input = type === 'number'
+    ? numberInput({
+      value: obj[key], fkey: `f-${key}`,
+      onInput: (num) => { obj[key] = num; onChange(key); },
+    })
+    : type === 'textarea'
+      ? el('textarea', { oninput: (e) => { obj[key] = e.target.value; onChange(key); } }, obj[key] ?? '')
+      : el('input', {
+        type, value: obj[key] ?? '',
+        oninput: (e) => { obj[key] = e.target.value; onChange(key); },
+      });
   return el('div', { class: 'field' + (wide || type === 'textarea' ? ' wide' : '') },
     el('label', {}, label), input);
 }

@@ -1,6 +1,6 @@
 // 画面描画。すべて store の状態から組み立てる。
 import { store } from './store.js';
-import { el, fmt, derive, toast, mount, STATUSES, debounce, APP_VERSION } from './util.js';
+import { el, fmt, derive, toast, mount, preserveFocus, STATUSES, debounce, APP_VERSION } from './util.js';
 import { labeled, select, kv, field, ratingPicker, statusBadge, section, tagPicker, segmented, toggle } from './ui.js';
 import { gallerySection } from './gallery.js';
 import { calcLoan, METHODS, DEFAULT_TERMS } from './loan.js';
@@ -595,7 +595,8 @@ function paintLoan(box, r, b, repaint) {
   const loan = calcLoan(r.price, terms);
 
   const editable = usingOwn ? r.loan : store.loanTerms;
-  const onEdit = () => { store.markDirty(); repaint(); };
+  // 金利や頭金を1文字打つたびに入力欄ごと組み直すので、フォーカスを明示的に保つ
+  const onEdit = () => { store.markDirty(); preserveFocus(repaint); };
 
   const inputs = el('div', { class: 'card form' },
     field(editable, ['downPayment', '頭金（万円）', 'number'], onEdit),
