@@ -2,8 +2,8 @@
 
 export const DEFAULT_TERMS = {
   downPayment: 0,     // 頭金（万円）
-  rate: 0.7,          // 年利（%）
-  years: 35,          // 返済年数
+  rate: 1.275,        // 年利（%）
+  years: 50,          // 返済年数
   method: 'equal',    // equal: 元利均等 / principal: 元金均等
   costRate: 7,        // 諸費用（物件価格に対する％の目安）
 };

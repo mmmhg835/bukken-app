@@ -354,3 +354,15 @@ table.cmp tr:hover td.lab{background:var(--surface-2)}
 .valuetable td.worse{color:var(--bad);font-weight:700}
 .valuetable tr.totalrow td{font-weight:800;background:var(--surface-2)}
 .hint{font-size:12.5px;line-height:1.75;color:var(--text-2);margin-bottom:12px}
+
+/* ===== 比較表のセクション ===== */
+.cmptoolbar{align-items:center;gap:14px}
+table.cmp tr.secrow td{background:var(--surface-2);border-bottom:1px solid var(--line);padding:0}
+table.cmp tr.secrow .secrow-lab{
+  cursor:pointer;font-size:12.5px;font-weight:800;letter-spacing:.03em;color:var(--text-2);
+  padding:9px 12px;display:flex;align-items:center;gap:7px;white-space:nowrap}
+table.cmp tr.secrow .secrow-lab:hover{color:var(--accent)}
+table.cmp tr.secrow .secrow-fill{background:var(--surface-2)}
+.sec-caret{display:inline-block;transition:transform .15s ease;font-size:10px;color:var(--text-3)}
+.sec-caret.is-open{transform:rotate(90deg)}
+table.cmp tbody tr:not(.secrow) td.lab{font-weight:600;color:var(--text-2);font-size:12.5px}

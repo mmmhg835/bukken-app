@@ -36,7 +36,7 @@ Claude と ChatGPT で交互に開発するときは、相手に最初にこれ�
 | 配色・テーマ | `js/theme.js` と `app.css` の `:root` |
 | 公開後に更新が届かない | `sw.js` の `VERSION` と `util.js` の `APP_VERSION` を揃えて上げる |
 | 部屋の項目を追加 | `js/views.js` の `ROOM_FIELDS` |
-| ローン計算の仕様変更 | `js/loan.js` |
+| ローン計算の仕様変更 | `js/loan.js`（変更後は `node tools/verify-loan.mjs` を実行） |
 | 販売活動の指標を追加 | `js/price.js` の `analyze()` |
 | グラフの見た目 | `js/chart.js` |
 | 分析の軸を追加 | `js/analysis.js` の `METRICS` / `ATTRS` / `GROUPINGS` |
@@ -44,7 +44,7 @@ Claude と ChatGPT で交互に開発するときは、相手に最初にこれ�
 | 比較対象の選択 | `js/views.js` の `selector()` |
 | 地図・ジオコーディング | `js/map.js` |
 | スキーマ変更と移行 | `js/migrate.js`（`CURRENT_SCHEMA` を上げる） |
-| 比較表に項目を追加 | `js/views.js` の `renderCompare()` 内 `defs` |
+| 比較表に項目を追加 | `js/views.js` の `compareSections()` |
 | 自動計算のルール変更 | `js/util.js` の `derive()` |
 | 画像カテゴリを増やす | `js/util.js` の `CATEGORIES` |
 | 検討ステータスを増やす | `js/util.js` の `STATUSES` |

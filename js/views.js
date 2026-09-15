@@ -1,7 +1,7 @@
 // 画面描画。すべて store の状態から組み立てる。
 import { store } from './store.js';
 import { el, fmt, derive, toast, mount, STATUSES, debounce, APP_VERSION } from './util.js';
-import { labeled, select, kv, field, ratingPicker, statusBadge, section, tagPicker, segmented } from './ui.js';
+import { labeled, select, kv, field, ratingPicker, statusBadge, section, tagPicker, segmented, toggle } from './ui.js';
 import { gallerySection } from './gallery.js';
 import { calcLoan, METHODS, DEFAULT_TERMS } from './loan.js';
 import { geocode, drawMap, distanceMeters, walkMinutes } from './map.js';
@@ -574,38 +574,104 @@ function priceChart(rows) {
   );
 }
 
-function compareTable(rows) {
-  const defs = [
-    ['現在価格', (x) => fmt.man1(x.r.price) + '万円', (x) => x.r.price, 'min'],
-    ['当初価格', (x) => (x.a.initial != null ? fmt.man1(x.a.initial) + '万円' : '—')],
-    ['値下げ額', (x) => (x.a.totalChange ? `${fmt.man1(Math.round(x.a.totalChange))}万円（${x.a.changeRate.toFixed(1)}%）` : '—'),
-      (x) => x.a.totalChange, 'min'],
-    ['価格改定回数', (x) => `${x.a.changeCount}回`, (x) => x.a.changeCount, 'max'],
-    ['販売期間', (x) => (x.a.salesDays != null ? `${x.a.salesDays}日` : '—'), (x) => x.a.salesDays, 'max'],
-    ['募集状況', (x) => x.r.listingStatus || '募集中'],
-    ['登録日', (x) => formatDate(x.a.listedAt)],
-    ['坪単価', (x) => fmt.n(x.c.tsuboPrice, 1) + '万円', (x) => x.c.tsuboPrice, 'min'],
-    ['専有面積', (x) => fmt.sqm(x.r.area), (x) => x.r.area, 'max'],
-    ['間取り', (x) => x.r.layout || '—'],
-    ['所在階 / 総階数', (x) => `${x.r.floor ?? '—'} / ${x.b.totalFloors ?? '—'}階`, (x) => x.r.floor, 'max'],
-    ['築年月（築年数）', (x) => `${x.b.builtYM || '—'}${x.c.ageYears != null ? `（${x.c.ageYears}年）` : ''}`,
-      (x) => x.c.ageYears, 'min'],
-    ['最寄駅', (x) => x.b.stations || '—'],
-    ['駅徒歩', (x) => x.b.walk || '—'],
-    ['バルコニー', (x) => fmt.sqm(x.r.balcony), (x) => x.r.balcony, 'max'],
-    ['管理＋修繕', (x) => fmt.yen万(x.c.kanriShuzen) + '/月', (x) => x.c.kanriShuzen, 'min'],
-    ['ローン返済', (x) => fmt.yen万(x.c.loanMonthly) + '/月', (x) => x.c.loanMonthly, 'min'],
-    ['月額合計', (x) => fmt.yen万(x.c.monthly) + '/月', (x) => x.c.monthly, 'min'],
-    ['総返済額', (x) => fmt.man1(Math.round(x.c.loan?.totalPayment ?? 0)) + '万円', (x) => x.c.loan?.totalPayment, 'min'],
-    ['うち利息', (x) => fmt.man1(Math.round(x.c.loan?.totalInterest ?? 0)) + '万円', (x) => x.c.loan?.totalInterest, 'min'],
-    ['リフォーム', (x) => x.r.reform || '—', null, null, true],
-    ['眺望・住戸特徴', (x) => x.r.viewNote || '—', null, null, true],
-    ['間取り・室内メモ', (x) => x.r.roomNote || '—', null, null, true],
-    ['メモ', (x) => x.r.memo || '—', null, null, true],
-    ['評価', (x) => fmt.stars(x.r.rating), (x) => x.r.rating, 'max'],
-    ['検討状態', (x) => x.r.status || '—'],
-    ['画像', (x) => `${x.r.images?.length || 0}枚`],
+/* ===== 比較表の項目定義 =====
+   [見出し, 値の文字列, 数値(強調用), 'min'|'max', 長文か]
+   セクションに分けて折りたたみ、既定では差がある項目だけを出す。
+   項目を全部並べると縦に長くなりすぎ、違いを探すのに向かないため。 */
+function compareSections() {
+  const tag = (key) => (x) => {
+    const list = (x.r[key] ?? x.b[key] ?? []);
+    return list.length ? list.join('・') : '—';
+  };
+  return [
+    ['価格', true, [
+      ['現在価格', (x) => fmt.man1(x.r.price) + '万円', (x) => x.r.price, 'min'],
+      ['当初価格', (x) => (x.a.initial != null ? fmt.man1(x.a.initial) + '万円' : '—')],
+      ['値下げ額', (x) => (x.a.totalChange ? `${fmt.man1(Math.round(x.a.totalChange))}万円（${x.a.changeRate.toFixed(1)}%）` : '—'),
+        (x) => x.a.totalChange, 'min'],
+      ['坪単価', (x) => fmt.n(x.c.tsuboPrice, 1) + '万円', (x) => x.c.tsuboPrice, 'min'],
+      ['㎡単価', (x) => (x.r.price && x.r.area ? fmt.n(x.r.price / x.r.area, 2) + '万円' : '—'),
+        (x) => (x.r.price && x.r.area ? x.r.price / x.r.area : null), 'min'],
+    ]],
+    ['毎月の支払い', true, [
+      ['管理費', (x) => fmt.yen万(x.r.kanrihi) + '/月', (x) => x.r.kanrihi, 'min'],
+      ['修繕積立金', (x) => fmt.yen万(x.r.shuzen) + '/月', (x) => x.r.shuzen, 'min'],
+      ['管理＋修繕', (x) => fmt.yen万(x.c.kanriShuzen) + '/月', (x) => x.c.kanriShuzen, 'min'],
+      ['ランニング㎡単価', (x) => (x.c.kanriShuzen && x.r.area ? `${Math.round(x.c.kanriShuzen * 10000 / x.r.area)}円/㎡` : '—'),
+        (x) => (x.c.kanriShuzen && x.r.area ? x.c.kanriShuzen * 10000 / x.r.area : null), 'min'],
+      ['ローン返済', (x) => fmt.yen万(x.c.loanMonthly) + '/月', (x) => x.c.loanMonthly, 'min'],
+      ['月額合計', (x) => fmt.yen万(x.c.monthly) + '/月', (x) => x.c.monthly, 'min'],
+      ['年額合計', (x) => fmt.yen万(x.c.yearly) + '/年', (x) => x.c.yearly, 'min'],
+    ]],
+    ['資金計画', false, [
+      ['総返済額', (x) => fmt.man1(Math.round(x.c.loan?.totalPayment ?? 0)) + '万円', (x) => x.c.loan?.totalPayment, 'min'],
+      ['うち利息', (x) => fmt.man1(Math.round(x.c.loan?.totalInterest ?? 0)) + '万円', (x) => x.c.loan?.totalInterest, 'min'],
+      ['諸費用の目安', (x) => fmt.man1(Math.round(x.c.loan?.fees ?? 0)) + '万円', (x) => x.c.loan?.fees, 'min'],
+      ['ローン条件', (x) => {
+        const t = { ...store.loanTerms, ...(x.r.loan || {}) };
+        return `${t.rate}% ${t.years}年${x.c.usesOwnTerms ? '（個別）' : ''}`;
+      }],
+      ['掲載サイトの月額', (x) => (x.c.refMonthly != null ? fmt.yen万(x.c.refMonthly) + '/月' : '—')],
+    ]],
+    ['広さ・間取り', true, [
+      ['専有面積', (x) => fmt.sqm(x.r.area), (x) => x.r.area, 'max'],
+      ['間取り', (x) => x.r.layout || '—'],
+      ['バルコニー', (x) => fmt.sqm(x.r.balcony), (x) => x.r.balcony, 'max'],
+      ['所在階', (x) => (x.r.floor != null ? `${x.r.floor}階` : '—'), (x) => x.r.floor, 'max'],
+    ]],
+    ['販売活動', true, [
+      ['募集状況', (x) => x.r.listingStatus || '募集中'],
+      ['登録日', (x) => formatDate(x.a.listedAt)],
+      ['販売期間', (x) => (x.a.salesDays != null ? `${x.a.salesDays}日` : '—'), (x) => x.a.salesDays, 'max'],
+      ['価格改定回数', (x) => `${x.a.changeCount}回`, (x) => x.a.changeCount, 'max'],
+      ['初回改定まで', (x) => (x.a.firstChange ? `${x.a.firstChange.days}日 / ${fmt.man1(Math.round(x.a.firstChange.amount))}万円` : '—')],
+    ]],
+    ['建物', false, [
+      ['建物名', (x) => x.b.name || '—'],
+      ['築年月（築年数）', (x) => `${x.b.builtYM || '—'}${x.c.ageYears != null ? `（${x.c.ageYears}年）` : ''}`,
+        (x) => x.c.ageYears, 'min'],
+      ['総階数', (x) => (x.b.totalFloors != null ? `${x.b.totalFloors}階建` : '—'), (x) => x.b.totalFloors, 'max'],
+      ['総戸数', (x) => (x.b.totalUnits != null ? `${x.b.totalUnits}戸` : '—'), (x) => x.b.totalUnits, 'max'],
+      ['最寄駅', (x) => x.b.stations || '—'],
+      ['駅徒歩', (x) => x.b.walk || '—'],
+      ['住所', (x) => x.b.address || '—', null, null, true],
+      ['構造', (x) => x.b.structureNote || '—'],
+      ['天井高', (x) => x.b.ceilingHeight || '—'],
+      ['主方位', (x) => x.b.direction || '—'],
+      ['管理方式', (x) => x.b.managementType || '—'],
+      ['管理会社', (x) => x.b.managementCompany || '—', null, null, true],
+      ['土地権利', (x) => x.b.landRight || '—'],
+      ['用途地域', (x) => x.b.zoning || '—'],
+      ['駐車場数', (x) => (x.b.parkingCount != null ? `${x.b.parkingCount}台` : '—'), (x) => x.b.parkingCount, 'max'],
+      ['分譲会社', (x) => x.b.developer || '—', null, null, true],
+      ['施工会社', (x) => x.b.builder || '—', null, null, true],
+      ['ブランド', (x) => x.b.brand || '—'],
+      ['小学校区', (x) => x.b.elementarySchool || '—'],
+      ['中学校区', (x) => x.b.juniorHighSchool || '—'],
+    ]],
+    ['設備', false, [
+      ['建物構造', tag('structureTags'), null, null, true],
+      ['共用施設', tag('facilityTags'), null, null, true],
+      ['共用設備', tag('equipmentTags'), null, null, true],
+      ['専有設備', tag('roomEquipmentTags'), null, null, true],
+    ]],
+    ['メモ・評価', true, [
+      ['評価', (x) => fmt.stars(x.r.rating), (x) => x.r.rating, 'max'],
+      ['検討状態', (x) => x.r.status || '—'],
+      ['リフォーム', (x) => x.r.reform || '—', null, null, true],
+      ['眺望・住戸特徴', (x) => x.r.viewNote || '—', null, null, true],
+      ['間取り・室内メモ', (x) => x.r.roomNote || '—', null, null, true],
+      ['メモ', (x) => x.r.memo || '—', null, null, true],
+      ['画像', (x) => `${x.r.images?.length || 0}枚`],
+    ]],
   ];
+}
+
+const cmpUI = { diffOnly: true, open: null };
+
+function compareTable(rows) {
+  const sections = compareSections();
+  if (!cmpUI.open) cmpUI.open = new Set(sections.filter(([, def]) => def).map(([name]) => name));
 
   const thead = el('thead', {}, el('tr', {},
     el('th', { class: 'lab' }, '項目'),
@@ -616,31 +682,70 @@ function compareTable(rows) {
     ))),
   ));
 
-  const tbody = el('tbody', {}, defs.map(([label, render, pick, dir, isNote]) => {
-    let best = null;
-    if (pick && dir) {
-      const vals = rows.map(pick).filter((v) => v != null && !isNaN(v));
-      const lo = Math.min(...vals), hi = Math.max(...vals);
-      // 全部同じ値なら差がないので強調しない
-      if (vals.length > 1 && lo !== hi) best = dir === 'min' ? lo : hi;
+  const body = el('tbody');
+  let hidden = 0;
+
+  for (const [name, , defs] of sections) {
+    const open = cmpUI.open.has(name);
+    const visible = defs.filter(([, render]) => {
+      if (!cmpUI.diffOnly) return true;
+      const vals = rows.map((x) => render(x));
+      return new Set(vals).size > 1;   // 全員同じ値なら比較の役に立たない
+    });
+    hidden += defs.length - visible.length;
+    if (!visible.length && cmpUI.diffOnly) continue;
+
+    body.append(el('tr', { class: 'secrow' },
+      el('td', {
+        class: 'lab secrow-lab', colspan: 1,
+        onclick: () => { open ? cmpUI.open.delete(name) : cmpUI.open.add(name); rerender(); },
+      },
+        el('span', { class: 'sec-caret' + (open ? ' is-open' : '') }, '▸'),
+        name,
+        el('span', { class: 'tiny muted' }, ` ${visible.length}`)),
+      rows.map(() => el('td', { class: 'secrow-fill' })),
+    ));
+    if (!open) continue;
+
+    for (const [label, render, pick, dir, isNote] of visible) {
+      let best = null;
+      if (pick && dir) {
+        const vals = rows.map(pick).filter((v) => v != null && !isNaN(v));
+        const lo = Math.min(...vals), hi = Math.max(...vals);
+        if (vals.length > 1 && lo !== hi) best = dir === 'min' ? lo : hi;
+      }
+      body.append(el('tr', {},
+        el('td', { class: 'lab' }, label),
+        rows.map((x) => {
+          const v = pick ? pick(x) : null;
+          const cls = [isNote ? 'note' : '', best != null && v === best ? 'best' : ''].filter(Boolean).join(' ');
+          return el('td', { class: cls || null }, render(x));
+        }),
+      ));
     }
-    return el('tr', {},
-      el('td', { class: 'lab' }, label),
-      rows.map((x) => {
-        const v = pick ? pick(x) : null;
-        const cls = [isNote ? 'note' : '', best != null && v === best ? 'best' : ''].filter(Boolean).join(' ');
-        return el('td', { class: cls || null }, render(x));
-      }),
-    );
-  }));
+  }
 
   return el('div', {},
-    el('div', { class: 'toolbar' },
-      el('span', { class: 'muted tiny' }, '緑字＝その項目で最も有利な値（差がある項目のみ）。ローンは共通条件で計算'),
+    el('div', { class: 'toolbar cmptoolbar' },
+      toggle('違いのある項目だけ', cmpUI.diffOnly, (v) => { cmpUI.diffOnly = v; rerender(); }),
+      cmpUI.diffOnly && hidden
+        ? el('span', { class: 'tiny muted' }, `同じ値の ${hidden} 項目を非表示`)
+        : null,
       el('div', { class: 'spacer' }),
-      el('button', { class: 'btn btn-sm', onclick: () => go('settings') }, 'ローン条件を変更'),
+      el('button', {
+        class: 'btn btn-sm',
+        onclick: () => {
+          const all = sections.map(([n]) => n);
+          if (cmpUI.open.size === all.length) cmpUI.open.clear();
+          else all.forEach((n) => cmpUI.open.add(n));
+          rerender();
+        },
+      }, cmpUI.open.size === sections.length ? 'すべて閉じる' : 'すべて開く'),
+      el('button', { class: 'btn btn-sm', onclick: () => go('settings') }, 'ローン条件'),
     ),
-    el('div', { class: 'tablewrap' }, el('table', { class: 'cmp' }, thead, tbody)),
+    el('div', { class: 'tiny muted', style: 'margin-bottom:8px' },
+      '緑字＝その項目で最も有利な値。見出しをタップで開閉できます'),
+    el('div', { class: 'tablewrap' }, el('table', { class: 'cmp' }, thead, body)),
   );
 }
 

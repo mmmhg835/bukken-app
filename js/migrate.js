@@ -4,13 +4,14 @@
 import { DEFAULT_TERMS } from './loan.js';
 import { buildingDefaults, SPEC_GROUPS } from './spec.js';
 
-export const CURRENT_SCHEMA = 4;
+export const CURRENT_SCHEMA = 5;
 
 export function migrate(data) {
   let d = structuredClone(data);
   if (!d.schemaVersion || d.schemaVersion < 2) d = v1ToV2(d);
   if (d.schemaVersion < 3) d = v2ToV3(d);
   if (d.schemaVersion < 4) d = v3ToV4(d);
+  if (d.schemaVersion < 5) d = v4ToV5(d);
   d.settings ||= {};
   d.settings.loan = { ...DEFAULT_TERMS, ...(d.settings.loan || {}) };
   d.settings.places ||= [];   // 職場・駅など、地図上の参照地点
@@ -52,6 +53,19 @@ function v3ToV4(d) {
     for (const [key, g] of Object.entries(SPEC_GROUPS)) if (g.on === 'room') r[key] ??= [];
   }
   d.schemaVersion = 4;
+  return d;
+}
+
+/**
+ * v5: ローンの既定条件を 0.7%/35年 から 1.275%/50年 へ。
+ * 触っていない（初期値のままの）場合だけ載せ替え、自分で設定した値は尊重する。
+ */
+function v4ToV5(d) {
+  const old = { downPayment: 0, rate: 0.7, years: 35, method: 'equal', costRate: 7 };
+  const cur = d.settings?.loan || {};
+  const untouched = Object.entries(old).every(([k, v]) => cur[k] === v);
+  if (untouched) d.settings.loan = { ...DEFAULT_TERMS };
+  d.schemaVersion = 5;
   return d;
 }
 
