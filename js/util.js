@@ -1,4 +1,6 @@
 // 汎用ユーティリティ（表示整形・自動計算・DOM補助）
+import { calcLoan, DEFAULT_TERMS } from './loan.js';
+
 export const TSUBO_SQM = 3.305785;          // 1坪 = 3.305785㎡
 export const STATUSES = ['検討中', '内見済', '本命', '申込検討', '見送り'];
 export const CATEGORIES = ['概要', '間取り', '眺望', 'LDK・居室', '水回り', '収納', 'その他'];
@@ -25,21 +27,35 @@ export function el(tag, attrs = {}, ...children) {
 
 const num = (v) => (v === '' || v === null || v === undefined || isNaN(Number(v)) ? null : Number(v));
 
-/** 物件の派生値（坪単価・管理費合計・月額合計）を計算する */
-export function derive(p) {
-  const price = num(p.price), area = num(p.area);
-  const kanri = num(p.kanrihi) ?? 0, shuzen = num(p.shuzen) ?? 0;
-  const principal = num(p.loanPrincipal) ?? 0, interest = num(p.loanInterest) ?? 0;
+/**
+ * 部屋の派生値を計算する。
+ * 保存はせず常にここで算出するため、条件を変えれば全物件に即反映される。
+ * @param {object} r 部屋
+ * @param {object} [building] 建物（築年数の算出に使う）
+ * @param {object} [terms] ローン共通条件。部屋側に loan があればそちらが優先
+ */
+export function derive(r, building = null, terms = null) {
+  const price = num(r.price), area = num(r.area);
+  const kanri = num(r.kanrihi) ?? 0, shuzen = num(r.shuzen) ?? 0;
   const kanriShuzen = kanri + shuzen;
-  // 月額合計はシート入力値を優先し、無ければ ローン + 管理費 + 修繕積立金 で算出
-  const monthly = num(p.monthlyTotal) ?? (principal + interest + kanriShuzen || null);
+
+  const applied = { ...(terms || DEFAULT_TERMS), ...(r.loan || {}) };
+  const loan = price != null ? calcLoan(price, applied) : null;
+  const loanMonthly = loan ? loan.monthly : null;
+  const monthly = loanMonthly != null ? loanMonthly + kanriShuzen : (kanriShuzen || null);
+
   return {
     tsubo: area ? area / TSUBO_SQM : null,
     tsuboPrice: price && area ? price / (area / TSUBO_SQM) : null,
     kanriShuzen: kanriShuzen || null,
+    loan,
+    loanMonthly,
     monthly,
     yearly: monthly != null ? monthly * 12 : null,
-    ageYears: ageFromYM(p.builtYM),
+    // 掲載サイトの表示値（転記）。自前計算との差を確認するために残している
+    refMonthly: num(r.refMonthly),
+    ageYears: ageFromYM(building?.builtYM ?? r.builtYM),
+    usesOwnTerms: !!r.loan,
   };
 }
 
@@ -59,6 +75,15 @@ export const fmt = {
   yen万: (v) => (v == null ? '—' : `${Number(v).toFixed(1)}万`),
   stars: (n) => '★'.repeat(n || 0) + '☆'.repeat(Math.max(0, 5 - (n || 0))),
 };
+
+/**
+ * replaceChildren は null を文字列 "null" として描画してしまうため、
+ * 条件付きの子要素を渡すときは必ずこちらを使う。
+ */
+export function mount(node, ...children) {
+  node.replaceChildren(
+    ...children.flat().filter((c) => c !== null && c !== undefined && c !== false));
+}
 
 export function toast(msg, isErr = false) {
   const t = $('#toast');

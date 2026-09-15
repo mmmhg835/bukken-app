@@ -22,7 +22,7 @@
 html,body{margin:0}
 body{
   background:var(--bg); color:var(--text);
-  font:15px/1.6 -apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;
+  font:15px/1.6 -apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;
   -webkit-text-size-adjust:100%;
 }
 button,input,select,textarea{font:inherit;color:inherit}
@@ -159,3 +159,37 @@ table.cmp tr:hover td.lab{background:var(--surface-2)}
   .grid{grid-template-columns:1fr}
   .detail-head h2{font-size:18px}
 }
+
+/* ===== 建物カード内の部屋チップ ===== */
+.roomchips{display:flex;flex-wrap:wrap;gap:5px;margin-top:4px}
+.roomchip{background:var(--surface-2);border:1px solid var(--line);border-radius:999px;
+  padding:3px 9px;font-size:11.5px;font-weight:600;color:var(--text-2);white-space:nowrap}
+.roomchip.is-top{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+
+/* ===== 部屋カード（建物詳細内） ===== */
+.grid-rooms{grid-template-columns:repeat(auto-fill,minmax(220px,1fr))}
+.rcard{display:flex;flex-direction:column;overflow:hidden;cursor:pointer;transition:transform .12s ease}
+.rcard:hover{transform:translateY(-2px)}
+.rcard-img{aspect-ratio:16/10;background:var(--surface-2);position:relative;overflow:hidden}
+.rcard-img img{width:100%;height:100%;object-fit:cover;display:block}
+.rcard-img .ph{position:absolute;inset:0;display:grid;place-items:center;color:var(--text-3);font-size:13px}
+.rcard-body{padding:11px 13px 13px;display:flex;flex-direction:column;gap:5px}
+.addcard{display:grid;place-items:center;min-height:150px;border:1px dashed var(--line);
+  background:none;color:var(--text-2);font-weight:600;cursor:pointer;font-size:14px}
+.addcard:hover{border-color:var(--accent);color:var(--accent)}
+
+/* ===== 地図 ===== */
+.minimap{height:240px;border-radius:var(--r);overflow:hidden;margin-top:12px;border:1px solid var(--line);background:var(--surface-2)}
+.bigmap{height:min(58vh,520px);border-radius:var(--r);overflow:hidden;border:1px solid var(--line);background:var(--surface-2)}
+.maplegend{margin:0;padding-left:1.4em;line-height:1.9}
+.maplegend a{color:var(--accent);text-decoration:none}
+.leaflet-container{font:inherit}
+
+/* ===== 参照地点 ===== */
+.placerow{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.placerow:last-child{border-bottom:0}
+.placerow > span:first-child{font-weight:600}
+.placerow .btn{margin-left:auto}
+
+/* 計算カードの補助行 */
+.calcgrid .k + .v + .k{color:var(--text-3)}

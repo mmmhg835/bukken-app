@@ -2,16 +2,20 @@
 import { GitHubRepo, blobToB64, utf8ToB64 } from './github.js';
 import { idb } from './idb.js';
 import { processImage, coverDataUrl, DEFAULT_PRESET, QUALITY_PRESETS } from './image.js';
+import { migrate, CURRENT_SCHEMA } from './migrate.js';
+import { DEFAULT_TERMS } from './loan.js';
 import { uid } from './util.js';
 
 const CFG_KEY = 'bukken.config.v1';
 const PREF_KEY = 'bukken.prefs.v1';
 const DATA_PATH = 'properties.json';
 
-const EMPTY = { schemaVersion: 1, updatedAt: null, properties: [] };
+const EMPTY = {
+  schemaVersion: CURRENT_SCHEMA, updatedAt: null,
+  settings: { loan: { ...DEFAULT_TERMS }, places: [] }, buildings: [], rooms: [],
+};
 
 class Store extends EventTarget {
-  // 既定の接続先。トークンだけは端末ごとに入力が必要
   config = { owner: 'mmmhg835', repo: 'bukken-data', branch: 'main', token: '' };
   prefs = { imageQuality: DEFAULT_PRESET };
   data = structuredClone(EMPTY);
@@ -19,7 +23,7 @@ class Store extends EventTarget {
   dirty = false;
   syncState = 'idle';   // idle | syncing | ok | error | unconfigured
   lastError = '';
-  #urls = new Map();    // path -> objectURL（画像表示用）
+  #urls = new Map();
 
   emit() { this.dispatchEvent(new Event('change')); }
 
@@ -28,27 +32,23 @@ class Store extends EventTarget {
 
   // ===== 起動 =====
   async init() {
-    try {
-      const saved = JSON.parse(localStorage.getItem(CFG_KEY) || '{}');
-      Object.assign(this.config, saved);
-    } catch { /* 破損時は既定値のまま */ }
+    try { Object.assign(this.config, JSON.parse(localStorage.getItem(CFG_KEY) || '{}')); }
+    catch { /* 破損時は既定値のまま */ }
     try {
       const p = JSON.parse(localStorage.getItem(PREF_KEY) || '{}');
       if (QUALITY_PRESETS[p.imageQuality]) this.prefs.imageQuality = p.imageQuality;
     } catch { /* 既定値のまま */ }
 
     const cached = await idb.get('kv', 'data');
-    if (cached) { this.data = cached.data; this.sha = cached.sha; this.dirty = !!cached.dirty; }
+    if (cached) {
+      this.data = migrate(cached.data);
+      this.sha = cached.sha;
+      this.dirty = !!cached.dirty;
+    }
 
     this.syncState = this.configured ? 'idle' : 'unconfigured';
     this.emit();
     if (this.configured) await this.sync();
-  }
-
-  savePrefs(patch) {
-    Object.assign(this.prefs, patch);
-    localStorage.setItem(PREF_KEY, JSON.stringify(this.prefs));
-    this.emit();
   }
 
   saveConfig(cfg) {
@@ -58,19 +58,23 @@ class Store extends EventTarget {
     this.emit();
   }
 
+  savePrefs(patch) {
+    Object.assign(this.prefs, patch);
+    localStorage.setItem(PREF_KEY, JSON.stringify(this.prefs));
+    this.emit();
+  }
+
   async #cache() {
     await idb.set('kv', 'data', { data: this.data, sha: this.sha, dirty: this.dirty });
   }
 
   // ===== 同期 =====
-  /** リモートを取得。ローカルに未保存変更があれば上書きせず警告する */
   async sync() {
     if (!this.configured) { this.syncState = 'unconfigured'; this.emit(); return; }
     this.syncState = 'syncing'; this.emit();
     try {
       const got = await this.repo.getJson(DATA_PATH);
       if (!got) {
-        // データファイルがまだ無い場合は空で作成
         const res = await this.repo.putJson(DATA_PATH, this.data, 'init: properties.json を作成');
         this.sha = res.sha;
       } else if (this.dirty && got.sha !== this.sha) {
@@ -79,7 +83,13 @@ class Store extends EventTarget {
         this.emit();
         return;
       } else if (!this.dirty) {
-        this.data = got.data; this.sha = got.sha;
+        const wasVersion = got.data.schemaVersion || 1;
+        this.data = migrate(got.data);
+        this.sha = got.sha;
+        // 旧スキーマを読み込んだ場合は、その場で新形式に書き戻す
+        if (wasVersion < CURRENT_SCHEMA) {
+          await this.save(`refactor: 建物と部屋を分離（スキーマ v${wasVersion} → v${CURRENT_SCHEMA}）`);
+        }
       }
       this.syncState = 'ok'; this.lastError = '';
       await this.#cache();
@@ -91,7 +101,6 @@ class Store extends EventTarget {
 
   markDirty() { this.dirty = true; this.emit(); this.#cache(); }
 
-  /** properties.json をコミット */
   async save(message = 'update: 物件データを更新') {
     if (!this.configured) throw new Error('GitHub 接続が未設定です（設定タブ）');
     this.syncState = 'syncing'; this.emit();
@@ -104,7 +113,6 @@ class Store extends EventTarget {
       await this.#cache();
     } catch (e) {
       if (e.status === 409 || e.status === 422) {
-        // 別端末の更新と衝突。最新 sha を取り直して再試行できる状態にする
         const got = await this.repo.getJson(DATA_PATH).catch(() => null);
         if (got) this.sha = got.sha;
         this.lastError = '他の端末の変更と衝突しました。もう一度「保存」を押すと上書きします。';
@@ -118,47 +126,90 @@ class Store extends EventTarget {
     this.emit();
   }
 
-  // ===== 物件 =====
-  get properties() { return this.data.properties; }
-  find(id) { return this.data.properties.find((p) => p.id === id); }
+  // ===== 建物 =====
+  get buildings() { return this.data.buildings; }
+  building(id) { return this.data.buildings.find((b) => b.id === id); }
 
-  addProperty(partial = {}) {
-    const p = {
-      id: uid('p'), no: this.data.properties.length + 1,
-      name: '新規物件', status: '検討中', rating: 0,
-      price: null, area: null, layout: '', floor: null, totalFloors: null,
-      builtYM: '', stations: '', walk: '', balcony: null,
-      kanrihi: null, shuzen: null, loanPrincipal: null, loanInterest: null, monthlyTotal: null,
-      reform: '', viewNote: '', roomNote: '', imageRange: '', memo: '',
-      images: [], ...partial,
+  addBuilding(partial = {}) {
+    const b = {
+      id: uid('b'), name: '新規の建物', address: '', lat: null, lng: null,
+      builtYM: '', totalFloors: null, stations: '', walk: '',
+      amenities: '', memo: '', images: [], ...partial,
     };
-    this.data.properties.push(p);
+    this.data.buildings.push(b);
     this.markDirty();
-    return p;
+    return b;
   }
 
-  updateProperty(id, patch) {
-    const p = this.find(id);
-    if (!p) return;
-    Object.assign(p, patch);
+  /** 建物を消すと、その配下の部屋も一緒に消える */
+  async deleteBuilding(id) {
+    this.data.buildings = this.data.buildings.filter((b) => b.id !== id);
+    this.data.rooms = this.data.rooms.filter((r) => r.buildingId !== id);
+    await this.save(`delete: 建物と配下の部屋を削除 (${id})`);
+  }
+
+  // ===== 部屋 =====
+  get rooms() { return this.data.rooms; }
+  room(id) { return this.data.rooms.find((r) => r.id === id); }
+  roomsOf(buildingId) { return this.data.rooms.filter((r) => r.buildingId === buildingId); }
+
+  addRoom(buildingId, partial = {}) {
+    const r = {
+      id: uid('r'), buildingId, label: '新規の部屋', status: '検討中', rating: 0,
+      price: null, area: null, layout: '', floor: null, balcony: null,
+      kanrihi: null, shuzen: null,
+      refMonthly: null, refLoanPrincipal: null, refLoanInterest: null, loan: null,
+      reform: '', viewNote: '', roomNote: '', imageRange: '', url: '', memo: '',
+      cover: null, coverThumb: null, images: [], ...partial,
+    };
+    this.data.rooms.push(r);
+    this.markDirty();
+    return r;
+  }
+
+  async deleteRoom(id) {
+    this.data.rooms = this.data.rooms.filter((r) => r.id !== id);
+    await this.save(`delete: 部屋を削除 (${id})`);
+  }
+
+  /** 部屋を別の建物へ移す */
+  moveRoom(roomId, buildingId) {
+    const r = this.room(roomId);
+    if (r) { r.buildingId = buildingId; this.markDirty(); }
+  }
+
+  // ===== 共通条件 =====
+  get loanTerms() { return this.data.settings.loan; }
+  saveLoanTerms(patch) {
+    Object.assign(this.data.settings.loan, patch);
     this.markDirty();
   }
 
-  async deleteProperty(id) {
-    const i = this.data.properties.findIndex((p) => p.id === id);
-    if (i < 0) return;
-    this.data.properties.splice(i, 1);
-    await this.save(`delete: 物件を削除 (${id})`);
+  // ===== 参照地点（職場・駅など） =====
+  get places() { return this.data.settings.places || []; }
+
+  addPlace(place) {
+    this.data.settings.places ||= [];
+    this.data.settings.places.push(place);
+    this.markDirty();
   }
+
+  removePlace(index) {
+    this.data.settings.places.splice(index, 1);
+    this.markDirty();
+  }
+
+  /** 建物・部屋のどちらでも受け取れる汎用の取得 */
+  owner(id) { return this.building(id) || this.room(id); }
 
   // ===== 画像 =====
   /**
-   * 端末で縮小 → 本体とサムネを images/<物件ID>/ へ、properties.json も含めて1コミットで保存する。
-   * 1枚ずつ Contents API を叩くとコミットが乱立し、枚数ぶん往復が発生するため。
+   * 端末で縮小 → 本体とサムネを images/<ID>/ へ、properties.json も含めて1コミットで保存する。
+   * 建物（外観・共用部）にも部屋にも同じ仕組みで付けられる。
    */
-  async addImages(propId, files, category = '概要', onProgress = () => {}) {
-    const p = this.find(propId);
-    if (!p) throw new Error('物件が見つかりません');
+  async addImages(ownerId, files, category = '概要', onProgress = () => {}) {
+    const o = this.owner(ownerId);
+    if (!o) throw new Error('対象が見つかりません');
     if (!this.configured) throw new Error('GitHub 接続が未設定です（設定タブ）');
 
     const list = [...files].filter((f) => f.type.startsWith('image/'));
@@ -171,12 +222,12 @@ class Store extends EventTarget {
       onProgress(++done, list.length, file.name, '変換中');
       const { full, thumb, cover, width, height } = await processImage(file, this.prefs.imageQuality);
       const stem = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
-      const path = `images/${propId}/${stem}.jpg`;
-      const thumbPath = `images/${propId}/${stem}_t.jpg`;
+      const path = `images/${ownerId}/${stem}.jpg`;
+      const thumbPath = `images/${ownerId}/${stem}_t.jpg`;
 
       entries.push({ path, base64: await blobToB64(full) });
       entries.push({ path: thumbPath, base64: await blobToB64(thumb) });
-      await idb.set('img', path, full);        // 通信を待たずに表示できるようにしておく
+      await idb.set('img', path, full);
       await idb.set('img', thumbPath, thumb);
 
       const meta = {
@@ -184,23 +235,21 @@ class Store extends EventTarget {
         bytes: full.size, name: file.name, addedAt: new Date().toISOString(),
       };
       added.push(meta);
-      p.images.push(meta);
-      if (!p.cover) { p.cover = path; p.coverThumb = cover; }
+      o.images.push(meta);
+      if (!o.cover) { o.cover = path; o.coverThumb = cover; }
     }
 
     this.data.updatedAt = new Date().toISOString();
-    entries.push({ path: 'properties.json', base64: utf8ToB64(JSON.stringify(this.data, null, 2)) });
+    entries.push({ path: DATA_PATH, base64: utf8ToB64(JSON.stringify(this.data, null, 2)) });
 
     onProgress(list.length, list.length, '', 'アップロード中');
     try {
-      await this.repo.commitFiles(entries, `add: ${p.name} に画像 ${list.length} 枚を追加`);
+      await this.repo.commitFiles(entries, `add: ${o.name || o.label} に画像 ${list.length} 枚を追加`);
     } catch (e) {
-      // コミットに失敗したら、追加した画像情報を元に戻す
-      p.images = p.images.filter((im) => !added.includes(im));
+      o.images = o.images.filter((im) => !added.includes(im));
       throw e;
     }
 
-    // コミット後の properties.json の sha を取り直す（次回の保存で衝突しないように）
     const got = await this.repo.getJson(DATA_PATH).catch(() => null);
     if (got) this.sha = got.sha;
     this.dirty = false;
@@ -210,27 +259,27 @@ class Store extends EventTarget {
     return list.length;
   }
 
-  async deleteImage(propId, path) {
-    const p = this.find(propId);
-    const target = p.images.find((im) => im.path === path);
+  async deleteImage(ownerId, path) {
+    const o = this.owner(ownerId);
+    const target = o.images.find((im) => im.path === path);
     for (const f of [path, target?.thumbPath].filter(Boolean)) {
       const sha = await this.repo.shaOf(f);
       if (sha) await this.repo.remove(f, sha, `delete: 画像を削除 (${f})`);
       await idb.del('img', f);
       this.#urls.delete(f);
     }
-    p.images = p.images.filter((im) => im.path !== path);
-    if (p.cover === path) {
-      p.cover = p.images[0]?.path || null;
-      p.coverThumb = p.cover ? await coverDataUrl(await this.#blob(p.cover)) : null;
+    o.images = o.images.filter((im) => im.path !== path);
+    if (o.cover === path) {
+      o.cover = o.images[0]?.path || null;
+      o.coverThumb = o.cover ? await coverDataUrl(await this.#blob(o.cover)) : null;
     }
     await this.save('delete: 画像を削除');
   }
 
-  async setCover(propId, path) {
-    const p = this.find(propId);
-    p.cover = path;
-    p.coverThumb = await coverDataUrl(await this.#blob(path));
+  async setCover(ownerId, path) {
+    const o = this.owner(ownerId);
+    o.cover = path;
+    o.coverThumb = await coverDataUrl(await this.#blob(path));
     await this.save('update: カバー画像を変更');
   }
 
@@ -243,7 +292,6 @@ class Store extends EventTarget {
     return blob;
   }
 
-  /** 画像の表示用 URL。キャッシュ済みなら通信しない */
   async imageUrl(path) {
     if (this.#urls.has(path)) return this.#urls.get(path);
     const url = URL.createObjectURL(await this.#blob(path));

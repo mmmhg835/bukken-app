@@ -37,13 +37,18 @@ node tools/serve.mjs 8765
 index.html            画面の骨組み
 app.css               スタイル（ライト/ダーク自動）
 js/main.js            起動・ハッシュルーティング・自動保存
-js/views.js           一覧 / 比較 / 詳細 / 設定 の描画
+js/views.js           一覧 / 建物 / 部屋 / 比較 / 地図 / 設定 の描画
+js/ui.js              画面共通の小さな部品
+js/gallery.js         画像ギャラリーと全画面ビューワ
+js/loan.js            住宅ローン試算（元利均等・元金均等）
+js/map.js             地図表示と住所ジオコーディング（国土地理院）
+js/migrate.js         properties.json のスキーマ移行
 js/store.js           状態管理（GitHub が実体、IndexedDB がキャッシュ）
 js/github.js          GitHub Contents API クライアント
 js/image.js           アップロード前の画像縮小（長辺1600px / サムネ420px）
 js/pairing.js         QR による端末間の設定引き継ぎ
 js/idb.js             IndexedDB ラッパ
-js/util.js            整形・自動計算（坪単価・月額合計・築年数）
+js/util.js            整形・自動計算（坪単価・ローン・月額合計・築年数）
 tools/serve.mjs       ローカル確認用の静的サーバー（依存なし）
 tools/make-icons.mjs  PWA アイコン生成（依存なし）
 docs/ARCHITECTURE.md  設計メモ

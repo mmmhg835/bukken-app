@@ -19,38 +19,64 @@
 
 ## データモデル (`properties.json`)
 
+v1 は「物件」の平坦な配列だったが、同じ建物の別部屋を登録すると築年月・総階数・最寄駅が
+重複し、実際に食い違いが発生した。**v2 で建物と部屋に分離**している。
+
 ```jsonc
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "updatedAt": "ISO8601",
-  "properties": [{
-    "id": "p1",              // 画像フォルダ名にも使う不変ID
-    "no": 1,                 // 表示順
-    "name": "…", "status": "検討中", "rating": 0,   // status は util.js の STATUSES
-    "price": 16500,          // 万円
-    "area": 113.02,          // ㎡
-    "layout": "3LDK", "floor": 39, "totalFloors": 45,
-    "builtYM": "2005/02", "stations": "…", "walk": "…",
-    "balcony": 17.08,
-    "kanrihi": 2.3, "shuzen": 2.1,                  // 万円/月
-    "loanPrincipal": 27.5, "loanInterest": 9.7, "monthlyTotal": 41.6,
-    "reform": "…", "viewNote": "…", "roomNote": "…", "memo": "…",
-    "imageRange": "IMG_7538〜7555",                 // 元のスプレッドシート由来
-    "cover": "images/p1/xxx.jpg",                   // カバー画像のパス
-    "coverThumb": "data:image/jpeg;base64,…",       // 一覧を即表示するための小サムネ
+  "settings": {
+    "loan": { "downPayment": 0, "rate": 0.7, "years": 35, "method": "equal", "costRate": 7 },
+    "places": [{ "name": "職場", "address": "…", "lat": 35.6, "lng": 139.8 }]
+  },
+  "buildings": [{
+    "id": "b1", "name": "…",
+    "address": "…", "lat": 35.64593, "lng": 139.80215,   // 地図用。住所から取得する
+    "builtYM": "2005/02", "totalFloors": 45,
+    "stations": "…", "walk": "…", "amenities": "…", "memo": "…",
+    "cover": "images/b1/…jpg", "coverThumb": "data:…",
+    "images": [ /* 外観・共用部 */ ]
+  }],
+  "rooms": [{
+    "id": "p1", "buildingId": "b1",
+    "label": "39階",                     // 部屋の呼び名
+    "status": "検討中", "rating": 0,
+    "price": 16500,                      // 万円
+    "area": 113.02, "layout": "3LDK", "floor": 39, "balcony": 17.08,
+    "kanrihi": 2.3, "shuzen": 2.1,       // 万円/月
+    "loan": null,                        // null なら settings.loan を使う
+    "refMonthly": 41.6,                  // 掲載サイトの表示値。自前計算との差を見るため保持
+    "reform": "…", "viewNote": "…", "roomNote": "…", "url": "…", "memo": "…",
+    "cover": "images/p1/…jpg", "coverThumb": "data:…",
     "images": [{
       "path": "images/p1/xxx.jpg",        // 拡大表示に使う本体
       "thumbPath": "images/p1/xxx_t.jpg", // 格子表示に使う長辺480pxのサムネ
-      "category": "間取り",   // util.js の CATEGORIES
-      "caption": "", "name": "IMG_7538.JPG",
+      "category": "間取り", "caption": "", "name": "IMG_7538.JPG",
       "width": 2560, "height": 1920, "bytes": 612345, "addedAt": "ISO8601"
     }]
   }]
 }
 ```
 
-**派生値は保存しない。** 坪単価・管理＋修繕・年額・築年数は `util.js` の `derive()` が都度計算する。
-`monthlyTotal` が入力されていればそれを優先し、無ければ `ローン元金 + 金利分 + 管理 + 修繕` で補う。
+**派生値は保存しない。** 坪単価・管理＋修繕・ローン返済額・年額・築年数は
+`util.js` の `derive(room, building, terms)` が都度計算する。条件を変えれば全部屋に即反映される。
+
+### 建物と部屋のどちらに置くか
+
+| 建物 | 部屋 |
+|---|---|
+| 名前・住所・座標・築年月・総階数・最寄駅・駅徒歩・共用施設 | 価格・面積・間取り・所在階・バルコニー・管理費・修繕積立金・リフォーム・眺望 |
+
+迷ったら「別の部屋でも同じ値になるか」で判断する。同じなら建物側。
+
+### v1 からの移行
+
+`js/migrate.js` が起動時に自動変換する。同一建物かどうかは
+**築年月・総階数・最寄駅・名前の先頭** が一致するかで判定し、
+名前から「（29階）」のような部屋を表す括弧書きを取り除いて建物名にしている。
+
+## 保存の流れ
 
 ## 保存の流れ
 
@@ -63,6 +89,25 @@
 
 **衝突制御**: `properties.json` の `sha` を保持し、PUT 時に渡す。別端末が先に更新していると
 409/422 が返るので、その場合は最新 sha を取り直してユーザーに再保存を促す（`store.save()`）。
+
+## ローン試算
+
+`js/loan.js` が元利均等・元金均等の両方を計算する。掲載サイトの表示値を転記していたが、
+サイトごとに前提（頭金・金利）が違い比較にならないため自前計算に切り替えた。
+転記値は `room.refMonthly` に残してあり、詳細画面で自前計算と並べて表示する。
+
+条件は `settings.loan`（共通）を使い、`room.loan` が入っている部屋だけ個別条件で計算する。
+
+## 地図
+
+`js/map.js`。**API キーが不要**な組み合わせを選んでいる。
+
+- タイル: 国土地理院（`cyberjapandata.gsi.go.jp`）— 帰属表示が必要
+- 住所検索: 国土地理院 住所検索API（`msearch.gsi.go.jp`）— 日本の住所に強い
+- 描画: Leaflet（cdnjs から地図画面でのみ遅延読み込み）
+
+建物には `lat`/`lng` を保存する。毎回ジオコーディングすると表示が遅く、
+外部サービスへの依存も増えるため。距離は球面近似、徒歩分数は 80m/分 で算出。
 
 ## 端末間の設定引き継ぎ（QR ペアリング）
 

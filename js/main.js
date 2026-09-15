@@ -1,14 +1,19 @@
 // 起動・ルーティング・自動保存
 import { store } from './store.js';
 import { $, $$, toast, debounce } from './util.js';
-import { route, bindRouter, renderList, renderCompare, renderDetail, renderSettings, initLightbox } from './views.js';
+import {
+  route, bindRouter, renderList, renderBuilding, renderRoom,
+  renderCompare, renderMap, renderSettings,
+} from './views.js';
+import { initLightbox } from './gallery.js';
 import { parsePairing } from './pairing.js';
 
 const main = $('#main');
 
 function parseHash() {
   const [view = 'list', id = null] = location.hash.replace(/^#\/?/, '').split('/');
-  return { view: ['list', 'compare', 'detail', 'settings', 'setup'].includes(view) ? view : 'list', id };
+  const known = ['list', 'b', 'r', 'compare', 'map', 'settings', 'setup'];
+  return { view: known.includes(view) ? view : 'list', id };
 }
 
 function go(view, id) {
@@ -23,8 +28,9 @@ function render() {
   const key = `${route.view}/${route.id ?? ''}`;
   const keepScroll = key === lastKey ? window.scrollY : 0;
   lastKey = key;
-  $$('#tabs .tab').forEach((t) =>
-    t.classList.toggle('is-active', t.dataset.view === (route.view === 'detail' ? 'list' : route.view)));
+  // 建物・部屋の詳細は「一覧」タブの配下として扱う
+  const tabOf = { b: 'list', r: 'list' }[route.view] || route.view;
+  $$('#tabs .tab').forEach((t) => t.classList.toggle('is-active', t.dataset.view === tabOf));
 
   // QR から来た設定リンクは画面を描く前に取り込む（起動済みのアプリで踏まれた場合もここを通る）
   if (route.view === 'setup') {
@@ -32,8 +38,10 @@ function render() {
     return;
   }
   if (route.view === 'compare') renderCompare(main);
+  else if (route.view === 'map') renderMap(main);
   else if (route.view === 'settings') renderSettings(main);
-  else if (route.view === 'detail' && route.id) renderDetail(main, route.id);
+  else if (route.view === 'b' && route.id) renderBuilding(main, route.id);
+  else if (route.view === 'r' && route.id) renderRoom(main, route.id);
   else renderList(main);
 
   window.scrollTo(0, keepScroll);
