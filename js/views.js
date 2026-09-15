@@ -447,8 +447,10 @@ function paintLoan(box, r, b, repaint) {
 /* =========================================================
    比較（部屋を列にした表）
    ========================================================= */
-/** 比較対象に選んだ部屋。未選択なら全件を対象にする */
+/** 比較対象に選んだ部屋の id。初回に全件を入れて「選択中＝チェック済み」を素直に一致させる */
 const selection = new Set();
+let selectionReady = false;
+let pickerOpen = true;
 
 export function renderCompare(root) {
   const all = [];
@@ -457,58 +459,99 @@ export function renderCompare(root) {
   }
   if (!all.length) { mount(root, el('div', { class: 'empty' }, '比較する部屋がありません。')); return; }
 
-  // 一度も選んでいなければ全件、選択済みなら交差をとる（削除された部屋を除く）
   const ids = new Set(all.map((x) => x.r.id));
-  for (const id of [...selection]) if (!ids.has(id)) selection.delete(id);
-  const picked = selection.size ? all.filter((x) => selection.has(x.r.id)) : all;
+  if (!selectionReady) { all.forEach((x) => selection.add(x.r.id)); selectionReady = true; }
+  for (const id of [...selection]) if (!ids.has(id)) selection.delete(id);   // 削除済みを掃除
+
+  const picked = all.filter((x) => selection.has(x.r.id));
   const rows = picked.map((x) => ({ ...x, c: derive(x.r, x.b, store.loanTerms), a: analyze(x.r) }));
 
   mount(root,
-    selector(all),
-    priceChart(rows),
-    compareTable(rows),
+    picker(all),
+    rows.length
+      ? el('div', {}, priceChart(rows), compareTable(rows))
+      : el('div', { class: 'empty' }, '比較する部屋を選んでください。上のパネルからタップで選べます。'),
   );
 }
 
-/** 比較する部屋のチェックボックス一覧 */
-function selector(all) {
-  const boxes = all.map(({ b, r }) => {
-    const on = !selection.size || selection.has(r.id);
-    return el('label', { class: 'pickchip' + (on ? ' is-on' : '') },
-      el('input', {
-        type: 'checkbox', checked: on,
-        onchange: (e) => {
-          // 「全件表示」状態から触られたら、まず全件を選択済みにしてから差し引く
-          if (!selection.size) all.forEach((x) => selection.add(x.r.id));
-          if (e.target.checked) selection.add(r.id); else selection.delete(r.id);
-          if (selection.size === all.length) selection.clear();
-          rerender();
-        },
-      }),
-      el('span', {},
-        el('b', {}, r.label),
-        el('span', { class: 'tiny muted' }, ` ${b.name}`),
-        CLOSED_STATUS.includes(r.listingStatus)
-          ? el('span', { class: 'badge badge-muted', style: 'margin-left:6px' }, r.listingStatus) : null,
-      ));
+/**
+ * 比較対象の選択。
+ * 建物ごとにまとめ、価格と広さを出したまま選べるようにする
+ * （名前だけのチェックボックスでは、どれを外すべきか判断できないため）。
+ */
+function picker(all) {
+  const total = all.length;
+  const count = selection.size;
+
+  const act = (label, fn) => el('button', {
+    class: 'btn btn-sm',
+    onclick: (e) => { e.stopPropagation(); fn(); rerender(); },
+  }, label);
+
+  const head = el('div', { class: 'picker-head', onclick: () => { pickerOpen = !pickerOpen; rerender(); } },
+    el('span', { class: 'picker-title' }, '比較する部屋'),
+    el('span', { class: 'badge ' + (count ? 'badge-ok' : 'badge-warn') }, `${count} / ${total} 件`),
+    el('div', { class: 'spacer' }),
+    act('すべて', () => all.forEach((x) => selection.add(x.r.id))),
+    act('解除', () => selection.clear()),
+    act('募集中のみ', () => {
+      selection.clear();
+      all.filter((x) => !CLOSED_STATUS.includes(x.r.listingStatus)).forEach((x) => selection.add(x.r.id));
+    }),
+    el('span', { class: 'picker-caret' + (pickerOpen ? ' is-open' : '') }, '▾'),
+  );
+
+  if (!pickerOpen) {
+    return el('div', { class: 'card picker' }, head,
+      el('div', { class: 'picker-summary' },
+        all.filter((x) => selection.has(x.r.id)).map((x) =>
+          el('span', { class: 'roomchip is-top' }, `${x.b.name} ${x.r.label}`))));
+  }
+
+  const groups = store.buildings.map((b) => {
+    const rooms = all.filter((x) => x.b.id === b.id);
+    if (!rooms.length) return null;
+    const onCount = rooms.filter((x) => selection.has(x.r.id)).length;
+    const allOn = onCount === rooms.length;
+
+    return el('div', { class: 'bgroup' },
+      el('div', { class: 'bgroup-head' },
+        el('button', {
+          class: 'btn btn-sm' + (allOn ? ' btn-primary' : ''),
+          onclick: () => {
+            rooms.forEach((x) => (allOn ? selection.delete(x.r.id) : selection.add(x.r.id)));
+            rerender();
+          },
+        }, allOn ? '✓ 棟すべて' : '棟すべて'),
+        el('span', { class: 'bgroup-name' }, b.name),
+        el('span', { class: 'tiny muted' }, `${onCount}/${rooms.length}`),
+      ),
+      el('div', { class: 'rtiles' }, rooms.map(({ r }) => roomTile(r, b))),
+    );
   });
 
-  return el('div', { class: 'card', style: 'padding:12px 14px;margin-bottom:14px' },
-    el('div', { class: 'toolbar', style: 'margin-bottom:8px' },
-      el('span', { class: 'tiny muted' },
-        selection.size ? `${selection.size} 件を比較中` : `全 ${all.length} 件を比較中`),
-      el('div', { class: 'spacer' }),
-      el('button', { class: 'btn btn-sm', onclick: () => { selection.clear(); rerender(); } }, 'すべて選択'),
-      el('button', {
-        class: 'btn btn-sm',
-        onclick: () => {
-          selection.clear();
-          all.filter((x) => !CLOSED_STATUS.includes(x.r.listingStatus)).forEach((x) => selection.add(x.r.id));
-          rerender();
-        },
-      }, '募集中のみ'),
+  return el('div', { class: 'card picker' }, head, el('div', { class: 'picker-body' }, groups));
+}
+
+function roomTile(r, b) {
+  const on = selection.has(r.id);
+  const c = derive(r, b, store.loanTerms);
+  const closed = CLOSED_STATUS.includes(r.listingStatus);
+
+  return el('button', {
+    class: 'rtile' + (on ? ' is-on' : ''),
+    onclick: () => { if (on) selection.delete(r.id); else selection.add(r.id); rerender(); },
+  },
+    el('span', { class: 'rtile-check' }, on ? '✓' : ''),
+    el('span', { class: 'rtile-body' },
+      el('span', { class: 'rtile-top' },
+        el('b', {}, r.label || '(部屋)'),
+        closed ? el('span', { class: 'badge badge-muted' }, r.listingStatus) : null,
+      ),
+      el('span', { class: 'rtile-price' }, `${fmt.man1(r.price)}万円`),
+      el('span', { class: 'rtile-sub' },
+        `${fmt.sqm(r.area)}・${r.layout || '—'}　坪${fmt.n(c.tsuboPrice, 0)}万`),
     ),
-    el('div', { class: 'pickgrid' }, boxes),
   );
 }
 
