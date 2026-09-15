@@ -56,25 +56,35 @@ function statusRow(room, repaint) {
   );
 }
 
-/* ===== 指標 ===== */
+/* ===== 指標 =====
+   4つ×2行にそろえる。自動折り返しに任せると最後の行に空きマスが残って見苦しいため。 */
 function metrics(a, room) {
   const sign = (v) => (v == null ? '—' : `${v > 0 ? '+' : ''}${fmt.man1(Math.round(v))}万円`);
-  return el('div', { class: 'calcgrid', style: 'margin-top:12px' },
-    kv('当初価格', a.initial != null ? `${fmt.man1(a.initial)}万円` : '—',
-      a.initialPerTsubo ? `坪 ${fmt.n(a.initialPerTsubo, 0)}万円` : null),
-    kv('現在価格', a.current != null ? `${fmt.man1(a.current)}万円` : '—',
-      a.currentPerTsubo ? `坪 ${fmt.n(a.currentPerTsubo, 0)}万円` : null),
-    kv('登録日', formatDate(a.listedAt)),
-    kv(a.closed ? '募集終了日' : '本日時点', formatDate(a.endDate)),
-    kv('販売期間', a.salesDays != null ? `${a.salesDays}日` : '—',
-      a.closed ? '終了までの日数' : '募集中'),
-    kv('価格改定回数', `${a.changeCount}回`),
-    kv('価格改定総額', sign(a.totalChange),
-      a.changeRate != null ? `${a.changeRate > 0 ? '+' : ''}${a.changeRate.toFixed(1)}%` : null),
-    kv('初回改定まで',
-      a.firstChange ? `${a.firstChange.days}日` : '—',
-      a.firstChange ? sign(a.firstChange.amount) : null),
+  const price = (v, perTsubo) =>
+    kv(null, v != null ? `${fmt.man1(v)}万円` : '—', perTsubo ? `坪 ${fmt.n(perTsubo, 0)}万円` : null);
+
+  return el('div', { class: 'calcgrid calcgrid-4', style: 'margin-top:12px' },
+    withLabel('当初価格', price(a.initial, a.initialPerTsubo)),
+    withLabel('現在価格', price(a.current, a.currentPerTsubo)),
+    withLabel('登録日', kv(null, formatDate(a.listedAt))),
+    withLabel(a.closed ? '募集終了日' : '最終更新日',
+      kv(null, formatDate(a.closed ? room.closedAt : a.lastUpdate),
+        a.closed ? null : '最後に価格が動いた日')),
+
+    withLabel('販売期間', kv(null, a.salesDays != null ? `${a.salesDays}日` : '—',
+      a.closed ? '登録から終了まで' : '登録から本日まで')),
+    withLabel('価格改定回数', kv(null, `${a.changeCount}回`)),
+    withLabel('価格改定総額', kv(null, sign(a.totalChange),
+      a.changeRate ? `${a.changeRate > 0 ? '+' : ''}${a.changeRate.toFixed(1)}%` : null)),
+    withLabel('初回改定まで', kv(null, a.firstChange ? `${a.firstChange.days}日` : '—',
+      a.firstChange ? sign(a.firstChange.amount) : null)),
   );
+}
+
+/** kv() のラベル位置を使いつつ、見出しを明示的に差し込む */
+function withLabel(label, node) {
+  node.prepend(el('div', { class: 'k' }, label));
+  return node;
 }
 
 function chartBox(room, a) {

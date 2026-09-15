@@ -458,3 +458,7 @@ table.cmp tr.is-current td{background:var(--accent-soft)}
 .tagsub{margin-bottom:10px}
 .tagsub:last-child{margin-bottom:0}
 .tagsub-title{font-size:11px;color:var(--text-3);font-weight:700;margin-bottom:5px;letter-spacing:.04em}
+
+/* 指標を4列で揃える。自動折り返しだと最後の行に空きマスが残るため */
+.calcgrid-4{grid-template-columns:repeat(4,minmax(0,1fr))}
+@media(max-width:820px){.calcgrid-4{grid-template-columns:repeat(2,minmax(0,1fr))}}

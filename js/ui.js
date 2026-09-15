@@ -11,7 +11,9 @@ export function select(value, options, onchange, cls = null) {
 }
 
 export function kv(k, v, sub = null) {
-  return el('div', {}, el('div', { class: 'k' }, k), el('div', { class: 'v' }, v),
+  return el('div', {},
+    k ? el('div', { class: 'k' }, k) : null,
+    el('div', { class: 'v' }, v),
     sub ? el('div', { class: 'k', style: 'margin-top:2px' }, sub) : null);
 }
 
