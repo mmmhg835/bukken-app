@@ -32,15 +32,17 @@ export function renderLifeplan(root, rerender, sub = 'plan') {
   const baseRes = offerRoom ? calcPlan(plan, room, building, store.loanTerms, opts) : null;
 
   if (!ui.openGroups) ui.openGroups = new Set(['住居費']);
+  rerenderOffer = rerender;
   // 金額を打つたびに再描画されるため、フォーカスを保ったまま描き直す
   const mark = () => { store.markDirty(); preserveFocus(rerender); };
 
   mount(root,
     subTabs(view),
     propertyPicker(plan, room, building, rerender, view),
-    offerRoom ? offerComparison(room, offerRoom, building, res, baseRes) : null,
+    offerRoom && view === 'plan'
+      ? offerComparison(plan, room, offerRoom, building, res, baseRes) : null,
     view === 'burden' ? burdenView(plan, offerRoom || room, res, mark, rerender)
-      : view === 'graph' ? graphView(plan, offerRoom || room, building, res)
+      : view === 'graph' ? graphView(plan, offerRoom || room, building, res, offerRoom ? room : null)
         : planView(plan, offerRoom || room, building, res, mark, rerender),
   );
 }
@@ -155,43 +157,89 @@ function offerRow(room, rerender) {
 }
 
 /**
- * 元値と指値を並べる。差がいくらかを一目で追えないと、
- * 指値をいくらにするかの判断材料にならない。
+ * 元値と指値を、家計まるごとで並べる。
+ * ローンの数字だけ見ても暮らしがどう変わるか分からないので、
+ * 生活費・毎月の残り・将来の資産まで同じ表に載せる。
  */
-function offerComparison(room, offerRoom, building, res, baseRes) {
-  const a = housingCost(room, building, store.loanTerms);
-  const b = housingCost(offerRoom, building, store.loanTerms);
-  const man = (v) => `${fmt.man1(Math.round(v))}万円`;
-  const man1 = (v) => `${fmt.n(v, 1)}万円`;
+const offerUI = { diffOnly: false };
 
-  const rows = [
-    ['物件価格', man(room.price), man(offerRoom.price), room.price, offerRoom.price],
-    ['借入額', man(a.loan.principal), man(b.loan.principal), a.loan.principal, b.loan.principal],
-    ['購入時の現金', man(a.loan.cash), man(b.loan.cash), a.loan.cash, b.loan.cash],
-    ['毎月のローン返済', man1(a.items[0].amount), man1(b.items[0].amount), a.items[0].amount, b.items[0].amount],
-    ['住居費（管理・修繕込）', man1(a.total), man1(b.total), a.total, b.total],
-    ['毎月の残り', man1(baseRes.balance), man1(res.balance), baseRes.balance, res.balance],
-    ['変動費に使える上限', man1(baseRes.variableBudget), man1(res.variableBudget), baseRes.variableBudget, res.variableBudget],
-    ['総返済額', man(a.loan.totalPayment), man(b.loan.totalPayment), a.loan.totalPayment, b.loan.totalPayment],
-    ['うち利息', man(a.loan.totalInterest), man(b.loan.totalInterest), a.loan.totalInterest, b.loan.totalInterest],
+function offerComparison(plan, room, offerRoom, building, res, baseRes) {
+  const terms = store.loanTerms;
+  const hA = housingCost(room, building, terms);
+  const hB = housingCost(offerRoom, building, terms);
+  const years = Math.max(40, { ...terms, ...(room.loan || {}) }.years + 5);
+  const pA = project(plan, room, building, terms, years);
+  const pB = project(plan, offerRoom, building, terms, years);
+  const assetsAt = (rows, y) => rows.find((r) => r.year === y)?.assets ?? null;
+  const running = (h) => h.items[1].amount + h.items[2].amount;
+
+  // [見出し, 元値, 指値, 表示形式, 増えるほうが良いか]
+  const sections = [
+    ['購入・借入', [
+      ['物件価格', room.price, offerRoom.price, 'man', false],
+      ['借入額', hA.loan.principal, hB.loan.principal, 'man', false],
+      ['購入時の現金', hA.loan.cash, hB.loan.cash, 'man', false],
+      ['総返済額', hA.loan.totalPayment, hB.loan.totalPayment, 'man', false],
+      ['うち利息', hA.loan.totalInterest, hB.loan.totalInterest, 'man', false],
+    ]],
+    ['毎月の収支', [
+      ['収入合計', baseRes.income, res.income, 'man1', true],
+      ['先取りの資産形成', baseRes.saving, res.saving, 'man1', true],
+      ['住居費', baseRes.housingTotal, res.housingTotal, 'man1', false],
+      ['　ローン返済', hA.items[0].amount, hB.items[0].amount, 'man1', false],
+      ['　管理＋修繕', running(hA), running(hB), 'man1', false],
+      ['車関連', baseRes.carTotal, res.carTotal, 'man1', false],
+      ['その他固定費', baseRes.fixed, res.fixed, 'man1', false],
+      ['変動費（いまの入力）', baseRes.variable, res.variable, 'man1', false],
+      ['支出合計', baseRes.expense, res.expense, 'man1', false],
+      ['変動費に使える上限', baseRes.variableBudget, res.variableBudget, 'man1', true],
+      ['毎月の残り', baseRes.balance, res.balance, 'man1', true],
+    ]],
+    ['長い目で見た差', [
+      ['年間の残り', baseRes.yearlyBalance, res.yearlyBalance, 'man', true],
+      ['年間の貯蓄', baseRes.yearlySaving, res.yearlySaving, 'man', true],
+      ['10年後の資産', assetsAt(pA, 10), assetsAt(pB, 10), 'man', true],
+      ['20年後の資産', assetsAt(pA, 20), assetsAt(pB, 20), 'man', true],
+      ['30年後の資産', assetsAt(pA, 30), assetsAt(pB, 30), 'man', true],
+    ]],
   ];
 
-  const body = el('tbody', {}, rows.map(([label, av, bv, an, bn]) => {
-    const d = bn - an;
-    const sign = d > 0 ? '+' : '';
-    // 支払いが減る方向を良い変化として扱う。「毎月の残り」だけは増える方が良い
-    const better = label === '毎月の残り' || label === '変動費に使える上限' ? d > 0 : d < 0;
-    return el('tr', {},
-      el('td', { class: 'lab' }, label),
-      el('td', {}, av),
-      el('td', { class: 'best' }, bv),
-      el('td', { class: Math.abs(d) < 0.05 ? 'muted' : (better ? 'pos' : 'neg') },
-        Math.abs(d) < 0.05 ? '—' : `${sign}${fmt.n(d, Math.abs(d) < 100 ? 1 : 0)}万円`),
-    );
-  }));
+  const show = (v, kind) => {
+    if (v == null) return '—';
+    if (kind === 'man') return `${fmt.man1(Math.round(v))}万円`;
+    return `${fmt.n(v, 1)}万円`;
+  };
+
+  const body = el('tbody');
+  let hidden = 0;
+  for (const [name, rows] of sections) {
+    const visible = rows.filter(([, a, b]) => !offerUI.diffOnly || Math.abs((b ?? 0) - (a ?? 0)) >= 0.05);
+    hidden += rows.length - visible.length;
+    if (!visible.length) continue;
+
+    body.append(el('tr', { class: 'secrow' },
+      el('td', { class: 'lab secrow-lab' }, name),
+      el('td', { class: 'secrow-fill' }), el('td', { class: 'secrow-fill' }), el('td', { class: 'secrow-fill' })));
+
+    for (const [label, a, b, kind, upIsGood] of visible) {
+      const d = a == null || b == null ? null : b - a;
+      const same = d == null || Math.abs(d) < 0.05;
+      const better = d != null && (upIsGood ? d > 0 : d < 0);
+      body.append(el('tr', {},
+        el('td', { class: 'lab' }, label),
+        el('td', {}, show(a, kind)),
+        el('td', { class: same ? null : 'best' }, show(b, kind)),
+        el('td', { class: same ? 'muted' : (better ? 'pos' : 'neg') },
+          same ? '—' : `${d > 0 ? '+' : ''}${fmt.n(d, Math.abs(d) < 100 ? 1 : 0)}万円`),
+      ));
+    }
+  }
 
   return el('div', { class: 'section' },
     el('h3', {}, '元値と指値の比較'),
+    el('div', { class: 'toolbar' },
+      toggle('差のある項目だけ', offerUI.diffOnly, (v) => { offerUI.diffOnly = v; rerenderOffer(); }),
+      offerUI.diffOnly && hidden ? el('span', { class: 'tiny muted' }, `同じ値の ${hidden} 項目を非表示`) : null),
     el('div', { class: 'tablewrap' },
       el('table', { class: 'cmp offercmp' },
         el('thead', {}, el('tr', {},
@@ -202,6 +250,9 @@ function offerComparison(room, offerRoom, building, res, baseRes) {
         body)),
   );
 }
+
+/** 比較表のトグルだけのために画面全体を描き直す */
+let rerenderOffer = () => {};
 
 /* ===== サマリー ===== */
 function summary(res, plan, rerender) {
@@ -310,6 +361,7 @@ function waterfallSection(res, room, building) {
 }
 
 const COLOR = {
+  base: '#94a3b8',        // 元値の線。指値と見分けつつ、主役にしない
   income: SERIES_COLORS[0],
   expense: SERIES_COLORS[3],
   assets: SERIES_COLORS[1],
@@ -321,29 +373,39 @@ const COLOR = {
   left: '#d97706',
 };
 
-function graphView(plan, room, building, res) {
+/**
+ * @param {object|null} baseRoom 指値を入れているときの元値の部屋。
+ *   線を2本並べないと、指値で将来どれだけ差がつくかが読み取れない。
+ */
+function graphView(plan, room, building, res, baseRoom = null) {
   const years = Math.max(40, (room ? { ...store.loanTerms, ...(room.loan || {}) } : store.loanTerms).years + 5);
   const rows = project(plan, room, building, store.loanTerms, years);
+  const baseRows = baseRoom ? project(plan, baseRoom, building, store.loanTerms, years) : null;
   const marks = milestones(plan, room, store.loanTerms)
     .filter((m) => m.year <= years)
     .map((m) => ({ x: m.year, label: m.label }));
 
   return el('div', {},
-    flowSection(rows, marks),
-    assetSection(rows, marks),
+    flowSection(rows, marks, baseRows),
+    assetSection(rows, marks, baseRows),
     breakdownSection(res),
   );
 }
 
 /** 年ごとの収入と支出。支出が段階的に下がる様子を見る */
 
-function flowSection(rows, marks) {
+function flowSection(rows, marks, baseRows = null) {
+  const pts = (list, key) => list.map((r) => ({ x: r.year, y: r[key] }));
   const series = [
-    { name: '収入', color: COLOR.income, points: rows.map((r) => ({ x: r.year, y: r.income })) },
-    { name: '支出', color: COLOR.expense, points: rows.map((r) => ({ x: r.year, y: r.expense })) },
-  ];
-  const surplus = [{ name: '年間の残り', color: COLOR.left, fill: true,
-    points: rows.map((r) => ({ x: r.year, y: r.balance })) }];
+    { name: '収入', color: COLOR.income, points: pts(rows, 'income') },
+    { name: baseRows ? '支出（指値）' : '支出', color: COLOR.expense, points: pts(rows, 'expense') },
+    baseRows ? { name: '支出（元値）', color: COLOR.base, dashed: true, points: pts(baseRows, 'expense') } : null,
+  ].filter(Boolean);
+  const surplus = [
+    { name: baseRows ? '年間の残り（指値）' : '年間の残り', color: COLOR.left, fill: !baseRows,
+      points: pts(rows, 'balance') },
+    baseRows ? { name: '年間の残り（元値）', color: COLOR.base, dashed: true, points: pts(baseRows, 'balance') } : null,
+  ].filter(Boolean);
   return el('div', { class: 'section' },
     el('h3', {}, '収入と支出の推移'),
     el('div', { class: 'panel' }, el('div', { class: 'panel-chart' },
@@ -352,26 +414,41 @@ function flowSection(rows, marks) {
       chartLegend(series),
       el('div', { class: 'subhead', style: 'margin:18px 0 6px' }, '年間の残り'),
       el('div', { class: 'chartwrap' },
-        lineChart(surplus, { xLabel: '経過年数', yLabel: '年額（万円）', xUnit: '年', marks, height: 220, baseline: 'zero' })))),
+        lineChart(surplus, { xLabel: '経過年数', yLabel: '年額（万円）', xUnit: '年', marks, height: 220, baseline: 'zero' })),
+      baseRows ? chartLegend(surplus) : null)),
   );
 }
 
 /** 積み上がる資産。節目のあとで傾きが変わる */
 
-function assetSection(rows, marks) {
+function assetSection(rows, marks, baseRows = null) {
   const series = [
-    { name: '累積資産', color: COLOR.assets, fill: true, points: rows.map((r) => ({ x: r.year, y: r.assets })) },
-  ];
+    { name: baseRows ? '累積資産（指値）' : '累積資産', color: COLOR.assets, fill: !baseRows,
+      points: rows.map((r) => ({ x: r.year, y: r.assets })) },
+    baseRows
+      ? { name: '累積資産（元値）', color: COLOR.base, dashed: true,
+        points: baseRows.map((r) => ({ x: r.year, y: r.assets })) }
+      : null,
+  ].filter(Boolean);
   const at = (y) => rows.find((r) => r.year === y);
+  const baseAt = (y) => baseRows?.find((r) => r.year === y);
   return el('div', { class: 'section' },
     el('h3', {}, '資産の積み上がり'),
     el('div', { class: 'panel' }, el('div', { class: 'panel-chart' },
       el('div', { class: 'chartwrap' },
-        lineChart(series, { xLabel: '経過年数', yLabel: '累積（万円）', xUnit: '年', marks, height: 280, baseline: 'zero' })))),
+        lineChart(series, { xLabel: '経過年数', yLabel: '累積（万円）', xUnit: '年', marks, height: 280, baseline: 'zero' })),
+      baseRows ? chartLegend(series) : null)),
     el('div', { class: 'calcgrid calcgrid-4', style: 'margin-top:12px' },
-      ...[5, 10, 20, 30].map((y) => at(y)
-        ? kv(`${y}年後`, `${fmt.man1(Math.round(at(y).assets))}万円`, `年間 ${fmt.n(at(y).saving + at(y).balance, 0)}万円`)
-        : kv(`${y}年後`, '—')),
+      ...[5, 10, 20, 30].map((y) => {
+        const r = at(y);
+        if (!r) return kv(`${y}年後`, '—');
+        const b = baseAt(y);
+        const d = b ? r.assets - b.assets : null;
+        return kv(`${y}年後`, `${fmt.man1(Math.round(r.assets))}万円`,
+          d != null
+            ? `元値との差 ${d > 0 ? '+' : ''}${fmt.man1(Math.round(d))}万円`
+            : `年間 ${fmt.n(r.saving + r.balance, 0)}万円`);
+      }),
     ),
   );
 }

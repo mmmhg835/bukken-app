@@ -356,7 +356,11 @@ export function lineChart(series, opts = {}) {
         fill: color, opacity: '.12',
       }));
     }
-    svg.append(n('path', { d, fill: 'none', stroke: color, 'stroke-width': 2.4, 'stroke-linejoin': 'round' }));
+    // 比較用の線は破線にする。色だけだと重なったときにどちらか分からない
+    svg.append(n('path', {
+      d, fill: 'none', stroke: color, 'stroke-width': s.dashed ? 2 : 2.4,
+      'stroke-linejoin': 'round', 'stroke-dasharray': s.dashed ? '6 5' : null,
+    }));
   });
 
   return svg;
