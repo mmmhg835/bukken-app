@@ -42,7 +42,7 @@ function render() {
   }
   if (route.view === 'compare') renderCompare(main);
   else if (route.view === 'analysis') renderAnalysis(main, render);
-  else if (route.view === 'plan') renderLifeplan(main, render);
+  else if (route.view === 'plan') renderLifeplan(main, render, route.id || 'plan');
   else if (route.view === 'map') renderMap(main);
   else if (route.view === 'settings') renderSettings(main);
   else if (route.view === 'b' && route.id) renderBuilding(main, route.id);

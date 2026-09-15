@@ -74,13 +74,20 @@ const checks = [
     const res = calcPlan(plan, room, null, mods.loan.DEFAULT_TERMS);
     const rows = incomePatterns(plan, room, res);
     if (rows.length !== 3) throw new Error('年収パターンが3つでない');
-    // 分母が大きくなるほど負担率は下がり、倍率も下がるはず
-    for (let i = 1; i < rows.length; i++) {
-      if (!(rows[i].annual > rows[i - 1].annual)) throw new Error('年収の並びが不正');
-      if (!(rows[i].burdenLoan < rows[i - 1].burdenLoan)) throw new Error('返済負担率（ローン）の並びが不正');
-      if (!(rows[i].burdenHousing < rows[i - 1].burdenHousing)) throw new Error('返済負担率（住居費）の並びが不正');
-      if (!(rows[i].burdenHousing > rows[i].burdenLoan)) throw new Error('住居費ベースがローンのみを下回っている');
-      if (!(rows[i].multiple < rows[i - 1].multiple)) throw new Error('年収倍率の並びが不正');
+    for (const base of ['gross', 'net']) {
+      for (let i = 1; i < rows.length; i++) {
+        const prev = rows[i - 1][base], cur = rows[i][base];
+        if (!(cur.annual > prev.annual)) throw new Error(`${base}: 年収の並びが不正`);
+        if (!(cur.loan < prev.loan)) throw new Error(`${base}: 返済負担率の並びが不正`);
+        if (!(cur.multiple < prev.multiple)) throw new Error(`${base}: 年収倍率の並びが不正`);
+      }
+      for (const r of rows) {
+        if (!(r[base].housing > r[base].loan)) throw new Error(`${base}: 住居費込みがローンのみを下回っている`);
+      }
+    }
+    // 手取りは額面より小さいので、負担率は必ず手取りベースの方が高くなる
+    for (const r of rows) {
+      if (!(r.net.loan > r.gross.loan)) throw new Error('手取りベースの負担率が額面ベースを上回っていない');
     }
   }],
   ['loan', () => {

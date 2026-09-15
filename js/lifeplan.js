@@ -67,9 +67,10 @@ export function defaultLifeplan() {
       ] },
     ],
     // 返済負担率と年収倍率は「額面」で見るのが慣行なので、手取りとは別に持つ
+    // 額面は審査で使う数字、手取りは実際の暮らしの負担。どちらも見たいので両方持つ
     grossIncome: {
-      primary: { name: '夫', annual: 1230 },
-      secondary: { name: '妻', annual: 615 },
+      primary: { name: '夫', annual: 1230, net: 960 },
+      secondary: { name: '妻', annual: 615, net: 480 },
     },
     selectedRoomId: null,   // null なら住居費の手入力値を使う
   };
@@ -224,23 +225,30 @@ export function affordablePrice(plan, room, building, terms) {
  */
 export function incomePatterns(plan, room, res) {
   const g = plan.grossIncome || {};
-  const p = g.primary || { name: '本人', annual: 0 };
-  const sec = g.secondary || { name: '配偶者', annual: 0 };
+  const p = g.primary || { name: '本人', annual: 0, net: 0 };
+  const sec = g.secondary || { name: '配偶者', annual: 0, net: 0 };
+  const n = (v) => Number(v) || 0;
+
   const patterns = [
-    { label: p.name || '本人', annual: Number(p.annual) || 0 },
-    { label: `${p.name} ＋ ${sec.name}の半分`, annual: (Number(p.annual) || 0) + (Number(sec.annual) || 0) / 2 },
-    { label: `${p.name} ＋ ${sec.name}`, annual: (Number(p.annual) || 0) + (Number(sec.annual) || 0) },
+    { label: p.name || '本人', share: 0 },
+    { label: `${p.name} ＋ ${sec.name}の半分`, share: 0.5 },
+    { label: `${p.name} ＋ ${sec.name}`, share: 1 },
   ];
+
   const yearlyLoan = res.loanMonthly != null ? res.loanMonthly * 12 : null;
   // 管理費・修繕まで含めた住居費ベース。実際に毎月出ていく額での負担を見る
   const yearlyHousing = res.housingFromRoom ? res.housingTotal * 12 : null;
   const price = room?.price ?? null;
   const rate = (num, annual) => (annual && num != null ? (num / annual) * 100 : null);
+  const times = (annual) => (annual && price != null ? price / annual : null);
 
-  return patterns.map((x) => ({
-    ...x,
-    burdenLoan: rate(yearlyLoan, x.annual),
-    burdenHousing: rate(yearlyHousing, x.annual),
-    multiple: x.annual && price != null ? price / x.annual : null,
-  }));
+  return patterns.map((x) => {
+    const gross = n(p.annual) + n(sec.annual) * x.share;
+    const net = n(p.net) + n(sec.net) * x.share;
+    return {
+      label: x.label,
+      gross: { annual: gross, loan: rate(yearlyLoan, gross), housing: rate(yearlyHousing, gross), multiple: times(gross) },
+      net: { annual: net, loan: rate(yearlyLoan, net), housing: rate(yearlyHousing, net), multiple: times(net) },
+    };
+  });
 }

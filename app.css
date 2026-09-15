@@ -478,3 +478,13 @@ table.cmp tr.is-current td{background:var(--accent-soft)}
 .thsub span{font-size:10.5px;font-weight:600;color:var(--text-3)}
 .bonusrow{display:flex;align-items:center;gap:14px;margin-top:12px;flex-wrap:wrap}
 .filterrow{display:flex;align-items:center;gap:12px;margin-top:10px}
+
+/* ===== ライフプランのサブタブ ===== */
+.subtabs{display:flex;gap:4px;margin-bottom:16px;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none}
+.subtabs::-webkit-scrollbar{display:none}
+.subtab{background:none;border:0;padding:9px 16px;border-bottom:2px solid transparent;
+  color:var(--text-2);cursor:pointer;font-weight:700;font-size:13.5px;white-space:nowrap;margin-bottom:-1px}
+.subtab:hover{color:var(--text)}
+.subtab.is-active{color:var(--accent);border-bottom-color:var(--accent)}
+
+.incrow{display:flex;align-items:center;gap:8px;padding:6px 0;flex-wrap:wrap}

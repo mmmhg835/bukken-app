@@ -11,7 +11,13 @@ import { derive } from './util.js';
 
 const ui = { afterLoans: false, openGroups: null };
 
-export function renderLifeplan(root, rerender) {
+const SUBTABS = [['plan', 'ライフプラン'], ['burden', '返済負担比率']];
+
+/**
+ * @param {string} sub 'plan' | 'burden'。物件と収入の前提を共有したまま切り替える
+ */
+export function renderLifeplan(root, rerender, sub = 'plan') {
+  const view = SUBTABS.some(([k]) => k === sub) ? sub : 'plan';
   const plan = store.lifeplan;
   const room = plan.selectedRoomId ? store.room(plan.selectedRoomId) : null;
   const building = room ? store.building(room.buildingId) : null;
@@ -21,21 +27,37 @@ export function renderLifeplan(root, rerender) {
   // 金額を打つたびに再描画されるため、フォーカスを保ったまま描き直す
   const mark = () => { store.markDirty(); preserveFocus(rerender); };
 
-  // 物件 → 収入 → 結果 → 支出の順。前提を先に置き、そこから計算結果を見せる
   mount(root,
-    propertyPicker(plan, room, building, rerender),
+    subTabs(view),
+    propertyPicker(plan, room, building, rerender, view),
+    view === 'burden'
+      ? burdenView(plan, room, res, mark, rerender)
+      : planView(plan, room, building, res, mark, rerender),
+  );
+}
+
+function subTabs(current) {
+  return el('nav', { class: 'subtabs' }, SUBTABS.map(([key, label]) =>
+    el('button', {
+      class: 'subtab' + (key === current ? ' is-active' : ''),
+      onclick: () => { location.hash = key === 'plan' ? '#/plan' : `#/plan/${key}`; },
+    }, label)));
+}
+
+function planView(plan, room, building, res, mark, rerender) {
+  // 物件 → 収入 → 結果 → 支出の順。前提を先に置き、そこから計算結果を見せる
+  return el('div', {},
     incomeSection(plan, mark),
     summary(res, plan, rerender),
     housingDetail(res, room, building),
     waterfallSection(res, room, building),
-    burdenSection(plan, room, res, mark, rerender),
     groupsSection(plan, res, mark, rerender),
     scenarioSection(plan, room, building),
   );
 }
 
 /* ===== 物件の選択 ===== */
-function propertyPicker(plan, room, building, rerender) {
+function propertyPicker(plan, room, building, rerender, view = 'plan') {
   const options = [['', '現在の想定（手入力の住居費）']];
   for (const b of store.buildings) {
     for (const r of store.roomsOf(b.id)) {
@@ -61,10 +83,12 @@ function propertyPicker(plan, room, building, rerender) {
               }, '物件の詳細を見る')
               : null,
           )),
-        el('div', { class: 'ctlrow' },
-          el('span', { class: 'ctllabel' }, el('i', { class: 'ctlicon' }, '◷'), 'シナリオ'),
-          toggle('期限付きの支出（車ローン・奨学金）が終わった後で試算',
-            ui.afterLoans, (v) => { ui.afterLoans = v; rerender(); })),
+        view === 'plan'
+          ? el('div', { class: 'ctlrow' },
+            el('span', { class: 'ctllabel' }, el('i', { class: 'ctlicon' }, '◷'), 'シナリオ'),
+            toggle('期限付きの支出（車ローン・奨学金）が終わった後で試算',
+              ui.afterLoans, (v) => { ui.afterLoans = v; rerender(); }))
+          : null,
       )),
   );
 }
@@ -169,68 +193,81 @@ function waterfallSection(res, room, building) {
 }
 
 /* =========================================================
-   返済負担率と年収倍率
+   返済負担比率
    ========================================================= */
-/** 列見出しに算式と目安を小さく添える。別途の説明文を置かずに済ませる */
-function thSub(title, sub) {
-  return el('div', { class: 'thsub' }, el('b', {}, title), el('span', {}, sub));
-}
-
-function burdenSection(plan, room, res, mark, rerender) {
-  plan.grossIncome ||= { primary: { name: '夫', annual: 0 }, secondary: { name: '妻', annual: 0 } };
-  const g = plan.grossIncome;
+function burdenView(plan, room, res, mark, rerender) {
+  plan.grossIncome ||= {
+    primary: { name: '夫', annual: 0, net: 0 },
+    secondary: { name: '妻', annual: 0, net: 0 },
+  };
   const rows = incomePatterns(plan, room, res);
 
-  const personInput = (who) => el('div', { class: 'lpitem', style: 'padding:0' },
+  return el('div', {},
+    incomeSettings(plan, mark),
+    burdenTable('額面年収', rows, (x) => x.gross, room),
+    burdenTable('手取り年収', rows, (x) => x.net, room),
+    room ? null : el('div', { class: 'empty' }, '対象の物件を選んでください'),
+  );
+}
+
+/** 額面と手取りを1行に並べて入力する */
+function incomeSettings(plan, mark) {
+  const g = plan.grossIncome;
+  const field = (who, key, fkey) => el('input', {
+    type: 'number', step: 'any', inputmode: 'decimal', class: 'lpitem-input',
+    value: g[who][key] ?? '', 'data-fkey': `${fkey}-${who}`,
+    oninput: (e) => { g[who][key] = e.target.value === '' ? 0 : Number(e.target.value); mark(); },
+  });
+  const row = (who) => el('div', { class: 'incrow' },
     el('input', {
-      type: 'text', class: 'lpitem-name', style: 'max-width:90px', value: g[who].name ?? '',
-      'data-fkey': `gross-name-${who}`,
+      type: 'text', class: 'lpitem-name', style: 'max-width:110px', value: g[who].name ?? '',
+      'data-fkey': `name-${who}`,
       oninput: (e) => { g[who].name = e.target.value; store.markDirty(); },
     }),
-    el('input', {
-      type: 'number', step: 'any', inputmode: 'decimal', class: 'lpitem-input',
-      value: g[who].annual ?? '', 'data-fkey': `gross-${who}`,
-      oninput: (e) => { g[who].annual = e.target.value === '' ? 0 : Number(e.target.value); mark(); },
-    }),
+    el('span', { class: 'tiny muted' }, '額面'), field(who, 'annual', 'gross'),
+    el('span', { class: 'tiny muted' }, '手取り'), field(who, 'net', 'net'),
     el('span', { class: 'tiny muted' }, '万円/年'),
   );
 
-  const cell = (v, fmtFn, judge) => {
-    if (v == null) return el('td', { class: 'muted' }, '—');
-    return el('td', { class: judge ? judge(v) : null }, fmtFn(v));
-  };
+  return el('div', { class: 'section' },
+    el('h3', {}, '年収'),
+    el('div', { class: 'card', style: 'padding:14px' }, row('primary'), row('secondary')),
+  );
+}
+
+function burdenTable(title, rows, pick, room) {
+  const cell = (v, format, judge) =>
+    (v == null ? el('td', { class: 'muted' }, '—')
+      : el('td', { class: judge(v) }, format(v)));
 
   return el('div', { class: 'section' },
-    el('h3', {}, '返済負担率と年収倍率'),
-    el('div', { class: 'panel' },
-      el('div', { class: 'panel-controls' },
-        el('div', { class: 'ctlrow' },
-          el('span', { class: 'ctllabel' }, el('i', { class: 'ctlicon' }, '¥'), '額面年収'),
-          el('div', { style: 'display:flex;gap:18px;flex-wrap:wrap' },
-            personInput('primary'), personInput('secondary')))),
-      el('div', { class: 'panel-chart', style: 'padding:0' },
-        el('div', { class: 'tablewrap', style: 'border:0;border-radius:0' },
-          el('table', { class: 'cmp valuetable' },
-            el('thead', {}, el('tr', {},
-              el('th', { class: 'lab' }, '年収の見方'),
-              el('th', {}, '額面年収'),
-              el('th', {}, thSub('返済負担率', 'ローンのみ　25%以下')),
-              el('th', {}, thSub('返済負担率', '管理費・修繕込み')),
-              el('th', {}, thSub('年収倍率', '価格 ÷ 年収　7倍以下')),
-            )),
-            el('tbody', {}, rows.map((x) => el('tr', {},
-              el('td', { class: 'lab' }, x.label),
-              el('td', {}, `${fmt.man1(Math.round(x.annual))}万円`),
-              cell(x.burdenLoan, (v) => `${v.toFixed(1)}%`,
-                (v) => (v <= 25 ? 'best' : v <= 35 ? null : 'worse')),
-              cell(x.burdenHousing, (v) => `${v.toFixed(1)}%`,
-                (v) => (v <= 30 ? 'best' : v <= 40 ? null : 'worse')),
-              cell(x.multiple, (v) => `${v.toFixed(1)}倍`,
-                (v) => (v <= 7 ? 'best' : v <= 9 ? null : 'worse')),
-            ))),
-          ))),
-    ),
+    el('h3', {}, `${title}ベース`),
+    el('div', { class: 'tablewrap' },
+      el('table', { class: 'cmp valuetable' },
+        el('thead', {}, el('tr', {},
+          el('th', { class: 'lab' }, '年収の見方'),
+          el('th', {}, title),
+          el('th', {}, thSub('返済負担率', 'ローンのみ')),
+          el('th', {}, thSub('返済負担率', '管理費・修繕込み')),
+          el('th', {}, thSub('年収倍率', '価格 ÷ 年収')),
+        )),
+        el('tbody', {}, rows.map((x) => {
+          const v = pick(x);
+          return el('tr', {},
+            el('td', { class: 'lab' }, x.label),
+            el('td', {}, `${fmt.man1(Math.round(v.annual))}万円`),
+            cell(v.loan, (n) => `${n.toFixed(1)}%`, (n) => (n <= 25 ? 'best' : n <= 35 ? null : 'worse')),
+            cell(v.housing, (n) => `${n.toFixed(1)}%`, (n) => (n <= 30 ? 'best' : n <= 40 ? null : 'worse')),
+            cell(v.multiple, (n) => `${n.toFixed(1)}倍`, (n) => (n <= 7 ? 'best' : n <= 9 ? null : 'worse')),
+          );
+        })),
+      )),
   );
+}
+
+/** 列見出しに算式と目安を小さく添える。別途の説明文を置かずに済ませる */
+function thSub(title, sub) {
+  return el('div', { class: 'thsub' }, el('b', {}, title), el('span', {}, sub));
 }
 
 /* ===== 支出グループ ===== */

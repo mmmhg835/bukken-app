@@ -5,7 +5,7 @@ import { DEFAULT_TERMS } from './loan.js';
 import { buildingDefaults, SPEC_GROUPS, BUILDING_EQUIPMENT } from './spec.js';
 import { defaultLifeplan, categoryOf } from './lifeplan.js';
 
-export const CURRENT_SCHEMA = 11;
+export const CURRENT_SCHEMA = 12;
 
 export function migrate(data) {
   let d = structuredClone(data);
@@ -19,6 +19,7 @@ export function migrate(data) {
   if (d.schemaVersion < 9) d = v8ToV9(d);
   if (d.schemaVersion < 10) d = v9ToV10(d);
   if (d.schemaVersion < 11) d = v10ToV11(d);
+  if (d.schemaVersion < 12) d = v11ToV12(d);
   d.settings ||= {};
   d.settings.loan = { ...DEFAULT_TERMS, ...(d.settings.loan || {}) };
   d.settings.places ||= [];   // 職場・駅など、地図上の参照地点
@@ -160,6 +161,24 @@ function v10ToV11(d) {
     plan.income.push({ id: 'i_other', name: 'その他収入', amount: 0, enabled: false });
   }
   d.schemaVersion = 11;
+  return d;
+}
+
+/**
+ * v12: 返済負担率を手取りベースでも出せるよう、手取り年収を持たせる。
+ * 初期値は入力済みの手取り月額から起こす。
+ */
+function v11ToV12(d) {
+  const plan = d.settings?.lifeplan;
+  if (!plan?.grossIncome) { d.schemaVersion = 12; return d; }
+  const monthly = (plan.income || []).filter((i) => i.enabled !== false);
+  const fallback = { primary: 960, secondary: 480 };
+  for (const [key, index] of [['primary', 0], ['secondary', 1]]) {
+    const person = plan.grossIncome[key];
+    if (!person || person.net != null) continue;
+    person.net = monthly[index] ? Math.round((Number(monthly[index].amount) || 0) * 12) : fallback[key];
+  }
+  d.schemaVersion = 12;
   return d;
 }
 
