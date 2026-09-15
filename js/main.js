@@ -14,9 +14,14 @@ function go(view, id) {
   location.hash = `#/${view}${id ? `/${id}` : ''}`;
 }
 
+let lastKey = null;
+
 function render() {
   Object.assign(route, parseHash());
-  const scroll = route.view === 'detail' ? 0 : window.scrollY;
+  // 同じ画面の再描画（画像追加後など）ではスクロール位置を保つ
+  const key = `${route.view}/${route.id ?? ''}`;
+  const keepScroll = key === lastKey ? window.scrollY : 0;
+  lastKey = key;
   $$('#tabs .tab').forEach((t) =>
     t.classList.toggle('is-active', t.dataset.view === (route.view === 'detail' ? 'list' : route.view)));
 
@@ -25,7 +30,7 @@ function render() {
   else if (route.view === 'detail' && route.id) renderDetail(main, route.id);
   else renderList(main);
 
-  if (route.view === 'detail') window.scrollTo(0, scroll);
+  window.scrollTo(0, keepScroll);
   paintStatus();
 }
 
