@@ -136,6 +136,24 @@ const checks = [
     if (numOrNull('0') !== 0) throw new Error('0 を null にしてしまっている');
     if (numOrNull('1.5') !== 1.5) throw new Error('小数を読めていない');
   }],
+  ['指値', () => {
+    const { defaultLifeplan, calcPlan, housingCost } = mods.lifeplan;
+    const plan = defaultLifeplan();
+    const terms = mods.loan.DEFAULT_TERMS;
+    const room = { price: 16500, area: 100, kanrihi: 2, shuzen: 2 };
+    const offer = { ...room, price: 15000 };
+    const a = calcPlan(plan, room, null, terms);
+    const b = calcPlan(plan, offer, null, terms);
+    if (!(b.housingTotal < a.housingTotal)) throw new Error('指値で住居費が下がっていない');
+    if (!(b.balance > a.balance)) throw new Error('指値で毎月の残りが増えていない');
+    // 管理費・修繕は価格に連動しないので、差はローン返済だけのはず
+    const dLoan = housingCost(room, null, terms).items[0].amount - housingCost(offer, null, terms).items[0].amount;
+    if (Math.abs((a.housingTotal - b.housingTotal) - dLoan) > 0.15) {
+      throw new Error('住居費の差がローン返済の差と合わない');
+    }
+    // 元の部屋を書き換えていないこと（一覧や分析の現在価格が変わってしまう）
+    if (room.price !== 16500) throw new Error('元の部屋の価格を書き換えている');
+  }],
   ['import', () => {
     const { parseListing } = mods.parse;
     const { mergeInto } = mods['import-view'];

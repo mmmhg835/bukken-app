@@ -585,3 +585,17 @@ table.cmp tr.is-current td{background:var(--accent-soft)}
   .improw{grid-template-columns:20px minmax(0,1fr);gap:4px 10px;padding:9px 0}
   .improw-val,.improw-cur{grid-column:2}
 }
+
+/* ===== 指値 ===== */
+.offerrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.offerinput{width:120px;border:1px solid var(--line);background:var(--bg);color:var(--text);
+  border-radius:var(--r-sm);padding:8px 10px;font-size:14px;font-weight:700;text-align:right}
+.offerinput:focus{outline:2px solid var(--accent-soft);border-color:var(--accent)}
+/* 元値・指値・差の3列。項目名だけ左寄せで、数字は右にそろえる */
+table.offercmp th,table.offercmp td{min-width:96px}
+table.offercmp td.muted{color:var(--text-3)}
+
+@media(max-width:560px){
+  .offerrow{gap:8px}
+  .offerinput{width:104px}
+}

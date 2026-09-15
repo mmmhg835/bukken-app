@@ -5,7 +5,7 @@ import { DEFAULT_TERMS } from './loan.js';
 import { buildingDefaults, SPEC_GROUPS, BUILDING_EQUIPMENT } from './spec.js';
 import { defaultLifeplan, categoryOf } from './lifeplan.js';
 
-export const CURRENT_SCHEMA = 14;
+export const CURRENT_SCHEMA = 15;
 
 export function migrate(data) {
   let d = structuredClone(data);
@@ -22,6 +22,7 @@ export function migrate(data) {
   if (d.schemaVersion < 12) d = v11ToV12(d);
   if (d.schemaVersion < 13) d = v12ToV13(d);
   if (d.schemaVersion < 14) d = v13ToV14(d);
+  if (d.schemaVersion < 15) d = v14ToV15(d);
   d.settings ||= {};
   d.settings.loan = { ...DEFAULT_TERMS, ...(d.settings.loan || {}) };
   d.settings.places ||= [];   // 職場・駅など、地図上の参照地点
@@ -206,6 +207,17 @@ function v13ToV14(d) {
   apply(d.settings?.loan);
   for (const r of d.rooms || []) apply(r.loan);
   d.schemaVersion = 14;
+  return d;
+}
+
+/**
+ * v15: 指値（希望購入価格）を部屋に追加。
+ * 「いくらまで下がったら買えるか」を試算するための入力値で、派生値ではない。
+ * 現在価格（price）とは別に持つ。混ぜると一覧や分析の価格の意味が変わってしまう。
+ */
+function v14ToV15(d) {
+  for (const r of d.rooms || []) r.offerPrice ??= null;
+  d.schemaVersion = 15;
   return d;
 }
 

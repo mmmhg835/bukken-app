@@ -22,7 +22,14 @@ export function renderLifeplan(root, rerender, sub = 'plan') {
   const plan = store.lifeplan;
   const room = plan.selectedRoomId ? store.room(plan.selectedRoomId) : null;
   const building = room ? store.building(room.buildingId) : null;
-  const res = calcPlan(plan, room, building, store.loanTerms, { excludeTemporary: ui.afterLoans });
+  const opts = { excludeTemporary: ui.afterLoans };
+
+  // 指値は「いくらまで下がったら」を見るための仮の価格。
+  // このタブの中だけで価格に代えて使い、一覧や分析の現在価格には手を触れない。
+  const offerRoom = offerRoomOf(room);
+  const res = calcPlan(plan, offerRoom || room, building, store.loanTerms, opts);
+  // 指値を入れているときだけ、元値の結果も並べて計算する
+  const baseRes = offerRoom ? calcPlan(plan, room, building, store.loanTerms, opts) : null;
 
   if (!ui.openGroups) ui.openGroups = new Set(['住居費']);
   // 金額を打つたびに再描画されるため、フォーカスを保ったまま描き直す
@@ -31,10 +38,18 @@ export function renderLifeplan(root, rerender, sub = 'plan') {
   mount(root,
     subTabs(view),
     propertyPicker(plan, room, building, rerender, view),
-    view === 'burden' ? burdenView(plan, room, res, mark, rerender)
-      : view === 'graph' ? graphView(plan, room, building, res)
-        : planView(plan, room, building, res, mark, rerender),
+    offerRoom ? offerComparison(room, offerRoom, building, res, baseRes) : null,
+    view === 'burden' ? burdenView(plan, offerRoom || room, res, mark, rerender)
+      : view === 'graph' ? graphView(plan, offerRoom || room, building, res)
+        : planView(plan, offerRoom || room, building, res, mark, rerender),
   );
+}
+
+/** 指値が入っていれば、その価格に置き換えた部屋を返す。元の部屋は書き換えない */
+function offerRoomOf(room) {
+  const p = room?.offerPrice;
+  if (room == null || p == null || p === room.price) return null;
+  return { ...room, price: p };
 }
 
 function subTabs(current) {
@@ -84,6 +99,7 @@ function propertyPicker(plan, room, building, rerender, view = 'plan') {
               }, '物件の詳細を見る')
               : null,
           )),
+        room ? offerRow(room, rerender) : null,
         view === 'plan'
           ? el('div', { class: 'ctlrow' },
             el('span', { class: 'ctllabel' }, el('i', { class: 'ctlicon' }, '◷'), 'シナリオ'),
@@ -91,6 +107,99 @@ function propertyPicker(plan, room, building, rerender, view = 'plan') {
               ui.afterLoans, (v) => { ui.afterLoans = v; rerender(); }))
           : null,
       )),
+  );
+}
+
+/**
+ * 指値の入力。値引き幅の目安は押すだけで入るようにする。
+ * 交渉の当たりを付けるとき、率から金額を暗算するのが手間になるため。
+ */
+const OFFER_STEPS = [3, 5, 8, 10];
+
+function offerRow(room, rerender) {
+  const base = Number(room.price) || 0;
+  const set = (v) => {
+    room.offerPrice = v;
+    store.markDirty();
+    preserveFocus(rerender);
+  };
+  const diff = room.offerPrice != null ? room.offerPrice - base : null;
+
+  return el('div', { class: 'ctlrow' },
+    el('span', { class: 'ctllabel' }, el('i', { class: 'ctlicon' }, '¥'), '指値'),
+    el('div', { class: 'offerrow' },
+      numberInput({
+        value: room.offerPrice, cls: 'offerinput', fkey: `offer-${room.id}`,
+        placeholder: fmt.man1(base),
+        onInput: (num) => { room.offerPrice = num; store.markDirty(); preserveFocus(rerender); },
+      }),
+      el('span', { class: 'tiny muted' }, '万円'),
+      el('div', { class: 'tagwrap' },
+        OFFER_STEPS.map((pct) => {
+          const v = Math.round(base * (1 - pct / 100));
+          return el('button', {
+            type: 'button', class: 'tag' + (room.offerPrice === v ? ' is-on' : ''),
+            title: `${fmt.man1(v)}万円`,
+            onclick: () => set(v),
+          }, `-${pct}%`);
+        })),
+      diff != null
+        ? el('span', { class: 'tiny ' + (diff < 0 ? 'pos' : diff > 0 ? 'neg' : 'muted') },
+          `${diff > 0 ? '+' : ''}${fmt.man1(diff)}万円`
+          + (base ? `（${diff > 0 ? '+' : ''}${(diff / base * 100).toFixed(1)}%）` : ''))
+        : null,
+      room.offerPrice != null
+        ? el('button', { class: 'btn btn-sm', onclick: () => set(null) }, '元値に戻す')
+        : null,
+    ));
+}
+
+/**
+ * 元値と指値を並べる。差がいくらかを一目で追えないと、
+ * 指値をいくらにするかの判断材料にならない。
+ */
+function offerComparison(room, offerRoom, building, res, baseRes) {
+  const a = housingCost(room, building, store.loanTerms);
+  const b = housingCost(offerRoom, building, store.loanTerms);
+  const man = (v) => `${fmt.man1(Math.round(v))}万円`;
+  const man1 = (v) => `${fmt.n(v, 1)}万円`;
+
+  const rows = [
+    ['物件価格', man(room.price), man(offerRoom.price), room.price, offerRoom.price],
+    ['借入額', man(a.loan.principal), man(b.loan.principal), a.loan.principal, b.loan.principal],
+    ['購入時の現金', man(a.loan.cash), man(b.loan.cash), a.loan.cash, b.loan.cash],
+    ['毎月のローン返済', man1(a.items[0].amount), man1(b.items[0].amount), a.items[0].amount, b.items[0].amount],
+    ['住居費（管理・修繕込）', man1(a.total), man1(b.total), a.total, b.total],
+    ['毎月の残り', man1(baseRes.balance), man1(res.balance), baseRes.balance, res.balance],
+    ['変動費に使える上限', man1(baseRes.variableBudget), man1(res.variableBudget), baseRes.variableBudget, res.variableBudget],
+    ['総返済額', man(a.loan.totalPayment), man(b.loan.totalPayment), a.loan.totalPayment, b.loan.totalPayment],
+    ['うち利息', man(a.loan.totalInterest), man(b.loan.totalInterest), a.loan.totalInterest, b.loan.totalInterest],
+  ];
+
+  const body = el('tbody', {}, rows.map(([label, av, bv, an, bn]) => {
+    const d = bn - an;
+    const sign = d > 0 ? '+' : '';
+    // 支払いが減る方向を良い変化として扱う。「毎月の残り」だけは増える方が良い
+    const better = label === '毎月の残り' || label === '変動費に使える上限' ? d > 0 : d < 0;
+    return el('tr', {},
+      el('td', { class: 'lab' }, label),
+      el('td', {}, av),
+      el('td', { class: 'best' }, bv),
+      el('td', { class: Math.abs(d) < 0.05 ? 'muted' : (better ? 'pos' : 'neg') },
+        Math.abs(d) < 0.05 ? '—' : `${sign}${fmt.n(d, Math.abs(d) < 100 ? 1 : 0)}万円`),
+    );
+  }));
+
+  return el('div', { class: 'section' },
+    el('h3', {}, '元値と指値の比較'),
+    el('div', { class: 'tablewrap' },
+      el('table', { class: 'cmp offercmp' },
+        el('thead', {}, el('tr', {},
+          el('th', { class: 'lab' }, '項目'),
+          el('th', {}, '元値'),
+          el('th', {}, '指値'),
+          el('th', {}, '差'))),
+        body)),
   );
 }
 

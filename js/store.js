@@ -164,6 +164,7 @@ class Store extends EventTarget {
       price: null, area: null, layout: '', floor: null, balcony: null,
       kanrihi: null, shuzen: null,
       refMonthly: null, refLoanPrincipal: null, refLoanInterest: null, loan: null,
+      offerPrice: null,   // 指値。ライフプランの試算でだけ価格に代えて使う
       reform: '', viewNote: '', roomNote: '', imageRange: '', url: '', memo: '',
       cover: null, coverThumb: null, images: [], ...partial,
     };
