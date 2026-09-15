@@ -260,6 +260,13 @@ room.priceHistory = [
   { date: '2026-05-01', price: 12000 },
 ];
 
+// ライフプランは物件を選んでいないと住居費・段階表・指値の比較まで届かない。
+// 選ばないまま検査していたため、その配下が未定義参照でも気づけなかった。
+store.data.settings.lifeplan.selectedRoomId = room.id;
+
+const lifeplanTabs = ['plan', 'burden', 'graph', 'sale'];
+const lp = (tab) => () => mods['lifeplan-view'].renderLifeplan(stubEl(), () => {}, tab);
+
 const screens = [
   ['一覧', () => mods.views.renderList(stubEl())],
   ['比較', () => mods.views.renderCompare(stubEl())],
@@ -269,10 +276,15 @@ const screens = [
   ['取り込み', () => mods['import-view'].renderImport(stubEl())],
   ['地図', () => mods.views.renderMap(stubEl())],
   ['分析', () => mods['analytics-view'].renderAnalysis(stubEl(), () => {})],
-  ['ライフプラン', () => mods['lifeplan-view'].renderLifeplan(stubEl(), () => {}, 'plan')],
-  ['返済負担比率', () => mods['lifeplan-view'].renderLifeplan(stubEl(), () => {}, 'burden')],
-  ['グラフ', () => mods['lifeplan-view'].renderLifeplan(stubEl(), () => {}, 'graph')],
-  ['売却', () => mods['lifeplan-view'].renderLifeplan(stubEl(), () => {}, 'sale')],
+  ['ライフプラン', lp('plan')],
+  ['返済負担比率', lp('burden')],
+  ['グラフ', lp('graph')],
+  ['売却', lp('sale')],
+  // 指値を入れると元値との2組を描く経路に入る。ここも必ず通す
+  ['ライフプラン（指値あり）', () => { room.offerPrice = Math.round(room.price * 0.93); lp('plan')(); }],
+  ['返済負担比率（指値あり）', lp('burden')],
+  ['グラフ（指値あり）', lp('graph')],
+  ['売却（指値あり）', () => { lp('sale')(); room.offerPrice = null; }],
 ];
 
 mods.views.bindRouter(() => {}, () => {});

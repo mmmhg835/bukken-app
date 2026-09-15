@@ -1,6 +1,6 @@
 /* ===== tokens ===== */
 :root{
-  --bg:#f5f6f8; --surface:#ffffff; --surface-2:#f0f2f5; --line:#e2e5ea;
+  --bg:#f5f6f8; --surface:#ffffff; --surface-2:#f0f2f5; --line:#e2e5ea; --line-2:#c7cedb;
   --text:#14181f; --text-2:#5b6472; --text-3:#8a93a2;
   --accent:#1d4ed8; --accent-soft:#e8edfd;
   --good:#0f766e; --warn:#b45309; --bad:#b91c1c;
@@ -11,7 +11,7 @@
 /* 端末の設定に従う（既定）。ただし明示的にライトを選んでいるときは適用しない */
 @media (prefers-color-scheme:dark){
   :root:not([data-theme="light"]){
-    --bg:#0d1117; --surface:#161b22; --surface-2:#1c232d; --line:#2a323d;
+    --bg:#0d1117; --surface:#161b22; --surface-2:#1c232d; --line:#2a323d; --line-2:#3d4857;
     --text:#e6edf3; --text-2:#9aa6b4; --text-3:#6e7b8c;
     --accent:#6f9bff; --accent-soft:#182543;
     --good:#2dd4bf; --warn:#fbbf24; --bad:#f87171;
@@ -20,7 +20,7 @@
 }
 /* 明示的にダークを選んだ場合は端末設定より優先する */
 :root[data-theme="dark"]{
-    --bg:#0d1117; --surface:#161b22; --surface-2:#1c232d; --line:#2a323d;
+    --bg:#0d1117; --surface:#161b22; --surface-2:#1c232d; --line:#2a323d; --line-2:#3d4857;
     --text:#e6edf3; --text-2:#9aa6b4; --text-3:#6e7b8c;
     --accent:#6f9bff; --accent-soft:#182543;
     --good:#2dd4bf; --warn:#fbbf24; --bad:#f87171;
@@ -91,9 +91,9 @@ h1,h2,h3{margin:0;font-weight:700;letter-spacing:.01em}
 .imgcount{position:absolute;right:8px;bottom:8px;background:rgba(0,0,0,.62);color:#fff;font-size:11.5px;padding:3px 8px;border-radius:999px;font-weight:600}
 
 /* ===== compare table ===== */
-.tablewrap{overflow-x:auto;max-width:100%;border:1px solid var(--line);border-radius:var(--r);background:var(--surface)}
+.tablewrap{overflow-x:auto;max-width:100%;border:1px solid var(--line-2);border-radius:var(--r);background:var(--surface)}
 table.cmp{border-collapse:separate;border-spacing:0;width:100%;font-size:13.5px}
-table.cmp th,table.cmp td{padding:9px 12px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap;vertical-align:middle}
+table.cmp th,table.cmp td{padding:9px 12px;border-bottom:1px solid var(--line-2);text-align:right;white-space:nowrap;vertical-align:middle}
 table.cmp th.lab,table.cmp td.lab{
   text-align:left;position:sticky;left:0;background:var(--surface);z-index:2;
   font-weight:700;min-width:130px;box-shadow:1px 0 0 var(--line)
@@ -126,9 +126,9 @@ table.cmp tr:hover td.lab{background:var(--surface-2)}
 /* 格子線はコンテナ背景ではなく各セルの影で描く。
    背景で描くと、最後の行の空きマスがそのまま灰色の帯として見えてしまうため。 */
 .calcgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));
-  background:var(--surface);border-radius:var(--r);overflow:hidden;border:1px solid var(--line)}
+  background:var(--surface);border-radius:var(--r);overflow:hidden;border:1px solid var(--line-2)}
 .calcgrid > div{background:var(--surface);padding:12px 14px;
-  box-shadow:1px 0 0 var(--line),0 1px 0 var(--line)}
+  box-shadow:1px 0 0 var(--line-2),0 1px 0 var(--line-2)}
 .calcgrid .k{font-size:11.5px;color:var(--text-2);font-weight:600}
 .calcgrid .v{font-size:18px;font-weight:800;margin-top:2px;white-space:nowrap;letter-spacing:-.01em}
 
@@ -432,10 +432,10 @@ table.cmp tr.is-current td{background:var(--accent-soft)}
 
 /* ===== 段階表 ===== */
 .wfpanel{padding:0}
-.wfhead{display:flex;align-items:baseline;gap:12px;padding:14px 16px;border-bottom:1px solid var(--line);
+.wfhead{display:flex;align-items:baseline;gap:12px;padding:14px 16px;border-bottom:1px solid var(--line-2);
   font-size:13.5px;color:var(--text-2);font-weight:600}
 .wfhead b{margin-left:auto;font-size:20px;color:var(--text);letter-spacing:-.01em}
-.wfstep{padding:12px 16px;border-bottom:1px solid var(--line)}
+.wfstep{padding:12px 16px;border-bottom:1px solid var(--line-2)}
 .wfstep-head{display:flex;align-items:center;gap:10px}
 .wfstep-no{width:20px;height:20px;border-radius:50%;background:var(--surface-2);color:var(--text-2);
   display:grid;place-items:center;font-size:11px;font-weight:800;flex-shrink:0}
@@ -611,6 +611,10 @@ table.offercmp td.muted{color:var(--text-3)}
 table.cmp tr.is-current td{background:var(--accent-soft);font-weight:700}
 table.cmp tr.is-current td.lab{background:var(--accent-soft)}
 
-/* ===== 指値を入れているときに添える元値 ===== */
-.vsbase{display:block;margin-top:2px;font-size:11px;font-weight:700;white-space:nowrap}
-.wfstep-minus .vsbase,.wfstep-after .vsbase,.lpgroup-total .vsbase{font-size:10.5px;text-align:right}
+/* ===== 指値を入れているとき ===== */
+/* 差を小さな添え字で足すと、どの数字がどちらのものか読み取れない。
+   元値と指値をそれぞれ1組の表として並べ、見出しで区別する。 */
+.hblock + .hblock{margin-top:16px}
+.hblock-label{display:flex;align-items:baseline;gap:10px;margin:0 0 6px;font-size:13px;font-weight:800}
+.hblock-label .amt{font-weight:700;color:var(--text-2);font-size:12.5px}
+.hblock.is-offer .hblock-label{color:var(--accent)}
