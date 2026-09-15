@@ -21,14 +21,15 @@ export function renderLifeplan(root, rerender) {
   // 金額を打つたびに再描画されるため、フォーカスを保ったまま描き直す
   const mark = () => { store.markDirty(); preserveFocus(rerender); };
 
+  // 物件 → 収入 → 結果 → 支出の順。前提を先に置き、そこから計算結果を見せる
   mount(root,
     propertyPicker(plan, room, building, rerender),
+    incomeSection(plan, mark),
     summary(res, plan, rerender),
     housingDetail(res, room, building),
     waterfallSection(res, room, building),
     burdenSection(plan, room, res, mark, rerender),
     groupsSection(plan, res, mark, rerender),
-    incomeSection(plan, mark),
     scenarioSection(plan, room, building),
   );
 }
