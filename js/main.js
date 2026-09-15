@@ -1,0 +1,84 @@
+// 起動・ルーティング・自動保存
+import { store } from './store.js';
+import { $, $$, toast, debounce } from './util.js';
+import { route, bindRouter, renderList, renderCompare, renderDetail, renderSettings, initLightbox } from './views.js';
+
+const main = $('#main');
+
+function parseHash() {
+  const [view = 'list', id = null] = location.hash.replace(/^#\/?/, '').split('/');
+  return { view: ['list', 'compare', 'detail', 'settings'].includes(view) ? view : 'list', id };
+}
+
+function go(view, id) {
+  location.hash = `#/${view}${id ? `/${id}` : ''}`;
+}
+
+function render() {
+  Object.assign(route, parseHash());
+  const scroll = route.view === 'detail' ? 0 : window.scrollY;
+  $$('#tabs .tab').forEach((t) =>
+    t.classList.toggle('is-active', t.dataset.view === (route.view === 'detail' ? 'list' : route.view)));
+
+  if (route.view === 'compare') renderCompare(main);
+  else if (route.view === 'settings') renderSettings(main);
+  else if (route.view === 'detail' && route.id) renderDetail(main, route.id);
+  else renderList(main);
+
+  if (route.view === 'detail') window.scrollTo(0, scroll);
+  paintStatus();
+}
+
+function paintStatus() {
+  const badge = $('#syncBadge');
+  const map = {
+    unconfigured: ['未接続', 'badge-muted'],
+    idle: ['待機', 'badge-muted'],
+    syncing: ['同期中…', 'badge-muted'],
+    ok: [store.dirty ? '未保存' : '同期済', store.dirty ? 'badge-warn' : 'badge-ok'],
+    error: ['エラー', 'badge-warn'],
+  };
+  const [text, cls] = map[store.syncState] || map.idle;
+  badge.textContent = text;
+  badge.className = `badge ${cls}`;
+  badge.title = store.lastError || '';
+  $('#btnSave').hidden = !store.dirty;
+}
+
+// 変更から少し経ったら自動でコミットする（明示保存ボタンも残す）
+const autosave = debounce(async () => {
+  if (!store.dirty || !store.configured) return;
+  try { await store.save(); toast('GitHub に保存しました'); }
+  catch (e) { toast(e.message, true); }
+}, 4000);
+
+store.addEventListener('change', () => { paintStatus(); if (store.dirty) autosave(); });
+
+$('#tabs').addEventListener('click', (e) => {
+  const tab = e.target.closest('.tab');
+  if (tab) go(tab.dataset.view);
+});
+
+$('#btnSave').addEventListener('click', async () => {
+  try { await store.save(); toast('GitHub に保存しました'); }
+  catch (e) { toast(e.message, true); }
+});
+
+window.addEventListener('hashchange', render);
+window.addEventListener('beforeunload', (e) => {
+  if (store.dirty) { e.preventDefault(); e.returnValue = ''; }
+});
+
+bindRouter(go, render);
+initLightbox();
+
+(async () => {
+  await store.init();
+  if (!location.hash) location.hash = store.configured ? '#/list' : '#/settings';
+  render();
+  if (!store.configured) toast('まず「設定」で GitHub リポジトリを接続してください');
+})();
+
+if ('serviceWorker' in navigator && location.protocol === 'https:') {
+  navigator.serviceWorker.register('sw.js').catch(() => { /* 任意機能なので失敗は無視 */ });
+}

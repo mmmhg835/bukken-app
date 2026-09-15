@@ -1,0 +1,46 @@
+# 物件検討ボード
+
+検討中の物件を **写真つきで比較・管理** するための PWA（Mac / iPhone 両対応）。
+
+- **アプリ本体（このリポジトリ・Public）**: HTML / CSS / Vanilla JS のみ。ビルド不要。個人情報は一切含まない。
+- **データ（別リポジトリ・Private）**: `properties.json` と `images/<物件ID>/*.jpg`。
+
+アプリはブラウザから GitHub Contents API を直接叩いてデータリポジトリを読み書きするため、
+**サーバー不要**で Mac と iPhone の内容が同期されます。画像をアップロードすると、その場で
+1コミットとしてデータリポジトリに保存されます。
+
+## 使い方
+
+1. GitHub Pages の URL を開く（iPhone は Safari の共有 →「ホーム画面に追加」でアプリ化）
+2. **設定** タブでデータリポジトリと Fine-grained トークンを入力 →「保存して接続テスト」
+3. あとは **一覧 / 比較 / 詳細** で編集。変更は 4 秒後に自動コミット（「保存」ボタンでも即時コミット）
+
+トークンは端末のブラウザ（localStorage）にのみ保存され、GitHub 以外には送信されません。
+端末ごとに一度だけ入力が必要です。
+
+## ローカルで動かす
+
+`file://` だと ES モジュールが読めないので、簡易サーバー経由で開いてください。
+
+```bash
+npx serve .
+```
+
+## ディレクトリ
+
+```
+index.html            画面の骨組み
+app.css               スタイル（ライト/ダーク自動）
+js/main.js            起動・ハッシュルーティング・自動保存
+js/views.js           一覧 / 比較 / 詳細 / 設定 の描画
+js/store.js           状態管理（GitHub が実体、IndexedDB がキャッシュ）
+js/github.js          GitHub Contents API クライアント
+js/image.js           アップロード前の画像縮小（長辺1600px / サムネ420px）
+js/idb.js             IndexedDB ラッパ
+js/util.js            整形・自動計算（坪単価・月額合計・築年数）
+tools/make-icons.mjs  PWA アイコン生成（依存なし）
+docs/ARCHITECTURE.md  設計メモ
+docs/HANDOFF.md       AI に引き継ぐときのテンプレ
+```
+
+詳細は [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) を参照。
