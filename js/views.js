@@ -409,12 +409,13 @@ export function renderSettings(root) {
       el('div', {
         class: 'help', html: `
         <ol>
-          <li>GitHub → Settings → Developer settings → <b>Personal access tokens → Fine-grained tokens</b> → Generate new token</li>
+          <li><a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">Fine-grained token の発行ページを開く</a>（GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens）</li>
           <li><b>Repository access</b> で <code>データ用リポジトリ</code> だけを選択</li>
           <li><b>Permissions → Repository permissions → Contents</b> を <code>Read and write</code> に設定</li>
           <li>生成されたトークンを上の欄に貼り付け → 「保存して接続テスト」</li>
         </ol>
-        <p>トークンはこの端末のブラウザ（localStorage）にだけ保存され、どこにも送信されません。Mac とスマホで使う場合は、それぞれの端末で一度貼り付けてください。</p>` }),
+        <p><b>Expiration</b> は用途に合わせて設定してください。期限切れになったらこの画面で貼り直すだけです。</p>
+        <p>トークンはこの端末のブラウザ（localStorage）にだけ保存され、GitHub 以外には送信されません。Mac とスマホで使う場合は、それぞれの端末で一度ずつ貼り付けてください。</p>` }),
     ),
     el('div', { class: 'section card', style: 'padding:16px' },
       el('h3', {}, '同期状態'),

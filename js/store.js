@@ -10,7 +10,8 @@ const DATA_PATH = 'properties.json';
 const EMPTY = { schemaVersion: 1, updatedAt: null, properties: [] };
 
 class Store extends EventTarget {
-  config = { owner: '', repo: '', branch: 'main', token: '' };
+  // 既定の接続先。トークンだけは端末ごとに入力が必要
+  config = { owner: 'mmmhg835', repo: 'bukken-data', branch: 'main', token: '' };
   data = structuredClone(EMPTY);
   sha = null;
   dirty = false;
