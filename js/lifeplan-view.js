@@ -46,7 +46,8 @@ export function renderLifeplan(root, rerender, sub = 'plan') {
     view === 'burden' ? burdenView(plan, offerRoom || room, res, mark, rerender)
       : view === 'graph' ? graphView(plan, offerRoom || room, building, res, offerRoom ? room : null)
         : view === 'sale' ? saleView(plan, offerRoom || room, rerender)
-          : planView(plan, offerRoom || room, building, res, mark, rerender),
+          : planView(plan, offerRoom || room, building, res, mark, rerender,
+            baseRes, offerRoom ? room : null),
   );
 }
 
@@ -65,16 +66,30 @@ function subTabs(current) {
     }, label)));
 }
 
-function planView(plan, room, building, res, mark, rerender) {
+function planView(plan, room, building, res, mark, rerender, baseRes = null, baseRoom = null) {
   // 物件 → 収入 → 結果 → 支出の順。前提を先に置き、そこから計算結果を見せる
   return el('div', {},
     incomeSection(plan, mark),
-    summary(res, plan, rerender),
-    housingDetail(res, room, building),
-    waterfallSection(res, room, building),
-    groupsSection(plan, res, mark, rerender),
+    summary(res, plan, rerender, baseRes),
+    housingDetail(res, room, building, baseRes, baseRoom),
+    waterfallSection(res, room, building, baseRes),
+    groupsSection(plan, res, mark, rerender, baseRes),
     scenarioSection(plan, room, building),
   );
+}
+
+/**
+ * 指値を入れているとき、数字の下に元値と差を添える。
+ * 主役は指値の数字なので、元値は置き換えずに添え字として並べる。
+ * 差が無いところには出さない。全項目に付くと、動いた項目が埋もれるため。
+ */
+function vsBase(base, now, upIsGood = true, digits = 1) {
+  if (base == null || now == null) return null;
+  const d = now - base;
+  if (Math.abs(d) < 0.05) return null;
+  const num = (v) => fmt.n(v, digits);
+  return el('span', { class: 'vsbase ' + (upIsGood === (d > 0) ? 'pos' : 'neg') },
+    `元値 ${num(base)}　${d > 0 ? '+' : ''}${num(d)}`);
 }
 
 /* ===== 物件の選択 ===== */
@@ -258,20 +273,26 @@ function offerComparison(plan, room, offerRoom, building, res, baseRes) {
 let rerenderOffer = () => {};
 
 /* ===== サマリー ===== */
-function summary(res, plan, rerender) {
+function summary(res, plan, rerender, baseRes = null) {
   const positive = res.balance >= 0;
+  const b = baseRes;
   return el('div', { class: 'section' },
     el('div', { class: 'calcgrid calcgrid-4' },
       kv('収入合計', `${fmt.n(res.income, 1)}万円`, '手取り／月'),
-      kv('支出合計', `${fmt.n(res.expense, 1)}万円`, '住居費・生活費・積立'),
+      kv('支出合計', `${fmt.n(res.expense, 1)}万円`,
+        ['住居費・生活費・積立', vsBase(b?.expense, res.expense, false)]),
       kv('毎月の残り', el('span', { class: positive ? 'pos' : 'neg' },
-        `${positive ? '+' : ''}${fmt.n(res.balance, 1)}万円`), positive ? '黒字' : '赤字'),
+        `${positive ? '+' : ''}${fmt.n(res.balance, 1)}万円`),
+      [positive ? '黒字' : '赤字', vsBase(b?.balance, res.balance, true)]),
       kv('先取りの資産形成', `${fmt.n(res.saving, 1)}万円`, `貯蓄率 ${res.savingRate.toFixed(1)}%`),
       kv('住居費', `${fmt.n(res.housingTotal, 1)}万円`,
-        res.housingFromRoom ? 'ローン＋管理＋修繕' : '手入力の想定額'),
+        [res.housingFromRoom ? 'ローン＋管理＋修繕' : '手入力の想定額',
+          vsBase(b?.housingTotal, res.housingTotal, false)]),
       kv('車代', `${fmt.n(res.carTotal, 1)}万円`, '駐車場・ローン・維持費'),
       kv('その他固定費', `${fmt.n(res.fixed, 1)}万円`, '住居費・車代を除く'),
-      kv('変動費', `${fmt.n(res.variable, 1)}万円`, `使える上限 ${fmt.n(res.variableBudget, 1)}万円`),
+      kv('変動費', `${fmt.n(res.variable, 1)}万円`,
+        [`使える上限 ${fmt.n(res.variableBudget, 1)}万円`,
+          vsBase(b?.variableBudget, res.variableBudget, true)]),
     ),
     el('div', { class: 'stackbar' }, res.groups.map((g, i) =>
       g.total > 0
@@ -294,8 +315,10 @@ function summary(res, plan, rerender) {
 }
 
 /* ===== 住居費の内訳 ===== */
-function housingDetail(res, room, building) {
+function housingDetail(res, room, building, baseRes = null, baseRoom = null) {
   if (!res.housingFromRoom) return null;
+  const baseHousing = baseRoom ? housingCost(baseRoom, building, store.loanTerms) : null;
+  const baseLoan = baseHousing?.loan ?? null;
   const manual = store.lifeplan.groups.find((g) => g.kind === 'housing').items
     .reduce((s, it) => s + (Number(it.amount) || 0), 0);
   const diff = res.housingFromRoom.total - manual;
@@ -305,17 +328,24 @@ function housingDetail(res, room, building) {
   return el('div', { class: 'section' },
     el('h3', {}, `${building.name} ${room.label} の住居費`),
     el('div', { class: 'calcgrid calcgrid-4' },
-      ...res.housingFromRoom.items.map((it) => kv(it.name, `${fmt.n(it.amount, 1)}万円`)),
-      kv('住居費 合計', `${fmt.n(res.housingFromRoom.total, 1)}万円`, `ローン ${t.rate}% ${t.years}年`),
+      ...res.housingFromRoom.items.map((it, i) => kv(it.name, `${fmt.n(it.amount, 1)}万円`,
+        vsBase(baseHousing?.items[i]?.amount, it.amount, false))),
+      kv('住居費 合計', `${fmt.n(res.housingFromRoom.total, 1)}万円`,
+        [`ローン ${t.rate}% ${t.years}年`,
+          vsBase(baseHousing?.total, res.housingFromRoom.total, false)]),
     ),
     el('div', { class: 'calcgrid calcgrid-4', style: 'margin-top:10px' },
-      kv('物件価格', `${fmt.man1(room.price)}万円`),
+      kv('物件価格', `${fmt.man1(room.price)}万円`,
+        vsBase(baseRoom?.price, room.price, false, 0)),
       kv('諸費用', `${fmt.man1(Math.round(loan?.fees ?? 0))}万円`,
-        `価格の${t.costRate}%${t.costFixed ? ` ＋ ${t.costFixed}万円` : ''}`),
+        [`価格の${t.costRate}%${t.costFixed ? ` ＋ ${t.costFixed}万円` : ''}`,
+          vsBase(baseLoan?.fees, loan?.fees, false, 0)]),
       kv('借入額', `${fmt.man1(Math.round(loan?.principal ?? 0))}万円`,
-        t.includeFees ? '諸費用を含む' : '諸費用は現金'),
+        [t.includeFees ? '諸費用を含む' : '諸費用は現金',
+          vsBase(baseLoan?.principal, loan?.principal, false, 0)]),
       kv('購入時の現金', `${fmt.man1(Math.round(loan?.cash ?? 0))}万円`,
-        t.includeFees ? '頭金のみ' : '頭金＋諸費用'),
+        [t.includeFees ? '頭金のみ' : '頭金＋諸費用',
+          vsBase(baseLoan?.cash, loan?.cash, false, 0)]),
     ),
     el('div', { class: 'tiny muted', style: 'margin-top:8px' },
       '現在の想定（', fmt.n(manual, 1), '万円）との差　',
@@ -323,15 +353,17 @@ function housingDetail(res, room, building) {
   );
 }
 
-function waterfallSection(res, room, building) {
+function waterfallSection(res, room, building, baseRes = null) {
   const w = waterfall(res, room ? `${building.name} ${room.label}` : null);
+  const wBase = baseRes ? waterfall(baseRes) : null;
   const yen = (v) => `${fmt.n(v, 1)}万円`;
 
   const stepRow = (st, i) => el('div', { class: 'wfstep' },
     el('div', { class: 'wfstep-head' },
       el('span', { class: 'wfstep-no' }, String(i + 1)),
       el('span', { class: 'wfstep-label' }, st.label),
-      el('span', { class: 'wfstep-minus' }, `− ${yen(st.amount)}`),
+      el('span', { class: 'wfstep-minus' }, `− ${yen(st.amount)}`,
+        vsBase(wBase?.steps[i]?.amount, st.amount, false)),
     ),
     el('div', { class: 'wfstep-detail' },
       st.items.length
@@ -339,7 +371,8 @@ function waterfallSection(res, room, building) {
         : el('span', { class: 'tiny muted' }, st.note)),
     el('div', { class: 'wfstep-after' },
       el('span', { class: 'tiny muted' }, '残り'),
-      el('b', {}, yen(st.after))),
+      el('b', {}, yen(st.after)),
+      vsBase(wBase?.steps[i]?.after, st.after, true)),
   );
 
   return el('div', { class: 'section' },
@@ -352,7 +385,8 @@ function waterfallSection(res, room, building) {
       el('div', { class: 'wfresult' },
         el('div', {},
           el('div', { class: 'tiny muted' }, '変動費に使える額'),
-          el('div', { class: 'wfresult-big' }, yen(w.variableBudget))),
+          el('div', { class: 'wfresult-big' }, yen(w.variableBudget)),
+          vsBase(wBase?.variableBudget, w.variableBudget, true)),
         el('div', { class: 'wfresult-sub' },
           el('div', {}, `いまの変動費　− ${yen(w.variableActual)}`),
           el('div', { class: w.rest >= 0 ? 'pos' : 'neg' },
@@ -584,11 +618,12 @@ function thSub(title, sub) {
 }
 
 /* ===== 支出グループ ===== */
-function groupsSection(plan, res, mark, rerender) {
+function groupsSection(plan, res, mark, rerender, baseRes = null) {
   return el('div', { class: 'section' },
     el('h3', {}, '支出の内訳'),
     plan.groups.map((g) => {
       const calc = res.groups.find((x) => x.id === g.id);
+      const baseCalc = baseRes?.groups.find((x) => x.id === g.id) ?? null;
       const open = ui.openGroups.has(g.name);
       const locked = calc?.fromRoom;
 
@@ -601,7 +636,8 @@ function groupsSection(plan, res, mark, rerender) {
           el('span', { class: 'lpgroup-name' }, g.name),
           locked ? el('span', { class: 'badge badge-ok' }, '物件から自動') : null,
           el('span', { class: 'spacer' }),
-          el('span', { class: 'lpgroup-total' }, `${fmt.n(calc?.total ?? 0, 1)}万円`),
+          el('span', { class: 'lpgroup-total' }, `${fmt.n(calc?.total ?? 0, 1)}万円`,
+            vsBase(baseCalc?.total, calc?.total, false)),
         ),
         open
           ? el('div', { class: 'lpgroup-body' },

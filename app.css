@@ -610,3 +610,7 @@ table.offercmp td.muted{color:var(--text-3)}
 /* いま選んでいる年の行だけ、表の中で見つけられるようにする */
 table.cmp tr.is-current td{background:var(--accent-soft);font-weight:700}
 table.cmp tr.is-current td.lab{background:var(--accent-soft)}
+
+/* ===== 指値を入れているときに添える元値 ===== */
+.vsbase{display:block;margin-top:2px;font-size:11px;font-weight:700;white-space:nowrap}
+.wfstep-minus .vsbase,.wfstep-after .vsbase,.lpgroup-total .vsbase{font-size:10.5px;text-align:right}
