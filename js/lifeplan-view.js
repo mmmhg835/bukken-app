@@ -46,14 +46,81 @@ function subTabs(current) {
 }
 
 function planView(plan, room, building, res, mark, rerender) {
-  // 物件 → 収入 → 結果 → 支出の順。前提を先に置き、そこから計算結果を見せる
-  return el('div', {},
-    incomeSection(plan, mark),
-    summary(res, plan, rerender),
-    housingDetail(res, room, building),
-    waterfallSection(res, room, building),
-    groupsSection(plan, res, mark, rerender),
-    scenarioSection(plan, room, building),
+  // 左に本文、右に気づき。数字の羅列だけでは判断できないため、要点を並べて添える
+  return el('div', { class: 'planlayout' },
+    el('div', { class: 'planmain' },
+      incomeSection(plan, mark),
+      summary(res, plan, rerender),
+      housingDetail(res, room, building),
+      waterfallSection(res, room, building),
+      groupsSection(plan, res, mark, rerender),
+      scenarioSection(plan, room, building),
+    ),
+    el('aside', { class: 'planside' }, insightPanel(plan, room, building, res)),
+  );
+}
+
+/* ===== 気づき ===== */
+const INSIGHT_ICON = {
+  up: 'M4 13l5-5 3 3 5-6', down: 'M4 7l5 5 3-3 5 6',
+  clock: 'M10 5v5l3 2M10 2a8 8 0 100 16 8 8 0 000-16z',
+  yen: 'M6 4l4 5 4-5M10 9v7M7 12h6M7 15h6',
+  ok: 'M4 10l4 4 8-8',
+};
+
+function insight(kind, icon, title, body, tag) {
+  return el('div', { class: `insight is-${kind}` },
+    el('svg', { class: 'insight-ico', viewBox: '0 0 20 20', html: `<path d="${INSIGHT_ICON[icon]}"/>` }),
+    el('div', {},
+      el('div', { class: 'insight-title' }, title, tag ? el('span', { class: 'insight-tag' }, tag) : null),
+      el('div', { class: 'insight-body' }, body)),
+  );
+}
+
+function insightPanel(plan, room, building, res) {
+  const items = [];
+  const yen = (v) => `${fmt.n(v, 1)}万円`;
+
+  if (res.balance < 0) {
+    items.push(insight('bad', 'down', '毎月が赤字',
+      `${yen(-res.balance)} 足りません。変動費か車関連を見直すか、価格帯を下げる必要があります。`, '要調整'));
+  } else if (res.balance < 3) {
+    items.push(insight('warn', 'clock', '余裕が小さい',
+      `残りは ${yen(res.balance)} です。想定外の出費があると赤字に振れます。`, `+${fmt.n(res.balance, 1)}万`));
+  } else {
+    items.push(insight('good', 'ok', '月次は黒字',
+      `毎月 ${yen(res.balance)} 残り、先取りと合わせて ${yen(res.totalLeft)} が積み上がります。`, `+${fmt.n(res.balance, 1)}万`));
+  }
+
+  const rate = res.income ? (res.housingTotal / res.income) * 100 : 0;
+  items.push(insight(rate <= 30 ? 'good' : rate <= 35 ? 'warn' : 'bad', 'yen', '手取りに占める住居費',
+    `${rate.toFixed(1)}% です。25〜30%に収まると生活に余裕が出ます。`, `${rate.toFixed(0)}%`));
+
+  const temp = plan.groups.flatMap((g) => g.items)
+    .filter((it) => isOn(it) && it.temporary && Number(it.remainingYears) > 0)
+    .sort((a, b) => a.remainingYears - b.remainingYears)[0];
+  if (temp) {
+    items.push(insight('good', 'up', `${temp.name}の完済で改善`,
+      `あと${temp.remainingYears}年で ${yen(temp.amount)}／月 が浮きます。`, `${temp.remainingYears}年後`));
+  }
+
+  if (res.savingRate < 15) {
+    items.push(insight('warn', 'down', '貯蓄率が低め',
+      `${res.savingRate.toFixed(1)}% です。手取りの15〜20%を目安にしたいところです。`, `${res.savingRate.toFixed(0)}%`));
+  }
+
+  const afford = affordablePrice(plan, room, building, store.loanTerms);
+  if (room?.price != null && afford.price > 0) {
+    const diff = afford.price - room.price;
+    items.push(insight(diff >= 0 ? 'good' : 'bad', diff >= 0 ? 'ok' : 'down',
+      diff >= 0 ? '予算内に収まっています' : '予算を超えています',
+      `買える上限は ${fmt.man1(Math.round(afford.price))}万円。この物件との差は ${fmt.man1(Math.round(Math.abs(diff)))}万円です。`,
+      diff >= 0 ? '余裕あり' : '超過'));
+  }
+
+  return el('div', { class: 'card sidecard' },
+    el('div', { class: 'sidecard-head' }, '気づき'),
+    el('div', { class: 'sidecard-body' }, items),
   );
 }
 
@@ -228,12 +295,17 @@ function flowSection(rows, marks) {
     { name: '収入', color: COLOR.income, points: rows.map((r) => ({ x: r.year, y: r.income })) },
     { name: '支出', color: COLOR.expense, points: rows.map((r) => ({ x: r.year, y: r.expense })) },
   ];
+  const surplus = [{ name: '年間の残り', color: COLOR.left, fill: true,
+    points: rows.map((r) => ({ x: r.year, y: r.balance })) }];
   return el('div', { class: 'section' },
     el('h3', {}, '収入と支出の推移'),
     el('div', { class: 'panel' }, el('div', { class: 'panel-chart' },
       el('div', { class: 'chartwrap' },
         lineChart(series, { xLabel: '経過年数', yLabel: '年額（万円）', xUnit: '年', marks, height: 300 })),
-      chartLegend(series))),
+      chartLegend(series),
+      el('div', { class: 'subhead', style: 'margin:18px 0 6px' }, '年間の残り'),
+      el('div', { class: 'chartwrap' },
+        lineChart(surplus, { xLabel: '経過年数', yLabel: '年額（万円）', xUnit: '年', marks, height: 220, baseline: 'zero' })))),
   );
 }
 
@@ -247,7 +319,7 @@ function assetSection(rows, marks) {
     el('h3', {}, '資産の積み上がり'),
     el('div', { class: 'panel' }, el('div', { class: 'panel-chart' },
       el('div', { class: 'chartwrap' },
-        lineChart(series, { xLabel: '経過年数', yLabel: '累積（万円）', xUnit: '年', marks, height: 280 })))),
+        lineChart(series, { xLabel: '経過年数', yLabel: '累積（万円）', xUnit: '年', marks, height: 280, baseline: 'zero' })))),
     el('div', { class: 'calcgrid calcgrid-4', style: 'margin-top:12px' },
       ...[5, 10, 20, 30].map((y) => at(y)
         ? kv(`${y}年後`, `${fmt.man1(Math.round(at(y).assets))}万円`, `年間 ${fmt.n(at(y).saving + at(y).balance, 0)}万円`)

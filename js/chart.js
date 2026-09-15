@@ -284,19 +284,25 @@ function trim(v) {
  * @param {object} opts { xLabel, yLabel, height, marks: [{x, label}] }
  */
 export function lineChart(series, opts = {}) {
-  const { xLabel = '', yLabel = '', height = 300, marks = [], xUnit = '' } = opts;
+  const {
+    xLabel = '', yLabel = '', height = 300, marks = [], xUnit = '',
+    baseline = 'auto',   // 'zero' なら0を基準にする。収支の推移は差が潰れるので既定は auto
+  } = opts;
   const pts = series.flatMap((s) => s.points);
   if (!pts.length) return n('svg', { viewBox: '0 0 10 10' });
 
   const W = 780, H = height;
-  const pad = { t: 16, r: 16, b: 44, l: 76 };
+  const pad = { t: 30, r: 16, b: 44, l: 76 };
   const iw = W - pad.l - pad.r, ih = H - pad.t - pad.b;
 
   const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
   const x0 = Math.min(...xs), x1 = Math.max(...xs);
-  let y0 = Math.min(0, ...ys), y1 = Math.max(...ys);
-  if (y0 === y1) y1 = y0 + 1;
-  y1 += (y1 - y0) * 0.08;
+  let y0 = baseline === 'zero' ? Math.min(0, ...ys) : Math.min(...ys);
+  let y1 = Math.max(...ys);
+  if (y0 === y1) { y0 -= Math.abs(y0 || 1) * 0.1; y1 += Math.abs(y1 || 1) * 0.1; }
+  const span = y1 - y0;
+  if (baseline !== 'zero') y0 -= span * 0.18;   // 折れ線が枠の上端に貼りつかないよう余白をとる
+  y1 += span * 0.14;
 
   const X = (v) => pad.l + ((v - x0) / (x1 - x0 || 1)) * iw;
   const Y = (v) => pad.t + ih - ((v - y0) / (y1 - y0)) * ih;
@@ -316,17 +322,26 @@ export function lineChart(series, opts = {}) {
   }
 
   // 支出が変わる節目に縦線を引く
-  for (const mk of marks) {
+  // 節目が近いとラベルが重なるので、直前との距離を見て段をずらす
+  let lastX = -Infinity, level = 0;
+  for (const mk of [...marks].sort((a, b) => a.x - b.x)) {
     if (mk.x < x0 || mk.x > x1) continue;
+    const px = X(mk.x);
+    level = px - lastX < 120 ? (level + 1) % 2 : 0;
+    lastX = px;
+    const near = px > pad.l + iw * 0.72;
     svg.append(
-      n('line', { x1: X(mk.x), x2: X(mk.x), y1: pad.t, y2: pad.t + ih,
-        stroke: 'var(--text-3)', 'stroke-width': 1, 'stroke-dasharray': '3 4', opacity: '.7' }),
-      n('text', { x: X(mk.x) + 4, y: pad.t + 12, class: 'chart-lab', 'text-anchor': 'start' }, mk.label),
+      n('line', { x1: px, x2: px, y1: pad.t - 10, y2: pad.t + ih,
+        stroke: 'var(--text-3)', 'stroke-width': 1, 'stroke-dasharray': '3 4', opacity: '.55' }),
+      n('text', {
+        x: px + (near ? -6 : 6), y: pad.t - 14 + level * 13, class: 'chart-lab',
+        'text-anchor': near ? 'end' : 'start',
+      }, mk.label),
     );
   }
 
   svg.append(
-    n('line', { x1: pad.l, x2: W - pad.r, y1: Y(Math.max(y0, 0)), y2: Y(Math.max(y0, 0)), class: 'chart-axis' }),
+    n('line', { x1: pad.l, x2: W - pad.r, y1: pad.t + ih, y2: pad.t + ih, class: 'chart-axis' }),
     n('text', { x: pad.l + iw / 2, y: H - 6, class: 'chart-lab', 'text-anchor': 'middle' }, xLabel),
     n('text', { x: 14, y: pad.t + ih / 2, class: 'chart-lab', 'text-anchor': 'middle',
       transform: `rotate(-90 14 ${pad.t + ih / 2})` }, yLabel),
@@ -337,7 +352,7 @@ export function lineChart(series, opts = {}) {
     const d = s.points.map((p, i) => `${i ? 'L' : 'M'} ${X(p.x)} ${Y(p.y)}`).join(' ');
     if (s.fill) {
       svg.append(n('path', {
-        d: `${d} L ${X(s.points[s.points.length - 1].x)} ${Y(Math.max(y0, 0))} L ${X(s.points[0].x)} ${Y(Math.max(y0, 0))} Z`,
+        d: `${d} L ${X(s.points[s.points.length - 1].x)} ${pad.t + ih} L ${X(s.points[0].x)} ${pad.t + ih} Z`,
         fill: color, opacity: '.12',
       }));
     }

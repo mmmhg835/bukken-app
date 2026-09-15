@@ -558,3 +558,30 @@ table.cmp tr.is-current td{background:var(--accent-soft)}
   .selbar-in{padding:12px 14px}
   .selbar-in .btn{width:100%;margin-left:0}
 }
+
+/* ===== ライフプラン：本文と気づきの2段組み ===== */
+.planlayout{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:22px;align-items:start}
+.planside{position:sticky;top:16px}
+.sidecard{overflow:hidden}
+.sidecard-head{padding:13px 16px;border-bottom:1px solid var(--line);
+  font-weight:800;font-size:14px}
+.sidecard-body{padding:6px 14px 14px;display:flex;flex-direction:column}
+.insight{display:flex;gap:10px;padding:12px 2px;border-bottom:1px solid var(--line)}
+.insight:last-child{border-bottom:0}
+.insight-ico{width:18px;height:18px;flex-shrink:0;margin-top:2px;fill:none;
+  stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.insight.is-good{color:var(--good)}
+.insight.is-warn{color:var(--warn)}
+.insight.is-bad{color:var(--bad)}
+.insight-title{font-size:13px;font-weight:800;color:var(--text);
+  display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.insight-tag{font-size:10.5px;font-weight:800;padding:2px 7px;border-radius:999px;
+  background:currentColor;color:#fff;filter:saturate(.9)}
+.insight.is-good .insight-tag{background:var(--good)}
+.insight.is-warn .insight-tag{background:var(--warn)}
+.insight.is-bad .insight-tag{background:var(--bad)}
+.insight-body{font-size:12px;color:var(--text-2);line-height:1.7;margin-top:3px}
+@media(max-width:1080px){
+  .planlayout{grid-template-columns:minmax(0,1fr)}
+  .planside{position:static;order:-1}
+}
