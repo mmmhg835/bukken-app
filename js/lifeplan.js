@@ -20,6 +20,8 @@ export function defaultLifeplan() {
     income: [
       { id: 'i1', name: '夫 手取り', amount: 80 },
       { id: 'i2', name: '妻 手取り', amount: 40 },
+      // 使うときだけ ON にする枠。毎回追加せずに済ませる
+      { id: 'i3', name: 'その他収入', amount: 0, enabled: false },
     ],
     // 賞与は計画に含めない前提。実績は上振れバッファとして記録だけしておく
     bonus: { annual: 65.9, include: false, note: '2026年1〜8月の実績。基本計画には0円として扱う' },

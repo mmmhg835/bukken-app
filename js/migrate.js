@@ -5,7 +5,7 @@ import { DEFAULT_TERMS } from './loan.js';
 import { buildingDefaults, SPEC_GROUPS, BUILDING_EQUIPMENT } from './spec.js';
 import { defaultLifeplan, categoryOf } from './lifeplan.js';
 
-export const CURRENT_SCHEMA = 10;
+export const CURRENT_SCHEMA = 11;
 
 export function migrate(data) {
   let d = structuredClone(data);
@@ -18,6 +18,7 @@ export function migrate(data) {
   if (d.schemaVersion < 8) d = v7ToV8(d);
   if (d.schemaVersion < 9) d = v8ToV9(d);
   if (d.schemaVersion < 10) d = v9ToV10(d);
+  if (d.schemaVersion < 11) d = v10ToV11(d);
   d.settings ||= {};
   d.settings.loan = { ...DEFAULT_TERMS, ...(d.settings.loan || {}) };
   d.settings.places ||= [];   // 職場・駅など、地図上の参照地点
@@ -149,6 +150,16 @@ function v9ToV10(d) {
   }
   plan.grossIncome ||= { primary: { name: '夫', annual: 1230 }, secondary: { name: '妻', annual: 615 } };
   d.schemaVersion = 10;
+  return d;
+}
+
+/** v11: 使うときだけ ON にする「その他収入」の枠を用意する */
+function v10ToV11(d) {
+  const plan = d.settings?.lifeplan;
+  if (plan && !plan.income?.some((i) => i.name === 'その他収入')) {
+    plan.income.push({ id: 'i_other', name: 'その他収入', amount: 0, enabled: false });
+  }
+  d.schemaVersion = 11;
   return d;
 }
 

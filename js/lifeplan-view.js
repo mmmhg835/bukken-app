@@ -343,7 +343,8 @@ function incomeSection(plan, mark) {
           onclick: () => { plan.income.splice(plan.income.indexOf(it), 1); mark(); },
         }, '削除'),
       )),
-      el('div', { class: 'lpitem' },
+      el('div', { class: 'lpitem' + (plan.bonus?.include ? '' : ' is-off') },
+        miniSwitch(!!plan.bonus?.include, (v) => { plan.bonus.include = v; mark(); }),
         el('span', { class: 'lpitem-name' }, '賞与（年額）'),
         el('input', {
           type: 'number', step: 'any', inputmode: 'decimal', class: 'lpitem-input',
@@ -351,6 +352,8 @@ function incomeSection(plan, mark) {
           oninput: (e) => { plan.bonus.annual = Number(e.target.value) || 0; mark(); },
         }),
         el('span', { class: 'tiny muted' }, '万円/年'),
+        el('span', { class: 'tiny muted' },
+          plan.bonus?.include ? `月あたり ${fmt.n((plan.bonus.annual || 0) / 12, 1)}万円` : '計画に含めない'),
       ),
       el('button', {
         class: 'btn btn-sm', style: 'margin-top:8px',
