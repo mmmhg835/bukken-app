@@ -69,6 +69,33 @@ const checks = [
       throw new Error('段階表と変動費予算が食い違う');
     }
   }],
+  ['手取りの集計', () => {
+    const { defaultLifeplan, netIncomeByWho, calcPlan, incomePatterns } = mods.lifeplan;
+    const plan = defaultLifeplan();
+    const base = netIncomeByWho(plan);
+    if (base.primary !== 960) throw new Error(`本人の手取りが 960 でない (${base.primary})`);
+    if (base.secondary !== 480) throw new Error(`配偶者の手取りが 480 でない (${base.secondary})`);
+    if (base.shared !== 0) throw new Error('計画に含めない賞与が入っている');
+
+    // OFF にした収入は入らない
+    plan.income[0].enabled = false;
+    if (netIncomeByWho(plan).primary !== 0) throw new Error('OFF にした収入が集計に残っている');
+    plan.income[0].enabled = true;
+
+    // 賞与を ON にすると共通に乗る
+    plan.bonus.include = true;
+    if (netIncomeByWho(plan).shared !== plan.bonus.annual) throw new Error('賞与が反映されていない');
+    plan.bonus.include = false;
+
+    // 共通の収入は、どの見方（本人だけ／配偶者も含めて）にも入る
+    plan.income[2].enabled = true;
+    plan.income[2].amount = 3;
+    const res = calcPlan(plan, { price: 13200, area: 80, kanrihi: 2, shuzen: 2 }, null, mods.loan.DEFAULT_TERMS);
+    const rows = incomePatterns(plan, { price: 13200 }, res);
+    if (rows[0].net.annual !== 960 + 36) throw new Error('本人のみの手取りに共通が入っていない');
+    if (rows[2].net.annual !== 960 + 480 + 36) throw new Error('配偶者込みの手取りが合わない');
+    plan.income[2].enabled = false;
+  }],
   ['incomePatterns', () => {
     const { defaultLifeplan, calcPlan, incomePatterns } = mods.lifeplan;
     const plan = defaultLifeplan();

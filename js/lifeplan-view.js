@@ -5,6 +5,7 @@ import { kv, select, toggle, segmented, numberInput } from './ui.js';
 import {
   calcPlan, housingCost, affordablePrice, waterfall,
   CATEGORIES, isOn, categoryOf, incomePatterns, project, milestones,
+  WHO, netIncomeByWho,
 } from './lifeplan.js';
 import { lineChart, stackedBarChart, chartLegend, SERIES_COLORS } from './chart.js';
 
@@ -484,8 +485,8 @@ function breakdownSection(res) {
 
 function burdenView(plan, room, res, mark, rerender) {
   plan.grossIncome ||= {
-    primary: { name: '夫', annual: 0, net: 0 },
-    secondary: { name: '妻', annual: 0, net: 0 },
+    primary: { name: '夫', annual: 0 },
+    secondary: { name: '妻', annual: 0 },
   };
   const rows = incomePatterns(plan, room, res);
 
@@ -497,28 +498,50 @@ function burdenView(plan, room, res, mark, rerender) {
   );
 }
 
-/** 額面と手取りを1行に並べて入力する */
-
+/**
+ * 額面だけをここで入力する。
+ * 手取りはライフプランの収入から集計するので、入力欄は置かない。
+ * 二か所に持たせると、片方だけ直したときに必ず食い違う。
+ */
 function incomeSettings(plan, mark) {
   const g = plan.grossIncome;
-  const field = (who, key, fkey) => numberInput({
-    value: g[who][key], cls: 'lpitem-input', fkey: `${fkey}-${who}`,
-    onInput: (num) => { g[who][key] = num ?? 0; mark(); },
-  });
+  const net = netIncomeByWho(plan);
+
   const row = (who) => el('div', { class: 'incrow' },
     el('input', {
       type: 'text', class: 'lpitem-name', style: 'max-width:110px', value: g[who].name ?? '',
       'data-fkey': `name-${who}`,
       oninput: (e) => { g[who].name = e.target.value; store.markDirty(); },
     }),
-    el('span', { class: 'tiny muted' }, '額面'), field(who, 'annual', 'gross'),
-    el('span', { class: 'tiny muted' }, '手取り'), field(who, 'net', 'net'),
+    el('span', { class: 'tiny muted' }, '額面'),
+    numberInput({
+      value: g[who].annual, cls: 'lpitem-input', fkey: `gross-${who}`,
+      onInput: (num) => { g[who].annual = num ?? 0; mark(); },
+    }),
+    el('span', { class: 'tiny muted' }, '手取り'),
+    el('span', { class: 'netval' }, fmt.man1(Math.round(net[who]))),
     el('span', { class: 'tiny muted' }, '万円/年'),
   );
 
   return el('div', { class: 'section' },
     el('h3', {}, '年収'),
-    el('div', { class: 'card', style: 'padding:14px' }, row('primary'), row('secondary')),
+    el('div', { class: 'card', style: 'padding:14px' },
+      row('primary'), row('secondary'),
+      net.shared
+        ? el('div', { class: 'incrow' },
+          el('span', { class: 'lpitem-name', style: 'max-width:110px' }, WHO.shared),
+          el('span', { class: 'tiny muted' }, ''),
+          el('span', {}, ''),
+          el('span', { class: 'tiny muted' }, '手取り'),
+          el('span', { class: 'netval' }, fmt.man1(Math.round(net.shared))),
+          el('span', { class: 'tiny muted' }, '万円/年'))
+        : null,
+      el('div', { class: 'toolbar', style: 'margin-top:10px' },
+        el('button', {
+          class: 'btn btn-sm',
+          onclick: () => { location.hash = '#/plan'; },
+        }, '手取りを直す（ライフプラン）')),
+    ),
   );
 }
 
@@ -674,6 +697,9 @@ function incomeSection(plan, mark) {
           onInput: (num) => { it.amount = num ?? 0; mark(); },
         }),
         el('span', { class: 'tiny muted' }, '万円'),
+        // 誰の収入かは返済負担率の「本人だけ／配偶者も含めて」の切り分けに使う
+        select(WHO[it.who] ? it.who : 'shared', Object.entries(WHO),
+          (v) => { it.who = v; mark(); }, 'whosel'),
         el('button', {
           class: 'chipbtn is-del',
           onclick: () => { plan.income.splice(plan.income.indexOf(it), 1); mark(); },
@@ -692,7 +718,7 @@ function incomeSection(plan, mark) {
       ),
       el('button', {
         class: 'btn btn-sm', style: 'margin-top:8px',
-        onclick: () => { plan.income.push({ id: uid('i'), name: '新しい収入', amount: 0 }); mark(); },
+        onclick: () => { plan.income.push({ id: uid('i'), name: '新しい収入', amount: 0, who: 'shared' }); mark(); },
       }, '＋ 収入を追加'),
     ));
 }

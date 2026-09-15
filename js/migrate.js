@@ -5,7 +5,7 @@ import { DEFAULT_TERMS } from './loan.js';
 import { buildingDefaults, SPEC_GROUPS, BUILDING_EQUIPMENT } from './spec.js';
 import { defaultLifeplan, categoryOf } from './lifeplan.js';
 
-export const CURRENT_SCHEMA = 15;
+export const CURRENT_SCHEMA = 16;
 
 export function migrate(data) {
   let d = structuredClone(data);
@@ -23,6 +23,7 @@ export function migrate(data) {
   if (d.schemaVersion < 13) d = v12ToV13(d);
   if (d.schemaVersion < 14) d = v13ToV14(d);
   if (d.schemaVersion < 15) d = v14ToV15(d);
+  if (d.schemaVersion < 16) d = v15ToV16(d);
   d.settings ||= {};
   d.settings.loan = { ...DEFAULT_TERMS, ...(d.settings.loan || {}) };
   d.settings.places ||= [];   // 職場・駅など、地図上の参照地点
@@ -218,6 +219,39 @@ function v13ToV14(d) {
 function v14ToV15(d) {
   for (const r of d.rooms || []) r.offerPrice ??= null;
   d.schemaVersion = 15;
+  return d;
+}
+
+/**
+ * v16: 収入に帰属（本人／配偶者／共通）を持たせ、手取り年収の二重入力をやめる。
+ * 返済負担率のタブで手取りを別に入力させていたため、ライフプランの収入を直しても
+ * 負担率に反映されず、二つの数字が食い違っていた。
+ */
+function v15ToV16(d) {
+  const plan = d.settings?.lifeplan;
+  if (!plan) { d.schemaVersion = 16; return d; }
+  const g = plan.grossIncome || {};
+  const pName = String(g.primary?.name || '').trim();
+  const sName = String(g.secondary?.name || '').trim();
+
+  for (const it of plan.income || []) {
+    if (it.who) continue;
+    const nm = String(it.name || '');
+    it.who = pName && nm.includes(pName) ? 'primary'
+      : sName && nm.includes(sName) ? 'secondary'
+      : 'shared';
+  }
+  // 名前から判別できなかった場合は、並び順で当てる（全部が共通だと3つの見方が同じになる）
+  const list = plan.income || [];
+  if (list.length && !list.some((it) => it.who === 'primary')) {
+    if (list[0]) list[0].who = 'primary';
+    if (list[1] && list[1].who === 'shared') list[1].who = 'secondary';
+  }
+  // 手取りは income から集計するので、同じ数字を2か所に置かない
+  for (const key of ['primary', 'secondary']) {
+    if (g[key]) delete g[key].net;
+  }
+  d.schemaVersion = 16;
   return d;
 }
 

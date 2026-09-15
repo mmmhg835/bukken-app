@@ -18,10 +18,10 @@ export const CATEGORIES = {
 export function defaultLifeplan() {
   return {
     income: [
-      { id: 'i1', name: '夫 手取り', amount: 80 },
-      { id: 'i2', name: '妻 手取り', amount: 40 },
+      { id: 'i1', name: '夫 手取り', amount: 80, who: 'primary' },
+      { id: 'i2', name: '妻 手取り', amount: 40, who: 'secondary' },
       // 使うときだけ ON にする枠。毎回追加せずに済ませる
-      { id: 'i3', name: 'その他収入', amount: 0, enabled: false },
+      { id: 'i3', name: 'その他収入', amount: 0, enabled: false, who: 'shared' },
     ],
     // 賞与は計画に含めない前提。実績は上振れバッファとして記録だけしておく
     bonus: { annual: 65.9, include: false, note: '2026年1〜8月の実績。基本計画には0円として扱う' },
@@ -66,11 +66,11 @@ export function defaultLifeplan() {
         { id: 'w_trans', name: '交通費', amount: 0.5, category: 'variable' },
       ] },
     ],
-    // 返済負担率と年収倍率は「額面」で見るのが慣行なので、手取りとは別に持つ
-    // 額面は審査で使う数字、手取りは実際の暮らしの負担。どちらも見たいので両方持つ
+    // 返済負担率と年収倍率は「額面」で見るのが慣行なので、額面だけここに持つ。
+    // 手取りは income から集計する（同じ数字を2か所に置くと必ず食い違うため）
     grossIncome: {
-      primary: { name: '夫', annual: 1230, net: 960 },
-      secondary: { name: '妻', annual: 615, net: 480 },
+      primary: { name: '夫', annual: 1230 },
+      secondary: { name: '妻', annual: 615 },
     },
     selectedRoomId: null,   // null なら住居費の手入力値を使う
   };
@@ -224,11 +224,31 @@ export function affordablePrice(plan, room, building, terms) {
  * 額面年収に対する返済負担率と年収倍率。
  * 金融機関は手取りではなく額面で見るため、分母を分けている。
  */
+/** 収入の帰属。返済負担率を「本人だけ／配偶者も含めて」で見るために要る */
+export const WHO = { primary: '本人', secondary: '配偶者', shared: '共通' };
+
+/**
+ * 手取り年収（万円/年）を、ライフプランの収入から人ごとに集計する。
+ * 手取りを別に入力させると、ライフプラン側と必ず食い違う。
+ * OFF にした項目と、計画に含めない賞与は入らない。
+ */
+export function netIncomeByWho(plan) {
+  const out = { primary: 0, secondary: 0, shared: 0 };
+  for (const it of plan.income || []) {
+    if (!isOn(it)) continue;
+    const who = WHO[it.who] ? it.who : 'shared';
+    out[who] += (Number(it.amount) || 0) * 12;
+  }
+  if (plan.bonus?.include) out.shared += Number(plan.bonus.annual) || 0;
+  return out;
+}
+
 export function incomePatterns(plan, room, res) {
   const g = plan.grossIncome || {};
-  const p = g.primary || { name: '本人', annual: 0, net: 0 };
-  const sec = g.secondary || { name: '配偶者', annual: 0, net: 0 };
+  const p = g.primary || { name: '本人', annual: 0 };
+  const sec = g.secondary || { name: '配偶者', annual: 0 };
   const n = (v) => Number(v) || 0;
+  const net = netIncomeByWho(plan);
 
   const patterns = [
     { label: p.name || '本人', share: 0 },
@@ -245,11 +265,15 @@ export function incomePatterns(plan, room, res) {
 
   return patterns.map((x) => {
     const gross = n(p.annual) + n(sec.annual) * x.share;
-    const net = n(p.net) + n(sec.net) * x.share;
+    // 共通の収入（その他・賞与）は誰か一方のものではないので、どの見方にも入れる
+    const netAnnual = net.primary + net.secondary * x.share + net.shared;
     return {
       label: x.label,
       gross: { annual: gross, loan: rate(yearlyLoan, gross), housing: rate(yearlyHousing, gross), multiple: times(gross) },
-      net: { annual: net, loan: rate(yearlyLoan, net), housing: rate(yearlyHousing, net), multiple: times(net) },
+      net: {
+        annual: netAnnual,
+        loan: rate(yearlyLoan, netAnnual), housing: rate(yearlyHousing, netAnnual), multiple: times(netAnnual),
+      },
     };
   });
 }

@@ -599,3 +599,9 @@ table.offercmp td.muted{color:var(--text-3)}
   .offerrow{gap:8px}
   .offerinput{width:104px}
 }
+
+/* ===== 収入の帰属と、集計された手取り ===== */
+.whosel{border:1px solid var(--line);background:var(--bg);color:var(--text-2);
+  border-radius:var(--r-sm);padding:6px 8px;font-size:12px;max-width:92px}
+/* 手取りはライフプラン側の集計値なので、入力欄と同じ幅で数字だけを置く */
+.netval{min-width:96px;text-align:right;font-weight:800;font-size:14px}
