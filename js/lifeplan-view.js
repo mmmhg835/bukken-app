@@ -57,6 +57,139 @@ function planView(plan, room, building, res, mark, rerender) {
   );
 }
 
+/* ===== 物件の選択 ===== */
+function propertyPicker(plan, room, building, rerender, view = 'plan') {
+  const options = [['', '現在の想定（手入力の住居費）']];
+  for (const b of store.buildings) {
+    for (const r of store.roomsOf(b.id)) {
+      options.push([r.id, `${b.name} ${r.label}　${fmt.man1(r.price)}万円`]);
+    }
+  }
+  return el('div', { class: 'section' },
+    el('h3', {}, '試算する物件'),
+    el('div', { class: 'panel' },
+      el('div', { class: 'panel-controls' },
+        el('div', { class: 'ctlrow' },
+          el('span', { class: 'ctllabel' }, el('i', { class: 'ctlicon' }, '⌂'), '物件'),
+          el('div', { style: 'display:flex;gap:16px;align-items:center;flex-wrap:wrap' },
+            select(plan.selectedRoomId ?? '', options, (v) => {
+              plan.selectedRoomId = v || null;
+              store.markDirty();
+              rerender();
+            }, 'picksel picksel-wide'),
+            room
+              ? el('a', {
+                href: '#', class: 'tiny',
+                onclick: (e) => { e.preventDefault(); location.hash = `#/r/${room.id}`; },
+              }, '物件の詳細を見る')
+              : null,
+          )),
+        view === 'plan'
+          ? el('div', { class: 'ctlrow' },
+            el('span', { class: 'ctllabel' }, el('i', { class: 'ctlicon' }, '◷'), 'シナリオ'),
+            toggle('期限付きの支出（車ローン・奨学金）が終わった後で試算',
+              ui.afterLoans, (v) => { ui.afterLoans = v; rerender(); }))
+          : null,
+      )),
+  );
+}
+
+/* ===== サマリー ===== */
+function summary(res, plan, rerender) {
+  const positive = res.balance >= 0;
+  return el('div', { class: 'section' },
+    el('div', { class: 'calcgrid calcgrid-4' },
+      kv('収入合計', `${fmt.n(res.income, 1)}万円`, '手取り／月'),
+      kv('支出合計', `${fmt.n(res.expense, 1)}万円`, '住居費・生活費・積立'),
+      kv('毎月の残り', el('span', { class: positive ? 'pos' : 'neg' },
+        `${positive ? '+' : ''}${fmt.n(res.balance, 1)}万円`), positive ? '黒字' : '赤字'),
+      kv('先取りの資産形成', `${fmt.n(res.saving, 1)}万円`, `貯蓄率 ${res.savingRate.toFixed(1)}%`),
+      kv('住居費', `${fmt.n(res.housingTotal, 1)}万円`,
+        res.housingFromRoom ? 'ローン＋管理＋修繕' : '手入力の想定額'),
+      kv('車代', `${fmt.n(res.carTotal, 1)}万円`, '駐車場・ローン・維持費'),
+      kv('その他固定費', `${fmt.n(res.fixed, 1)}万円`, '住居費・車代を除く'),
+      kv('変動費', `${fmt.n(res.variable, 1)}万円`, `使える上限 ${fmt.n(res.variableBudget, 1)}万円`),
+    ),
+    el('div', { class: 'stackbar' }, res.groups.map((g, i) =>
+      g.total > 0
+        ? el('span', {
+          class: 'stackseg' + (g.kind === 'saving' ? ' is-saving' : g.kind === 'housing' ? ' is-housing' : ''),
+          style: `flex:${g.total}`, title: `${g.name} ${fmt.n(g.total, 1)}万円`,
+        }, g.total / res.income > 0.09 ? g.name : '')
+        : null),
+      res.balance > 0
+        ? el('span', { class: 'stackseg is-left', style: `flex:${res.balance}`, title: `残り ${fmt.n(res.balance, 1)}万円` })
+        : null),
+    plan.bonus
+      ? el('div', { class: 'bonusrow' },
+        el('span', { class: 'tiny muted' }, `賞与 年${fmt.n(plan.bonus.annual, 1)}万円`),
+        toggle('計画に含める', !!plan.bonus.include, (v) => {
+          plan.bonus.include = v; store.markDirty(); rerender();
+        }))
+      : null,
+  );
+}
+
+/* ===== 住居費の内訳 ===== */
+function housingDetail(res, room, building) {
+  if (!res.housingFromRoom) return null;
+  const manual = store.lifeplan.groups.find((g) => g.kind === 'housing').items
+    .reduce((s, it) => s + (Number(it.amount) || 0), 0);
+  const diff = res.housingFromRoom.total - manual;
+  const t = { ...store.loanTerms, ...(room.loan || {}) };
+
+  return el('div', { class: 'section' },
+    el('h3', {}, `${building.name} ${room.label} の住居費`),
+    el('div', { class: 'calcgrid calcgrid-4' },
+      ...res.housingFromRoom.items.map((it) => kv(it.name, `${fmt.n(it.amount, 1)}万円`)),
+      kv('住居費 合計', `${fmt.n(res.housingFromRoom.total, 1)}万円`, `ローン ${t.rate}% ${t.years}年`),
+    ),
+    el('div', { class: 'tiny muted', style: 'margin-top:8px' },
+      '現在の想定（', fmt.n(manual, 1), '万円）との差　',
+      el('b', { class: diff <= 0 ? 'pos' : 'neg' }, `${diff > 0 ? '+' : ''}${fmt.n(diff, 1)}万円`)),
+  );
+}
+
+function waterfallSection(res, room, building) {
+  const w = waterfall(res, room ? `${building.name} ${room.label}` : null);
+  const yen = (v) => `${fmt.n(v, 1)}万円`;
+
+  const stepRow = (st, i) => el('div', { class: 'wfstep' },
+    el('div', { class: 'wfstep-head' },
+      el('span', { class: 'wfstep-no' }, String(i + 1)),
+      el('span', { class: 'wfstep-label' }, st.label),
+      el('span', { class: 'wfstep-minus' }, `− ${yen(st.amount)}`),
+    ),
+    el('div', { class: 'wfstep-detail' },
+      st.items.length
+        ? st.items.map((it) => el('span', { class: 'wfchip' }, `${it.name} ${fmt.n(it.amount, 1)}`))
+        : el('span', { class: 'tiny muted' }, st.note)),
+    el('div', { class: 'wfstep-after' },
+      el('span', { class: 'tiny muted' }, '残り'),
+      el('b', {}, yen(st.after))),
+  );
+
+  return el('div', { class: 'section' },
+    el('h3', {}, 'この物件だと、生活費にいくら使えるか'),
+    el('div', { class: 'panel wfpanel' },
+      el('div', { class: 'wfhead' },
+        el('span', {}, '月の手取り収入'),
+        el('b', {}, yen(res.income))),
+      w.steps.map(stepRow),
+      el('div', { class: 'wfresult' },
+        el('div', {},
+          el('div', { class: 'tiny muted' }, '変動費に使える額'),
+          el('div', { class: 'wfresult-big' }, yen(w.variableBudget))),
+        el('div', { class: 'wfresult-sub' },
+          el('div', {}, `いまの変動費　− ${yen(w.variableActual)}`),
+          el('div', { class: w.rest >= 0 ? 'pos' : 'neg' },
+            `差し引き　${w.rest >= 0 ? '+' : ''}${yen(w.rest)}`)),
+      ),
+      el('div', { class: 'wfvar' },
+        w.variableItems.map((it) => el('span', { class: 'wfchip' }, `${it.name} ${fmt.n(it.amount, 1)}`))),
+    ));
+}
+
 /* =========================================================
    グラフ
    ========================================================= */
