@@ -1,6 +1,9 @@
 // 汎用ユーティリティ（表示整形・自動計算・DOM補助）
 import { calcLoan, DEFAULT_TERMS } from './loan.js';
 
+/** 表示用の版数。更新が届いているかを設定画面で確認できるようにしている */
+export const APP_VERSION = 'v11';
+
 export const TSUBO_SQM = 3.305785;          // 1坪 = 3.305785㎡
 export const STATUSES = ['検討中', '内見済', '本命', '申込検討', '見送り'];
 export const CATEGORIES = ['概要', '間取り', '眺望', 'LDK・居室', '水回り', '収納', 'その他'];

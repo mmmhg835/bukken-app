@@ -133,5 +133,18 @@ async function consumePairing(payload) {
 })();
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
-  navigator.serviceWorker.register('sw.js').catch(() => { /* 任意機能なので失敗は無視 */ });
+  navigator.serviceWorker.register('sw.js')
+    .then((reg) => {
+      reg.update();                              // 起動のたびに新版を確認する
+      setInterval(() => reg.update(), 30 * 60e3);
+    })
+    .catch(() => { /* 任意機能なので失敗は無視 */ });
+
+  let firstControl = !navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    // 初回登録時は更新ではないので黙って通す
+    if (firstControl) { firstControl = false; return; }
+    toast('新しいバージョンを取得しました。再読み込みします…');
+    setTimeout(() => location.reload(), 1200);
+  });
 }

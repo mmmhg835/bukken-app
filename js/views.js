@@ -1,6 +1,6 @@
 // 画面描画。すべて store の状態から組み立てる。
 import { store } from './store.js';
-import { el, fmt, derive, toast, mount, STATUSES, debounce } from './util.js';
+import { el, fmt, derive, toast, mount, STATUSES, debounce, APP_VERSION } from './util.js';
 import { labeled, select, kv, field, ratingPicker, statusBadge, section, tagPicker } from './ui.js';
 import { gallerySection } from './gallery.js';
 import { calcLoan, METHODS, DEFAULT_TERMS } from './loan.js';
@@ -726,6 +726,16 @@ export function renderSettings(root) {
         el('div', {}, `未保存の変更: ${store.dirty ? 'あり' : 'なし'}`),
         el('div', {}, `建物 ${store.buildings.length}棟 / 部屋 ${store.rooms.length}室`),
         el('div', {}, `最終更新: ${store.data.updatedAt ? new Date(store.data.updatedAt).toLocaleString('ja-JP') : '—'}`),
+        el('div', {}, `アプリの版数: ${APP_VERSION}`),
+        el('button', {
+          class: 'btn btn-sm', style: 'margin-top:10px',
+          onclick: async () => {
+            toast('更新を確認しています…');
+            const regs = await navigator.serviceWorker?.getRegistrations?.() ?? [];
+            await Promise.all(regs.map((r) => r.update()));
+            location.reload();
+          },
+        }, '最新版を取得'),
         store.lastError ? el('div', { style: 'color:var(--bad);margin-top:6px' }, store.lastError) : null,
       )),
   ));

@@ -34,6 +34,7 @@ Claude と ChatGPT で交互に開発するときは、相手に最初にこれ�
 | 建物の項目を追加 | `js/spec.js` の `BUILDING_FORM` |
 | 設備の選択肢を追加 | `js/spec.js` の各配列 |
 | 配色・テーマ | `js/theme.js` と `app.css` の `:root` |
+| 公開後に更新が届かない | `sw.js` の `VERSION` と `util.js` の `APP_VERSION` を揃えて上げる |
 | 部屋の項目を追加 | `js/views.js` の `ROOM_FIELDS` |
 | ローン計算の仕様変更 | `js/loan.js` |
 | 販売活動の指標を追加 | `js/price.js` の `analyze()` |
