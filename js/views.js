@@ -11,6 +11,7 @@ import { THEMES, currentTheme, setTheme } from './theme.js';
 import { SKINS, currentSkin, setSkin } from './skin.js';
 import { salesSection } from './sales.js';
 import { BUILDING_FORM, SPEC_GROUPS, RENOVATION } from './spec.js';
+import { areaOf } from './analysis.js';
 import { analyze, LISTING_STATUS, CLOSED_STATUS, formatDate } from './price.js';
 import { stepChart, chartLegend, SERIES_COLORS } from './chart.js';
 
@@ -25,7 +26,10 @@ const mark = () => touch();
 /* =========================================================
    一覧（建物カード）
    ========================================================= */
-const listUI = { mode: 'building', sort: 'price', status: 'all' };
+const listUI = {
+  mode: 'building', sort: 'price', status: 'all',
+  area: 'all', price: 'all', layout: 'all', age: 'all', more: false, equip: [],
+};
 
 const ROOM_SORTS = [
   ['price', '価格が安い順'], ['tsubo', '坪単価が安い順'], ['area', '広い順'],
@@ -36,39 +40,127 @@ const BUILDING_SORTS = [
   ['price', '最安の部屋が安い順'], ['tsubo', '坪単価が安い順'],
   ['age', '築年が新しい順'], ['rooms', '部屋数が多い順'], ['name', '名前順'],
 ];
+const PRICE_BANDS = [
+  ['all', 'すべて'], ['-8000', '8,000万円以下'], ['8000-12000', '8,000〜1.2億'],
+  ['12000-15000', '1.2億〜1.5億'], ['15000-', '1.5億以上'],
+];
+const AGE_BANDS = [
+  ['all', 'すべて'], ['-10', '築10年以内'], ['-20', '築20年以内'],
+  ['-30', '築30年以内'], ['30-', '築30年超'],
+];
 
 export function renderList(root) {
   const byRoom = listUI.mode === 'room';
   if (byRoom && !ROOM_SORTS.some(([k]) => k === listUI.sort)) listUI.sort = 'price';
   if (!byRoom && !BUILDING_SORTS.some(([k]) => k === listUI.sort)) listUI.sort = 'price';
 
-  const bar = el('div', { class: 'toolbar' },
-    segmented(listUI.mode, [['building', '建物ごと'], ['room', '部屋ごと']],
-      (v) => { listUI.mode = v; rerender(); }),
-    labeled('並び替え', select(listUI.sort, byRoom ? ROOM_SORTS : BUILDING_SORTS,
-      (v) => { listUI.sort = v; rerender(); })),
-    labeled('状態', select(listUI.status, [['all', 'すべて'], ...STATUSES.map((s) => [s, s])],
-      (v) => { listUI.status = v; rerender(); })),
-    el('div', { class: 'spacer' }),
-    byRoom
-      ? null
-      : el('button', {
-        class: 'btn btn-primary',
-        onclick: () => { const b = store.addBuilding(); go('b', b.id); },
-      }, '＋ 建物を追加'),
-  );
+  const rooms = allRooms();
+  const shown = rooms.filter(matchesFilters);
 
-  mount(root, bar, byRoom ? roomListing() : buildingListing());
+  mount(root,
+    pageHead(),
+    filterBar(rooms, shown, byRoom),
+    byRoom ? roomListing(shown) : buildingListing(shown),
+    selectionBar(rooms),
+  );
 }
 
-/** 部屋を建物の枠を外して1列に並べる。安い部屋を横断で探したいとき用 */
-function roomListing() {
-  let rooms = store.rooms.map((r) => ({ r, b: store.building(r.buildingId) })).filter((x) => x.b);
-  if (listUI.status !== 'all') rooms = rooms.filter((x) => x.r.status === listUI.status);
-  rooms.sort(roomSorter(listUI.sort));
+function pageHead() {
+  return el('div', { class: 'pagehead' },
+    el('h2', {}, '検討中の物件'),
+    el('p', {}, '気になる物件を集めて、比較・分析・将来のライフプランまで、納得のいく住まい選びをサポートします。'),
+  );
+}
 
-  if (!rooms.length) return el('div', { class: 'empty' }, '条件に合う部屋がありません。');
-  return el('div', { class: 'grid grid-rooms' }, rooms.map(({ r, b }) => roomCard(r, b, true)));
+function allRooms() {
+  return store.rooms
+    .map((r) => ({ r, b: store.building(r.buildingId) }))
+    .filter((x) => x.b);
+}
+
+/* ===== 絞り込み ===== */
+function matchesFilters({ r, b }) {
+  if (listUI.status !== 'all' && r.status !== listUI.status) return false;
+  if (listUI.area !== 'all' && areaOf(b).town !== listUI.area) return false;
+  if (listUI.layout !== 'all' && r.layout !== listUI.layout) return false;
+  if (listUI.equip.length) {
+    const tags = [...(r.roomEquipmentTags || []), ...(b.equipmentTags || []), ...(b.facilityTags || [])];
+    if (!listUI.equip.every((t) => tags.includes(t))) return false;
+  }
+  if (listUI.price !== 'all') {
+    const [lo, hi] = listUI.price.split('-').map((v) => (v === '' ? null : Number(v)));
+    if (lo != null && (r.price ?? 0) < lo) return false;
+    if (hi != null && (r.price ?? 0) > hi) return false;
+  }
+  if (listUI.age !== 'all') {
+    const age = derive(r, b).ageYears;
+    if (age == null) return false;
+    const [lo, hi] = listUI.age.split('-').map((v) => (v === '' ? null : Number(v)));
+    if (lo != null && age < lo) return false;
+    if (hi != null && age > hi) return false;
+  }
+  return true;
+}
+
+function filterBar(all, shown, byRoom) {
+  const uniq = (list) => [...new Set(list.filter(Boolean))].sort();
+  const areas = uniq(all.map((x) => areaOf(x.b).town));
+  const layouts = uniq(all.map((x) => x.r.layout));
+  const pick = (key, options) => select(listUI[key], options, (v) => { listUI[key] = v; rerender(); }, 'fsel');
+
+  const equipOptions = [...new Set(store.buildings.flatMap((b) => [...(b.equipmentTags || []), ...(b.facilityTags || [])])
+    .concat(store.rooms.flatMap((r) => r.roomEquipmentTags || [])))].sort();
+
+  return el('div', { class: 'filterbar' },
+    el('div', { class: 'filterbar-row' },
+      segmented(listUI.mode, [['building', '建物ごと'], ['room', '部屋ごと']],
+        (v) => { listUI.mode = v; rerender(); }),
+      el('div', { class: 'fgroup' }, el('label', {}, 'エリア'),
+        pick('area', [['all', 'すべて'], ...areas.map((a) => [a, a])])),
+      el('div', { class: 'fgroup' }, el('label', {}, '価格'), pick('price', PRICE_BANDS)),
+      el('div', { class: 'fgroup' }, el('label', {}, '間取り'),
+        pick('layout', [['all', 'すべて'], ...layouts.map((l) => [l, l])])),
+      el('div', { class: 'fgroup' }, el('label', {}, '築年数'), pick('age', AGE_BANDS)),
+      el('div', { class: 'fgroup' }, el('label', {}, '検討状態'),
+        pick('status', [['all', 'すべて'], ...STATUSES.map((x) => [x, x])])),
+      equipOptions.length
+        ? el('button', {
+          class: 'btn btn-sm' + (listUI.more ? ' btn-primary' : ''),
+          onclick: () => { listUI.more = !listUI.more; rerender(); },
+        }, `設備で絞る${listUI.equip.length ? ` (${listUI.equip.length})` : ''}`)
+        : null,
+      el('div', { class: 'spacer' }),
+      el('span', { class: 'fcount' }, `${shown.length}件の${byRoom ? '部屋' : '物件'}`),
+      el('div', { class: 'fgroup' },
+        select(listUI.sort, byRoom ? ROOM_SORTS : BUILDING_SORTS,
+          (v) => { listUI.sort = v; rerender(); }, 'fsel')),
+      el('button', {
+        class: 'btn btn-primary btn-add',
+        onclick: () => { const b = store.addBuilding(); go('b', b.id); },
+      }, '＋ 物件を追加'),
+    ),
+    listUI.more
+      ? el('div', { class: 'filterbar-more' },
+        el('div', { class: 'tagwrap' }, equipOptions.map((t) => el('button', {
+          class: 'tag' + (listUI.equip.includes(t) ? ' is-on' : ''),
+          onclick: () => {
+            const i = listUI.equip.indexOf(t);
+            if (i >= 0) listUI.equip.splice(i, 1); else listUI.equip.push(t);
+            rerender();
+          },
+        }, t))),
+        listUI.equip.length
+          ? el('button', { class: 'btn btn-sm', onclick: () => { listUI.equip = []; rerender(); } }, '解除')
+          : null)
+      : null,
+  );
+}
+
+/* ===== 部屋ごと ===== */
+function roomListing(shown) {
+  const rooms = [...shown].sort(roomSorter(listUI.sort));
+  if (!rooms.length) return el('div', { class: 'empty' }, '条件に合う部屋がありません');
+  return el('div', { class: 'grid' }, rooms.map(({ r, b }) => propertyCard(r, b)));
 }
 
 function roomSorter(key) {
@@ -87,19 +179,16 @@ function roomSorter(key) {
   return by[key] || by.price;
 }
 
-function buildingListing() {
-  const items = store.buildings
-    .map((b) => ({ b, rooms: visibleRooms(b) }))
-    .filter(({ rooms }) => listUI.status === 'all' || rooms.length)
-    .sort(buildingSorter(listUI.sort));
-
-  if (!items.length) return el('div', { class: 'empty' }, '建物がありません。「＋ 建物を追加」から登録してください。');
+/* ===== 建物ごと ===== */
+function buildingListing(shown) {
+  const byBuilding = new Map();
+  for (const x of shown) {
+    if (!byBuilding.has(x.b.id)) byBuilding.set(x.b.id, { b: x.b, rooms: [] });
+    byBuilding.get(x.b.id).rooms.push(x.r);
+  }
+  const items = [...byBuilding.values()].sort(buildingSorter(listUI.sort));
+  if (!items.length) return el('div', { class: 'empty' }, '条件に合う物件がありません');
   return el('div', { class: 'grid' }, items.map(({ b, rooms }) => buildingCard(b, rooms)));
-}
-
-function visibleRooms(b) {
-  const rooms = store.roomsOf(b.id);
-  return listUI.status === 'all' ? rooms : rooms.filter((r) => r.status === listUI.status);
 }
 
 function buildingSorter(key) {
@@ -115,41 +204,134 @@ function buildingSorter(key) {
   return by[key] || by.price;
 }
 
-function buildingCard(b, rooms) {
-  const cover = b.cover || rooms.find((r) => r.cover)?.cover;
-  const coverThumb = b.coverThumb || rooms.find((r) => r.coverThumb)?.coverThumb;
-  const img = cover || coverThumb ? el('img', { src: coverThumb || '', alt: b.name, loading: 'lazy' }) : null;
-  if (img && cover) store.imageUrl(cover).then((u) => { img.src = u; }).catch(() => {});
+/* ===== カード ===== */
+function coverImage(owner, alt) {
+  const img = owner.cover || owner.coverThumb
+    ? el('img', { src: owner.coverThumb || '', alt, loading: 'lazy' })
+    : null;
+  if (img && owner.cover) store.imageUrl(owner.cover).then((u) => { img.src = u; }).catch(() => {});
+  return img || el('div', { class: 'ph' }, '写真なし');
+}
 
+function pickBox(ids) {
+  const on = ids.every((id) => isPicked(id)) && ids.length > 0;
+  return el('label', {
+    class: 'pickbox' + (on ? ' is-on' : ''),
+    onclick: (e) => { e.stopPropagation(); ids.forEach((id) => togglePick(id, !on)); rerender(); },
+  }, el('span', { class: 'pickbox-mark' }, on ? '✓' : ''), '比較に追加');
+}
+
+const ICON = {
+  train: 'M6 3h8a2 2 0 012 2v7a2 2 0 01-2 2H6a2 2 0 01-2-2V5a2 2 0 012-2zM4 8h12M7 17l-2 2M13 17l2 2',
+  leaf: 'M16 4C9 4 5 8 5 14c0 1 0 2 1 2 6 0 10-5 10-12zM6 16c2-4 5-6 8-7',
+  cal: 'M4 5h12v12H4zM4 8h12M8 3v3M12 3v3',
+  yen: 'M6 4l4 5 4-5M10 9v7M7 12h6M7 15h6',
+};
+
+function featureTag(icon, text) {
+  return el('span', { class: 'ftag' },
+    el('svg', { viewBox: '0 0 20 20', class: 'ftag-ico', html: `<path d="${ICON[icon]}"/>` }),
+    text);
+}
+
+/** 部屋1室のカード。参考画面と同じ並びにしている */
+function propertyCard(r, b) {
+  const c = derive(r, b, store.loanTerms);
+  const t = { ...store.loanTerms, ...(r.loan || {}) };
+
+  return el('article', { class: 'card pcard', onclick: () => go('r', r.id) },
+    el('div', { class: 'pcard-top' },
+      pickBox([r.id]),
+      statusBadge(r.status),
+    ),
+    el('div', { class: 'pcard-img' },
+      coverImage(r, r.label),
+      r.images?.length ? el('span', { class: 'imgcount' }, `${r.images.length}枚`) : null,
+    ),
+    el('div', { class: 'pcard-body' },
+      el('div', { class: 'pcard-name' }, b.name),
+      el('div', { class: 'pcard-addr' }, b.address || b.stations || ''),
+      el('div', { class: 'pcard-spec' },
+        el('span', {}, `${r.floor ?? '—'}階・${r.layout || '—'}`),
+        el('i', {}, '|'),
+        el('span', {}, `${fmt.sqm(r.area)}（${fmt.n(c.tsubo, 2)}坪）`),
+      ),
+      el('div', { class: 'pcard-pricerow' },
+        el('div', { class: 'pcard-price' }, fmt.man1(r.price), el('small', {}, '万円')),
+        r.rating ? el('div', { class: 'pcard-rate' }, el('span', { class: 'stars' }, '★'), r.rating.toFixed(1)) : null,
+      ),
+      el('dl', { class: 'pcard-kv' },
+        el('dt', {}, '坪単価'), el('dd', {}, `約${fmt.n(c.tsuboPrice, 0)}万円/坪`),
+        el('dt', {}, '月々の支払い'),
+        el('dd', {}, `約${fmt.n(c.monthly, 1)}万円`,
+          el('small', {}, `（年${t.rate}%・${t.years}年）`)),
+      ),
+      el('div', { class: 'ftags' },
+        b.walk ? featureTag('train', b.walk) : null,
+        c.ageYears != null ? featureTag('cal', `築${c.ageYears}年`) : null,
+        r.renovation && r.renovation !== 'なし' ? featureTag('leaf', r.renovation) : null,
+      ),
+    ),
+  );
+}
+
+/** 建物のカード。配下の部屋をまとめて表す */
+function buildingCard(b, rooms) {
+  const cover = b.cover ? b : (rooms.find((r) => r.cover) || b);
   const prices = rooms.map((r) => r.price).filter((v) => v != null);
-  const imageCount = (b.images?.length || 0) + rooms.reduce((n, r) => n + (r.images?.length || 0), 0);
   const c = derive(rooms[0] || {}, b, store.loanTerms);
+  const imageCount = (b.images?.length || 0) + rooms.reduce((n, r) => n + (r.images?.length || 0), 0);
 
   return el('article', { class: 'card pcard', onclick: () => go('b', b.id) },
+    el('div', { class: 'pcard-top' },
+      pickBox(rooms.map((r) => r.id)),
+      el('span', { class: 'badge badge-ok' }, `${rooms.length}部屋`),
+    ),
     el('div', { class: 'pcard-img' },
-      img || el('div', { class: 'ph' }, '画像なし'),
+      coverImage(cover, b.name),
       imageCount ? el('span', { class: 'imgcount' }, `${imageCount}枚`) : null,
     ),
     el('div', { class: 'pcard-body' },
-      el('div', { class: 'pcard-top' },
-        el('div', { class: 'pcard-name' }, b.name || '(名称未設定)'),
-        el('span', { class: 'badge badge-ok' }, `${rooms.length}部屋`),
+      el('div', { class: 'pcard-name' }, b.name || '(名称未設定)'),
+      el('div', { class: 'pcard-addr' }, b.address || b.stations || ''),
+      el('div', { class: 'pcard-spec' },
+        el('span', {}, `${b.totalFloors ?? '—'}階建`),
+        el('i', {}, '|'),
+        el('span', {}, b.builtYM || '築年月未設定'),
       ),
       prices.length
-        ? el('div', { class: 'pcard-price' },
-          fmt.man1(Math.min(...prices)),
-          prices.length > 1 ? el('small', {}, `〜 ${fmt.man1(Math.max(...prices))} 万円`) : el('small', {}, '万円'))
+        ? el('div', { class: 'pcard-pricerow' },
+          el('div', { class: 'pcard-price' }, fmt.man1(Math.min(...prices)),
+            prices.length > 1
+              ? el('small', {}, `〜 ${fmt.man1(Math.max(...prices))} 万円`)
+              : el('small', {}, '万円')))
         : el('div', { class: 'muted tiny' }, '価格未入力'),
-      el('div', { class: 'kvrow' },
-        el('span', {}, `築${b.builtYM || '—'}${c.ageYears != null ? `（${c.ageYears}年）` : ''}`),
-        el('span', {}, `${b.totalFloors ?? '—'}階建`),
-      ),
-      el('div', { class: 'kvrow tiny' }, el('span', {}, b.walk || b.stations || '')),
       el('div', { class: 'roomchips' }, rooms.map((r) =>
         el('span', { class: 'roomchip' + (r.status === '本命' ? ' is-top' : '') },
           `${r.label}・${fmt.man1(r.price)}万`))),
+      el('div', { class: 'ftags' },
+        b.walk ? featureTag('train', b.walk) : null,
+        c.ageYears != null ? featureTag('cal', `築${c.ageYears}年`) : null,
+      ),
     ),
   );
+}
+
+/* ===== 下部の選択バー ===== */
+function selectionBar(all) {
+  const count = all.filter((x) => isPicked(x.r.id)).length;
+  return el('div', { class: 'selbar' + (count ? ' is-on' : '') },
+    el('div', { class: 'selbar-in' },
+      el('div', {},
+        el('div', { class: 'selbar-count' }, `${count} 室を選択中`),
+        el('div', { class: 'tiny muted' },
+          count ? '比較して検討できます' : '気になる部屋を選んで、比較してみましょう。'),
+      ),
+      el('button', {
+        class: 'btn btn-primary', disabled: !count,
+        onclick: () => go('compare'),
+      }, `比較する（${count}室）`),
+    ));
 }
 
 /* =========================================================
@@ -457,10 +639,14 @@ function paintLoan(box, r, b, repaint) {
 /* =========================================================
    比較（部屋を列にした表）
    ========================================================= */
-/** 比較対象に選んだ部屋の id。初回に全件を入れて「選択中＝チェック済み」を素直に一致させる */
+/** 比較対象に選んだ部屋の id。一覧のチェックと比較タブで共有する */
 const selection = new Set();
-let selectionReady = false;
 let pickerOpen = true;
+
+export const isPicked = (id) => selection.has(id);
+export function togglePick(id, on) {
+  if (on ?? !selection.has(id)) selection.add(id); else selection.delete(id);
+}
 
 export function renderCompare(root) {
   const all = [];
@@ -470,10 +656,10 @@ export function renderCompare(root) {
   if (!all.length) { mount(root, el('div', { class: 'empty' }, '比較する部屋がありません。')); return; }
 
   const ids = new Set(all.map((x) => x.r.id));
-  if (!selectionReady) { all.forEach((x) => selection.add(x.r.id)); selectionReady = true; }
   for (const id of [...selection]) if (!ids.has(id)) selection.delete(id);   // 削除済みを掃除
 
-  const picked = all.filter((x) => selection.has(x.r.id));
+  // 未選択なら全件を対象にする。比較タブを開いた直後に何も出ないのを避ける
+  const picked = selection.size ? all.filter((x) => selection.has(x.r.id)) : all;
   const rows = picked.map((x) => ({ ...x, c: derive(x.r, x.b, store.loanTerms), a: analyze(x.r) }));
 
   mount(root,
@@ -500,7 +686,7 @@ function picker(all) {
 
   const head = el('div', { class: 'picker-head', onclick: () => { pickerOpen = !pickerOpen; rerender(); } },
     el('span', { class: 'picker-title' }, '比較する部屋'),
-    el('span', { class: 'badge ' + (count ? 'badge-ok' : 'badge-warn') }, `${count} / ${total} 件`),
+    el('span', { class: 'badge badge-ok' }, count ? `${count} / ${total} 件` : `全 ${total} 件`),
     el('div', { class: 'spacer' }),
     act('すべて', () => all.forEach((x) => selection.add(x.r.id))),
     act('解除', () => selection.clear()),

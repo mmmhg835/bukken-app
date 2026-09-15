@@ -493,3 +493,68 @@ table.cmp tr.is-current td{background:var(--accent-soft)}
 .remain{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;color:var(--text-2);font-weight:600}
 .remain input{width:46px;border:1px solid var(--line);background:var(--bg);border-radius:6px;
   padding:3px 5px;text-align:center;font-size:11.5px;font-weight:700}
+
+/* ===== 一覧：見出し・絞り込み・カード ===== */
+.pagehead{margin-bottom:18px}
+.pagehead h2{font-size:26px;letter-spacing:.01em}
+.pagehead p{margin:6px 0 0;font-size:13px;color:var(--text-2);line-height:1.7}
+
+.filterbar{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
+  padding:12px 14px;margin-bottom:18px;box-shadow:var(--shadow)}
+.filterbar-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.filterbar-more{margin-top:12px;padding-top:12px;border-top:1px solid var(--line);
+  display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap}
+.fgroup{display:flex;flex-direction:column;gap:3px;min-width:0}
+.fgroup label{font-size:10.5px;color:var(--text-3);font-weight:700;letter-spacing:.04em}
+.fsel{border:1px solid var(--line);background:var(--surface);border-radius:var(--r-sm);
+  padding:7px 9px;font-size:13px;font-weight:600;cursor:pointer;max-width:170px}
+.fcount{font-size:12.5px;color:var(--text-2);font-weight:700;white-space:nowrap}
+.btn-add{white-space:nowrap}
+
+.pcard{display:flex;flex-direction:column}
+.pcard .pcard-top{display:flex;align-items:center;gap:8px;padding:11px 13px 9px}
+.pickbox{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:700;
+  color:var(--text-2);cursor:pointer;user-select:none}
+.pickbox-mark{width:17px;height:17px;border-radius:5px;border:1.5px solid var(--line);
+  background:var(--surface);display:grid;place-items:center;font-size:11px;font-weight:800;color:#fff}
+.pickbox.is-on{color:var(--accent)}
+.pickbox.is-on .pickbox-mark{background:var(--accent);border-color:var(--accent)}
+.pcard .pcard-top .badge{margin-left:auto}
+
+.pcard-addr{font-size:12px;color:var(--text-2);margin-top:-2px}
+.pcard-spec{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text-2)}
+.pcard-spec i{color:var(--line);font-style:normal}
+.pcard-pricerow{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.pcard-rate{margin-left:auto;font-size:13px;font-weight:700;color:var(--text-2);
+  display:inline-flex;align-items:center;gap:4px}
+.pcard-rate .stars{color:var(--warn);font-size:14px}
+
+.pcard-kv{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;margin:2px 0 0;font-size:12.5px}
+.pcard-kv dt{color:var(--text-3);font-weight:600}
+.pcard-kv dd{margin:0;text-align:right;font-weight:700}
+.pcard-kv dd small{font-weight:600;color:var(--text-3);font-size:11px;margin-left:3px}
+
+.ftags{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.ftag{display:inline-flex;align-items:center;gap:5px;background:var(--surface-2);
+  border:1px solid var(--line);border-radius:8px;padding:4px 9px;
+  font-size:11px;font-weight:600;color:var(--text-2);white-space:nowrap}
+.ftag-ico{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:1.5;
+  stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+
+/* ===== 下部の選択バー ===== */
+.selbar{position:sticky;bottom:0;margin:22px -16px -40px;padding:0 16px;
+  background:linear-gradient(transparent,var(--bg) 22%);pointer-events:none}
+.selbar-in{display:flex;align-items:center;gap:16px;flex-wrap:wrap;pointer-events:auto;
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
+  padding:14px 18px;margin-bottom:16px;box-shadow:var(--shadow)}
+.selbar-count{font-size:16px;font-weight:800;letter-spacing:-.01em}
+.selbar-in .btn{margin-left:auto}
+
+@media(max-width:560px){
+  .pagehead h2{font-size:21px}
+  .filterbar-row{gap:8px}
+  .fsel{max-width:130px;font-size:12.5px}
+  .selbar{margin:18px -12px -36px;padding:0 12px}
+  .selbar-in{padding:12px 14px}
+  .selbar-in .btn{width:100%;margin-left:0}
+}

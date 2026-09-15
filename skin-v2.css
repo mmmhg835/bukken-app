@@ -135,3 +135,16 @@
 :root[data-skin="v2"] .wfresult{ background:var(--accent-soft) }
 :root[data-skin="v2"] .wfresult-big{ color:var(--accent) }
 :root[data-skin="v2"] .lpgroup-head{ padding:14px 16px }
+
+/* ===== 一覧（新デザイン） ===== */
+:root[data-skin="v2"] .pagehead h2{font-size:28px;font-weight:800}
+:root[data-skin="v2"] .filterbar{border-radius:var(--r);padding:14px 16px}
+:root[data-skin="v2"] .fsel{border-radius:9px}
+:root[data-skin="v2"] .pcard .pcard-top{padding:13px 15px 10px}
+:root[data-skin="v2"] .pcard-img{margin:0 15px;border-radius:12px;aspect-ratio:4/3}
+:root[data-skin="v2"] .pcard-body{padding:14px 17px 18px}
+:root[data-skin="v2"] .pcard-name{font-size:16.5px;font-weight:800}
+:root[data-skin="v2"] .pcard-price{font-size:25px}
+:root[data-skin="v2"] .ftag{border-radius:9px;background:var(--surface);border-color:var(--line)}
+:root[data-skin="v2"] .selbar-in{border-radius:var(--r);padding:16px 20px}
+:root[data-skin="v2"] .pickbox.is-on .pickbox-mark{background:var(--accent);border-color:var(--accent)}
