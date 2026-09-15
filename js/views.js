@@ -1,7 +1,7 @@
 // 画面描画。すべて store の状態から組み立てる。
 import { store } from './store.js';
 import { el, fmt, derive, toast, mount, STATUSES, debounce, APP_VERSION } from './util.js';
-import { labeled, select, kv, field, ratingPicker, statusBadge, section, tagPicker } from './ui.js';
+import { labeled, select, kv, field, ratingPicker, statusBadge, section, tagPicker, segmented } from './ui.js';
 import { gallerySection } from './gallery.js';
 import { calcLoan, METHODS, DEFAULT_TERMS } from './loan.js';
 import { geocode, drawMap, distanceMeters, walkMinutes } from './map.js';
@@ -42,16 +42,8 @@ export function renderList(root) {
   if (!byRoom && !BUILDING_SORTS.some(([k]) => k === listUI.sort)) listUI.sort = 'price';
 
   const bar = el('div', { class: 'toolbar' },
-    el('div', { class: 'segmented' },
-      el('button', {
-        class: byRoom ? '' : 'is-on',
-        onclick: () => { listUI.mode = 'building'; rerender(); },
-      }, '建物ごと'),
-      el('button', {
-        class: byRoom ? 'is-on' : '',
-        onclick: () => { listUI.mode = 'room'; rerender(); },
-      }, '部屋ごと'),
-    ),
+    segmented(listUI.mode, [['building', '建物ごと'], ['room', '部屋ごと']],
+      (v) => { listUI.mode = v; rerender(); }),
     labeled('並び替え', select(listUI.sort, byRoom ? ROOM_SORTS : BUILDING_SORTS,
       (v) => { listUI.sort = v; rerender(); })),
     labeled('状態', select(listUI.status, [['all', 'すべて'], ...STATUSES.map((s) => [s, s])],

@@ -207,9 +207,9 @@ table.cmp tr:hover td.lab{background:var(--surface-2)}
 .subhead{margin:0 0 8px;font-size:13px;color:var(--text-2);font-weight:700}
 .chartwrap{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px;overflow-x:auto}
 .chart{width:100%;height:auto;display:block;min-width:460px}
-.chart-grid{stroke:var(--line);stroke-width:1}
-.chart-axis{stroke:var(--text-3);stroke-width:1}
-.chart-lab{fill:var(--text-2);font-size:11px;font-family:inherit}
+.chart-grid{stroke:var(--line);stroke-width:1;opacity:.7}
+.chart-axis{stroke:var(--line);stroke-width:1.5}
+.chart-lab{fill:var(--text-3);font-size:11px;font-family:inherit;letter-spacing:.02em}
 .chart-legend{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:10px;font-size:12.5px;color:var(--text-2)}
 .chart-legend span{display:inline-flex;align-items:center;gap:6px}
 .chart-legend i{width:11px;height:11px;border-radius:3px;display:inline-block}
@@ -271,11 +271,6 @@ table.cmp tr:hover td.lab{background:var(--surface-2)}
 .taglist{display:flex;flex-wrap:wrap;gap:5px}
 .taglist .tag{cursor:default;background:var(--accent-soft);border-color:var(--accent-soft);color:var(--accent)}
 
-/* ===== 一覧の表示切り替え ===== */
-.segmented{display:inline-flex;border:1px solid var(--line);border-radius:var(--r-sm);overflow:hidden}
-.segmented button{border:0;background:var(--surface);color:var(--text-2);padding:7px 14px;
-  font-size:13px;font-weight:600;cursor:pointer}
-.segmented button.is-on{background:var(--accent);color:#fff}
 
 /* ===== 部屋詳細からの建物リンク ===== */
 .blink{display:flex;align-items:center;gap:12px;padding:11px 14px;border:1px solid var(--line);
@@ -298,21 +293,64 @@ table.cmp tr:hover td.lab{background:var(--surface-2)}
   :root:not([data-theme="light"]) .leaflet-tile{filter:brightness(.85) contrast(1.03)}
 }
 
-/* ===== 分析タブ ===== */
-.axisrow{display:flex;align-items:flex-start;gap:10px;margin-bottom:10px;flex-wrap:wrap}
-.axislabel{font-size:12px;color:var(--text-2);font-weight:700;padding-top:7px;min-width:62px;flex-shrink:0}
-.axisbtns{display:flex;flex-wrap:wrap;gap:5px;flex:1;min-width:0}
-.axisbtn{border:1px solid var(--line);background:var(--bg);color:var(--text-2);
-  border-radius:var(--r-sm);padding:6px 12px;font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap}
-.axisbtn:hover{border-color:var(--text-3)}
-.axisbtn.is-on{background:var(--accent);border-color:var(--accent);color:#fff}
+/* ===== 操作コントロール（分析・一覧で共通） ===== */
+.segscroll{overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;max-width:100%}
+.segscroll::-webkit-scrollbar{display:none}
+.segctl{display:inline-flex;background:var(--surface-2);border-radius:11px;padding:3px;gap:2px;
+  border:1px solid var(--line)}
+.segctl-item{border:0;background:transparent;color:var(--text-2);padding:7px 14px;border-radius:8px;
+  font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;
+  transition:background .15s ease,color .15s ease}
+.segctl-item:hover{color:var(--text)}
+.segctl-item.is-on{background:var(--surface);color:var(--accent);
+  box-shadow:0 1px 2px rgba(16,24,40,.14),0 0 0 1px rgba(16,24,40,.04)}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]) .segctl-item.is-on{box-shadow:0 1px 3px rgba(0,0,0,.5)}
+}
+:root[data-theme="dark"] .segctl-item.is-on{box-shadow:0 1px 3px rgba(0,0,0,.5)}
 
-.fitline{display:flex;flex-wrap:wrap;gap:6px 18px;margin-top:10px;font-size:12.5px;color:var(--text-2)}
-.fitline span{white-space:nowrap}
-.chart .dot{cursor:pointer}
-.chart .dot:hover{opacity:1;r:8}
+.ctlrow{display:grid;grid-template-columns:104px minmax(0,1fr);gap:14px;align-items:center;
+  padding:11px 0;border-bottom:1px solid var(--line)}
+.ctlrow:first-child{padding-top:2px}
+.ctlrow:last-child{border-bottom:0;padding-bottom:2px}
+.ctllabel{font-size:12px;color:var(--text-2);font-weight:700;display:flex;align-items:center;gap:7px}
+.ctlicon{font-style:normal;color:var(--text-3);font-size:13px;width:13px;text-align:center}
+@media(max-width:560px){
+  .ctlrow{grid-template-columns:1fr;gap:7px;padding:10px 0}
+  .ctllabel{gap:6px}
+}
+
+.picksel{border:1px solid var(--line);background:var(--surface);border-radius:9px;
+  padding:8px 11px;font-size:13px;font-weight:600;color:var(--text);min-width:130px;cursor:pointer}
+
+.switch{display:inline-flex;align-items:center;gap:10px;cursor:pointer;
+  font-size:12.5px;color:var(--text-2);font-weight:600;user-select:none}
+.switch input{position:absolute;opacity:0;width:0;height:0}
+.switch .track{width:40px;height:23px;border-radius:999px;background:var(--line);
+  transition:background .18s ease;flex-shrink:0;position:relative}
+.switch .track::after{content:"";position:absolute;top:2.5px;left:2.5px;width:18px;height:18px;
+  border-radius:50%;background:#fff;transition:transform .18s ease;box-shadow:0 1px 3px rgba(0,0,0,.35)}
+.switch input:checked + .track{background:var(--accent)}
+.switch input:checked + .track::after{transform:translateX(17px)}
+.switch input:focus-visible + .track{outline:2px solid var(--accent);outline-offset:2px}
+
+/* ===== 分析タブ ===== */
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
+  box-shadow:var(--shadow);overflow:hidden}
+.panel-controls{padding:6px 16px}
+.panel-chart{border-top:1px solid var(--line);padding:14px 16px 16px}
+.panel-chart-head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+.panel-chart-title{font-size:15px;font-weight:700;letter-spacing:.01em}
+.panel-chart-title small{color:var(--text-3);font-weight:600;margin:0 5px}
+.fitbadge{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--text-2)}
+.fitbadge b{color:var(--text);font-weight:700}
+
+.chartwrap{background:none;border:0;padding:0;overflow-x:auto}
+.chart .dot{cursor:pointer;transition:opacity .12s}
+.chart .dot:hover{opacity:1}
 
 .valuetable td,.valuetable th{text-align:right}
-.valuetable td.lab,.valuetable th.lab{text-align:left;min-width:150px}
+.valuetable td.lab,.valuetable th.lab{text-align:left;min-width:160px}
 .valuetable td.worse{color:var(--bad);font-weight:700}
 .valuetable tr.totalrow td{font-weight:800;background:var(--surface-2)}
+.hint{font-size:12.5px;line-height:1.75;color:var(--text-2);margin-bottom:12px}

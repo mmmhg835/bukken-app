@@ -72,6 +72,37 @@ export function tagPicker(obj, key, options, onChange) {
   return el('div', { class: 'tagwrap' }, chips);
 }
 
+/**
+ * 連結型のセグメント切り替え。
+ * 独立したピルを並べるより、ひとかたまりの中で選択が動くほうが
+ * 「同じ軸の選択肢」だと伝わりやすい。
+ */
+export function segmented(value, options, onChange) {
+  const box = el('div', { class: 'segctl' },
+    options.map(([key, label]) => el('button', {
+      type: 'button',
+      class: 'segctl-item' + (String(key) === String(value) ? ' is-on' : ''),
+      onclick: () => onChange(key),
+    }, label)));
+  return el('div', { class: 'segscroll' }, box);
+}
+
+/** 軸ごとの操作行。ラベル幅を揃えて、選択肢の並びを縦に揃える */
+export function controlRow(icon, label, control) {
+  return el('div', { class: 'ctlrow' },
+    el('span', { class: 'ctllabel' }, el('i', { class: 'ctlicon' }, icon), label),
+    control);
+}
+
+/** チェックボックスより指で押しやすく、状態も見て分かるトグル */
+export function toggle(label, checked, onChange) {
+  const input = el('input', {
+    type: 'checkbox', checked,
+    onchange: (e) => onChange(e.target.checked),
+  });
+  return el('label', { class: 'switch' }, input, el('span', { class: 'track' }), el('span', {}, label));
+}
+
 export function section(title, ...children) {
   return el('div', { class: 'section' }, title ? el('h3', {}, title) : null, ...children);
 }

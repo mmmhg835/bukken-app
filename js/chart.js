@@ -162,11 +162,15 @@ export function scatterChart(series, opts = {}) {
     );
   }
   const xStep = niceStep(x1 - x0, 6);
+  let lastLabel = null;
   for (let v = Math.ceil(x0 / xStep) * xStep; v <= x1; v += xStep) {
-    svg.append(
-      n('line', { x1: X(v), x2: X(v), y1: pad.t, y2: pad.t + ih, class: 'chart-grid' }),
-      n('text', { x: X(v), y: H - 24, class: 'chart-lab', 'text-anchor': 'middle' }, xTick ? xTick(v) : trim(v)),
-    );
+    const label = xTick ? xTick(v) : trim(v);
+    svg.append(n('line', { x1: X(v), x2: X(v), y1: pad.t, y2: pad.t + ih, class: 'chart-grid' }));
+    // 竣工年のように丸めると同じ文字列が続く軸では、重複した目盛りを出さない
+    if (label !== lastLabel) {
+      svg.append(n('text', { x: X(v), y: H - 24, class: 'chart-lab', 'text-anchor': 'middle' }, label));
+      lastLabel = label;
+    }
   }
 
   // 近似直線と相場の帯（±1σ）
@@ -175,12 +179,12 @@ export function scatterChart(series, opts = {}) {
     const [a1, b1] = line(fit.sd), [a2, b2] = line(-fit.sd);
     svg.append(n('path', {
       d: `M ${X(a1[0])} ${Y(a1[1])} L ${X(b1[0])} ${Y(b1[1])} L ${X(b2[0])} ${Y(b2[1])} L ${X(a2[0])} ${Y(a2[1])} Z`,
-      fill: 'var(--accent)', opacity: '.10',
+      fill: 'var(--accent)', opacity: '.08',
     }));
     const [p, q] = line(0);
     svg.append(n('line', {
       x1: X(p[0]), y1: Y(p[1]), x2: X(q[0]), y2: Y(q[1]),
-      stroke: 'var(--accent)', 'stroke-width': 2, 'stroke-dasharray': '6 4', opacity: '.85',
+      stroke: 'var(--accent)', 'stroke-width': 1.8, 'stroke-dasharray': '7 5', opacity: '.8', 'stroke-linecap': 'round',
     }));
   }
 
@@ -195,8 +199,8 @@ export function scatterChart(series, opts = {}) {
   series.forEach((s, si) => {
     const color = s.color || SERIES_COLORS[si % SERIES_COLORS.length];
     for (const p of s.points) {
-      const c = n('circle', { cx: X(p.x), cy: Y(p.y), r: 6, fill: color, opacity: '.85',
-        stroke: 'var(--surface)', 'stroke-width': 1.5, class: 'dot' });
+      const c = n('circle', { cx: X(p.x), cy: Y(p.y), r: 6.5, fill: color, opacity: '.9',
+        stroke: 'var(--surface)', 'stroke-width': 2, class: 'dot' });
       c.append(n('title', {}, `${p.label || s.name}\n${xLabel} ${trim(p.x)} / ${yLabel} ${trim(p.y)}`));
       svg.append(c);
     }
