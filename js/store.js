@@ -4,6 +4,7 @@ import { idb } from './idb.js';
 import { processImage, coverDataUrl, DEFAULT_PRESET, QUALITY_PRESETS } from './image.js';
 import { migrate, CURRENT_SCHEMA } from './migrate.js';
 import { DEFAULT_TERMS } from './loan.js';
+import { buildingDefaults, SPEC_GROUPS } from './spec.js';
 import { uid } from './util.js';
 
 const CFG_KEY = 'bukken.config.v1';
@@ -132,9 +133,9 @@ class Store extends EventTarget {
 
   addBuilding(partial = {}) {
     const b = {
-      id: uid('b'), name: '新規の建物', address: '', lat: null, lng: null,
-      builtYM: '', totalFloors: null, stations: '', walk: '',
-      amenities: '', memo: '', images: [], ...partial,
+      id: uid('b'), ...buildingDefaults(),
+      name: '新規の建物', lat: null, lng: null,
+      cover: null, coverThumb: null, images: [], ...partial,
     };
     this.data.buildings.push(b);
     this.markDirty();
@@ -157,6 +158,7 @@ class Store extends EventTarget {
     const r = {
       id: uid('r'), buildingId, label: '新規の部屋', status: '検討中', rating: 0,
       listingStatus: '募集中', listedAt: null, closedAt: null, priceHistory: [],
+      roomEquipmentTags: [],
       price: null, area: null, layout: '', floor: null, balcony: null,
       kanrihi: null, shuzen: null,
       refMonthly: null, refLoanPrincipal: null, refLoanInterest: null, loan: null,
@@ -298,6 +300,21 @@ class Store extends EventTarget {
     const url = URL.createObjectURL(await this.#blob(path));
     this.#urls.set(path, url);
     return url;
+  }
+
+  /** 保存済み画像の枚数と概算容量。上限が気になったときに現状を把握するため */
+  usage() {
+    const owners = [...this.data.buildings, ...this.data.rooms];
+    let count = 0, bytes = 0;
+    for (const o of owners) {
+      for (const im of o.images || []) {
+        count += 1;
+        // bytes は本体のみ。サムネは概ね本体の7%程度
+        bytes += (im.bytes || 0) * 1.07;
+      }
+    }
+    const jsonBytes = new TextEncoder().encode(JSON.stringify(this.data)).length;
+    return { count, bytes, jsonBytes };
   }
 
   async clearImageCache() {

@@ -2,13 +2,15 @@
 // v1 は「物件」の平坦な配列だったが、同じ建物の別部屋が重複して登録されるため
 // v2 で「建物（buildings）」と「部屋（rooms）」に分けた。
 import { DEFAULT_TERMS } from './loan.js';
+import { buildingDefaults, SPEC_GROUPS } from './spec.js';
 
-export const CURRENT_SCHEMA = 3;
+export const CURRENT_SCHEMA = 4;
 
 export function migrate(data) {
   let d = structuredClone(data);
   if (!d.schemaVersion || d.schemaVersion < 2) d = v1ToV2(d);
   if (d.schemaVersion < 3) d = v2ToV3(d);
+  if (d.schemaVersion < 4) d = v3ToV4(d);
   d.settings ||= {};
   d.settings.loan = { ...DEFAULT_TERMS, ...(d.settings.loan || {}) };
   d.settings.places ||= [];   // 職場・駅など、地図上の参照地点
@@ -29,6 +31,27 @@ function v2ToV3(d) {
     r.priceHistory ??= [];
   }
   d.schemaVersion = 3;
+  return d;
+}
+
+/**
+ * v4: 建物のスペック項目と、設備のチェックリストを追加。
+ * 共用施設や構造は後から調べ直すのが面倒で、内見の記憶も薄れるため記録できるようにした。
+ */
+function v3ToV4(d) {
+  for (const b of d.buildings || []) {
+    const def = buildingDefaults();
+    for (const [k, v] of Object.entries(def)) if (b[k] === undefined) b[k] = v;
+    // v2 の自由記述だった共用施設はチェックリストに置き換わったため、内容だけメモへ退避する
+    if ('amenities' in b) {
+      if (b.amenities) b.memo = [b.memo, b.amenities].filter(Boolean).join('\n');
+      delete b.amenities;
+    }
+  }
+  for (const r of d.rooms || []) {
+    for (const [key, g] of Object.entries(SPEC_GROUPS)) if (g.on === 'room') r[key] ??= [];
+  }
+  d.schemaVersion = 4;
   return d;
 }
 

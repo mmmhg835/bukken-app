@@ -50,6 +50,28 @@ export function statusBadge(status) {
   return el('span', { class: `badge ${cls}` }, status || '検討中');
 }
 
+/**
+ * 文字列の配列を切り替えるチェックリスト。
+ * 自由記述だと表記ゆれで比較できないため、設備はタグで持つ。
+ */
+export function tagPicker(obj, key, options, onChange) {
+  obj[key] ||= [];
+  const chips = options.map((opt) => {
+    const on = obj[key].includes(opt);
+    const chip = el('button', {
+      type: 'button', class: 'tag' + (on ? ' is-on' : ''),
+      onclick: () => {
+        const i = obj[key].indexOf(opt);
+        if (i >= 0) obj[key].splice(i, 1); else obj[key].push(opt);
+        chip.classList.toggle('is-on');
+        onChange();
+      },
+    }, opt);
+    return chip;
+  });
+  return el('div', { class: 'tagwrap' }, chips);
+}
+
 export function section(title, ...children) {
   return el('div', { class: 'section' }, title ? el('h3', {}, title) : null, ...children);
 }

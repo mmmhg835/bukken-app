@@ -1,13 +1,15 @@
 // 画面描画。すべて store の状態から組み立てる。
 import { store } from './store.js';
 import { el, fmt, derive, toast, mount, STATUSES, debounce } from './util.js';
-import { labeled, select, kv, field, ratingPicker, statusBadge, section } from './ui.js';
+import { labeled, select, kv, field, ratingPicker, statusBadge, section, tagPicker } from './ui.js';
 import { gallerySection } from './gallery.js';
 import { calcLoan, METHODS, DEFAULT_TERMS } from './loan.js';
 import { geocode, drawMap, distanceMeters, walkMinutes } from './map.js';
 import { pairingUrl, renderQr } from './pairing.js';
 import { QUALITY_PRESETS } from './image.js';
+import { THEMES, currentTheme, setTheme } from './theme.js';
 import { salesSection } from './sales.js';
+import { BUILDING_FORM, SPEC_GROUPS, ROOM_EQUIPMENT } from './spec.js';
 import { analyze, LISTING_STATUS, CLOSED_STATUS, formatDate } from './price.js';
 import { stepChart, chartLegend, SERIES_COLORS } from './chart.js';
 
@@ -22,32 +24,84 @@ const mark = () => touch();
 /* =========================================================
    一覧（建物カード）
    ========================================================= */
-const listUI = { sort: 'price', status: 'all' };
+const listUI = { mode: 'building', sort: 'price', status: 'all' };
+
+const ROOM_SORTS = [
+  ['price', '価格が安い順'], ['tsubo', '坪単価が安い順'], ['area', '広い順'],
+  ['monthly', '月額が安い順'], ['rating', '評価が高い順'], ['floor', '高層階順'],
+  ['discount', '値下げ幅が大きい順'], ['days', '販売期間が長い順'],
+];
+const BUILDING_SORTS = [
+  ['price', '最安の部屋が安い順'], ['tsubo', '坪単価が安い順'],
+  ['age', '築年が新しい順'], ['rooms', '部屋数が多い順'], ['name', '名前順'],
+];
 
 export function renderList(root) {
+  const byRoom = listUI.mode === 'room';
+  if (byRoom && !ROOM_SORTS.some(([k]) => k === listUI.sort)) listUI.sort = 'price';
+  if (!byRoom && !BUILDING_SORTS.some(([k]) => k === listUI.sort)) listUI.sort = 'price';
+
   const bar = el('div', { class: 'toolbar' },
-    labeled('並び替え', select(listUI.sort, [
-      ['price', '最安の部屋が安い順'], ['tsubo', '坪単価が安い順'],
-      ['age', '築年が新しい順'], ['rooms', '部屋数が多い順'], ['name', '名前順'],
-    ], (v) => { listUI.sort = v; rerender(); })),
+    el('div', { class: 'segmented' },
+      el('button', {
+        class: byRoom ? '' : 'is-on',
+        onclick: () => { listUI.mode = 'building'; rerender(); },
+      }, '建物ごと'),
+      el('button', {
+        class: byRoom ? 'is-on' : '',
+        onclick: () => { listUI.mode = 'room'; rerender(); },
+      }, '部屋ごと'),
+    ),
+    labeled('並び替え', select(listUI.sort, byRoom ? ROOM_SORTS : BUILDING_SORTS,
+      (v) => { listUI.sort = v; rerender(); })),
     labeled('状態', select(listUI.status, [['all', 'すべて'], ...STATUSES.map((s) => [s, s])],
       (v) => { listUI.status = v; rerender(); })),
     el('div', { class: 'spacer' }),
-    el('button', {
-      class: 'btn btn-primary',
-      onclick: () => { const b = store.addBuilding(); go('b', b.id); },
-    }, '＋ 建物を追加'),
+    byRoom
+      ? null
+      : el('button', {
+        class: 'btn btn-primary',
+        onclick: () => { const b = store.addBuilding(); go('b', b.id); },
+      }, '＋ 建物を追加'),
   );
 
+  mount(root, bar, byRoom ? roomListing() : buildingListing());
+}
+
+/** 部屋を建物の枠を外して1列に並べる。安い部屋を横断で探したいとき用 */
+function roomListing() {
+  let rooms = store.rooms.map((r) => ({ r, b: store.building(r.buildingId) })).filter((x) => x.b);
+  if (listUI.status !== 'all') rooms = rooms.filter((x) => x.r.status === listUI.status);
+  rooms.sort(roomSorter(listUI.sort));
+
+  if (!rooms.length) return el('div', { class: 'empty' }, '条件に合う部屋がありません。');
+  return el('div', { class: 'grid grid-rooms' }, rooms.map(({ r, b }) => roomCard(r, b, true)));
+}
+
+function roomSorter(key) {
+  const d = (x) => derive(x.r, x.b, store.loanTerms);
+  const a = (x) => analyze(x.r);
+  const by = {
+    price: (x, y) => (x.r.price ?? Infinity) - (y.r.price ?? Infinity),
+    tsubo: (x, y) => (d(x).tsuboPrice ?? Infinity) - (d(y).tsuboPrice ?? Infinity),
+    area: (x, y) => (y.r.area ?? -1) - (x.r.area ?? -1),
+    monthly: (x, y) => (d(x).monthly ?? Infinity) - (d(y).monthly ?? Infinity),
+    rating: (x, y) => (y.r.rating ?? 0) - (x.r.rating ?? 0),
+    floor: (x, y) => (y.r.floor ?? -1) - (x.r.floor ?? -1),
+    discount: (x, y) => (a(x).totalChange ?? 0) - (a(y).totalChange ?? 0),
+    days: (x, y) => (a(y).salesDays ?? -1) - (a(x).salesDays ?? -1),
+  };
+  return by[key] || by.price;
+}
+
+function buildingListing() {
   const items = store.buildings
     .map((b) => ({ b, rooms: visibleRooms(b) }))
     .filter(({ rooms }) => listUI.status === 'all' || rooms.length)
     .sort(buildingSorter(listUI.sort));
 
-  mount(root, bar,
-    items.length
-      ? el('div', { class: 'grid' }, items.map(({ b, rooms }) => buildingCard(b, rooms)))
-      : el('div', { class: 'empty' }, '建物がありません。「＋ 建物を追加」から登録してください。'));
+  if (!items.length) return el('div', { class: 'empty' }, '建物がありません。「＋ 建物を追加」から登録してください。');
+  return el('div', { class: 'grid' }, items.map(({ b, rooms }) => buildingCard(b, rooms)));
 }
 
 function visibleRooms(b) {
@@ -108,17 +162,6 @@ function buildingCard(b, rooms) {
 /* =========================================================
    建物詳細
    ========================================================= */
-const BUILDING_FIELDS = [
-  ['name', '建物名', 'text', true],
-  ['address', '住所', 'text', true],
-  ['builtYM', '築年月（例 2005/02）', 'text'],
-  ['totalFloors', '建物階数', 'number'],
-  ['stations', '最寄駅', 'text'],
-  ['walk', '駅徒歩', 'text'],
-  ['amenities', '共用施設・特徴', 'textarea'],
-  ['memo', '建物メモ', 'textarea'],
-];
-
 export function renderBuilding(root, id) {
   const b = store.building(id);
   if (!b) { go('list'); return; }
@@ -135,19 +178,37 @@ export function renderBuilding(root, id) {
     }, '建物を削除'),
   );
 
-  const form = el('div', { class: 'card form' },
-    BUILDING_FIELDS.map((spec) => field(b, spec, (key) => {
-      if (key === 'name') document.getElementById('detailName').textContent = b.name || '(名称未設定)';
-      mark();
-    })),
-  );
+  const forms = BUILDING_FORM.map(([title, fields]) =>
+    el('div', { class: 'section' },
+      el('h3', {}, title),
+      el('div', { class: 'card form' },
+        fields.map((spec) => field(b, spec, (key) => {
+          if (key === 'name') document.getElementById('detailName').textContent = b.name || '(名称未設定)';
+          mark();
+        }))),
+      title === '基本情報' ? locationBox(b) : null,
+    ));
 
   mount(root,
     el('button', { class: 'back', onclick: () => go('list') }, '‹ 一覧へ戻る'),
     head,
-    section('部屋', roomList(b, rooms)),
-    section('建物情報', form, locationBox(b)),
-    gallerySection(b, rerender),
+    section(`部屋（${rooms.length}）`, roomList(b, rooms)),
+    specSection(b, 'building'),
+    ...forms,
+    gallerySection(b, rerender, '建物の写真（外観・エントランス・共用部）'),
+  );
+}
+
+/** 設備のチェックリスト。建物と部屋で対象グループを切り替える */
+function specSection(owner, on) {
+  const groups = Object.entries(SPEC_GROUPS).filter(([, g]) => g.on === on);
+  return el('div', { class: 'section' },
+    el('h3', {}, on === 'building' ? '建物の設備・施設' : '専有設備'),
+    el('div', { class: 'card', style: 'padding:14px' },
+      groups.map(([key, g]) => el('div', { class: 'specgroup' },
+        el('h4', {}, `${g.label}（${(owner[key] || []).length}）`),
+        tagPicker(owner, key, g.options, mark),
+      ))),
   );
 }
 
@@ -162,7 +223,7 @@ function roomList(b, rooms) {
   return wrap;
 }
 
-function roomCard(r, b) {
+function roomCard(r, b, showBuilding = false) {
   const c = derive(r, b, store.loanTerms);
   const img = r.cover || r.coverThumb ? el('img', { src: r.coverThumb || '', alt: r.label, loading: 'lazy' }) : null;
   if (img && r.cover) store.imageUrl(r.cover).then((u) => { img.src = u; }).catch(() => {});
@@ -170,6 +231,7 @@ function roomCard(r, b) {
   return el('article', { class: 'card rcard', onclick: () => go('r', r.id) },
     el('div', { class: 'rcard-img' }, img || el('div', { class: 'ph' }, '—')),
     el('div', { class: 'rcard-body' },
+      showBuilding ? el('div', { class: 'tiny muted', style: 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis' }, b.name) : null,
       el('div', { class: 'pcard-top' },
         el('div', { class: 'pcard-name' }, r.label || '(部屋)'),
         statusBadge(r.status),
@@ -290,13 +352,34 @@ export function renderRoom(root, id) {
     : null;
 
   mount(root,
-    el('button', { class: 'back', onclick: () => go('b', r.buildingId) }, `‹ ${b?.name || '建物'} へ戻る`),
+    el('button', { class: 'back', onclick: () => go('b', r.buildingId) }, '‹ 一覧へ戻る'),
     head,
+    buildingLink(b),
     section(null, calcBox),
     salesSection(r, () => { paint(); }),
     section('資金計画', loanBox),
     section('部屋情報', buildingPicker, form),
-    gallerySection(r, rerender),
+    specSection(r, 'room'),
+    gallerySection(r, rerender, '部屋の写真（室内・間取り図・眺望）'),
+  );
+}
+
+/** 部屋から建物へ一手で戻れるようにする。写真を交互に見るとき往復が多いため */
+function buildingLink(b) {
+  if (!b) return null;
+  const img = el('img', { class: 'blink-img', src: b.coverThumb || '', alt: '' });
+  if (b.cover) store.imageUrl(b.cover).then((u) => { img.src = u; }).catch(() => {});
+  const rooms = store.roomsOf(b.id);
+  return el('button', { class: 'blink', onclick: () => go('b', b.id) },
+    img,
+    el('div', { class: 'blink-body' },
+      el('div', { class: 'tiny muted' }, '建物の情報・外観写真を見る'),
+      el('div', { class: 'blink-name' }, b.name),
+      el('div', { class: 'tiny muted' },
+        `${b.builtYM || '—'}・${b.totalFloors ?? '—'}階建・${rooms.length}部屋`
+        + `　写真${b.images?.length || 0}枚`),
+    ),
+    el('span', { class: 'blink-arrow' }, '›'),
   );
 }
 
@@ -620,6 +703,8 @@ export function renderSettings(root) {
     section('ローンの共通条件', loanSettings()),
     section('参照地点', placesSettings()),
     section('GitHub 接続', ghForm, status),
+    themeSettings(),
+    usageSettings(),
     qualitySettings(),
     pairingSection(),
     el('div', { class: 'section card', style: 'padding:16px' },
@@ -721,6 +806,39 @@ function placesSettings() {
       el('div', { class: 'field' }, el('label', {}, ' '), add),
     ),
     msg,
+  );
+}
+
+/** 画像の保存量。リポジトリの実用上限に対してどのくらいかを示す */
+function usageSettings() {
+  const u = store.usage();
+  const mb = u.bytes / 1024 / 1024;
+  const per = QUALITY_PRESETS[store.prefs.imageQuality];
+  const avgKb = { standard: 240, high: 640, original: 3200 }[store.prefs.imageQuality] || 640;
+  // GitHub はリポジトリ 1GB 以内が推奨。そこから逆算した目安
+  const room = Math.max(0, Math.floor((1024 - mb) * 1024 / avgKb));
+
+  return el('div', { class: 'section card', style: 'padding:16px' },
+    el('h3', {}, '画像の保存量'),
+    el('div', { class: 'calcgrid', style: 'margin:10px 0' },
+      kv('保存済み', `${u.count}枚`),
+      kv('概算容量', mb < 1 ? `${Math.round(u.bytes / 1024)}KB` : `${mb.toFixed(1)}MB`),
+      kv('データ本体', `${Math.round(u.jsonBytes / 1024)}KB`, 'properties.json'),
+      kv('あと何枚', `約${room.toLocaleString('ja-JP')}枚`, `「${per.label}」換算`),
+    ),
+    el('div', { class: 'help' },
+      'アプリ側に枚数の上限はありません。実質的な制限は GitHub リポジトリの容量（1GB 以内が推奨）です。'
+      + '「あと何枚」は現在の画質設定で 1GB に収まる概算で、画質を下げれば増えます。'),
+  );
+}
+
+function themeSettings() {
+  return el('div', { class: 'section card', style: 'padding:16px' },
+    el('h3', {}, '配色'),
+    el('div', { class: 'help', style: 'margin-bottom:10px' },
+      '「端末の設定に従う」なら、iPhone や Mac のダークモードに合わせて自動で切り替わります。'
+      + '画面右上のボタンでも切り替えられます。'),
+    select(currentTheme(), THEMES, (v) => { setTheme(v); rerender(); }),
   );
 }
 

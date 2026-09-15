@@ -46,6 +46,8 @@ js/chart.js           価格推移のステップチャート（依存なしSVG�
 js/sales.js           部屋詳細の「販売活動」セクション
 js/map.js             地図表示と住所ジオコーディング（国土地理院）
 js/migrate.js         properties.json のスキーマ移行
+js/spec.js            建物・部屋のスペック項目と設備の選択肢
+js/theme.js           ライト / ダークの切り替え
 js/store.js           状態管理（GitHub が実体、IndexedDB がキャッシュ）
 js/github.js          GitHub Contents API クライアント
 js/image.js           アップロード前の画像縮小（長辺1600px / サムネ420px）

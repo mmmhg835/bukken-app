@@ -6,8 +6,9 @@ import { labeled, select } from './ui.js';
 /**
  * @param {object} owner 建物または部屋
  * @param {Function} rerender 追加・削除後に画面を描き直す
+ * @param {string} title 見出し。建物の写真と部屋の写真を取り違えないよう明示する
  */
-export function gallerySection(owner, rerender) {
+export function gallerySection(owner, rerender, title = '画像') {
   let category = CATEGORIES[0];
 
   const input = el('input', {
@@ -59,7 +60,7 @@ export function gallerySection(owner, rerender) {
     )));
 
   return el('div', { class: 'section' },
-    el('h3', {}, `画像（${owner.images?.length || 0}枚）`),
+    el('h3', {}, `${title}　${owner.images?.length || 0}枚`),
     el('div', { class: 'toolbar' },
       labeled('追加先カテゴリ', select(category, CATEGORIES.map((x) => [x, x]), (v) => { category = v; }))),
     zone, input, groups,

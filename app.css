@@ -8,14 +8,23 @@
   --r:14px; --r-sm:9px;
   --safe-t:env(safe-area-inset-top,0px); --safe-b:env(safe-area-inset-bottom,0px);
 }
+/* 端末の設定に従う（既定）。ただし明示的にライトを選んでいるときは適用しない */
 @media (prefers-color-scheme:dark){
-  :root{
+  :root:not([data-theme="light"]){
     --bg:#0d1117; --surface:#161b22; --surface-2:#1c232d; --line:#2a323d;
     --text:#e6edf3; --text-2:#9aa6b4; --text-3:#6e7b8c;
     --accent:#6f9bff; --accent-soft:#182543;
     --good:#2dd4bf; --warn:#fbbf24; --bad:#f87171;
     --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 18px rgba(0,0,0,.35);
   }
+}
+/* 明示的にダークを選んだ場合は端末設定より優先する */
+:root[data-theme="dark"]{
+    --bg:#0d1117; --surface:#161b22; --surface-2:#1c232d; --line:#2a323d;
+    --text:#e6edf3; --text-2:#9aa6b4; --text-3:#6e7b8c;
+    --accent:#6f9bff; --accent-soft:#182543;
+    --good:#2dd4bf; --warn:#fbbf24; --bad:#f87171;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 18px rgba(0,0,0,.35);
 }
 *{box-sizing:border-box}
 [hidden]{display:none!important}
@@ -223,3 +232,41 @@ table.cmp tr:hover td.lab{background:var(--surface-2)}
 .pickchip.is-on{border-color:var(--accent);background:var(--accent-soft)}
 .pickchip input{margin:0;flex-shrink:0}
 .pickchip > span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ===== 設備チェックリスト ===== */
+.tagwrap{display:flex;flex-wrap:wrap;gap:6px}
+.tag{border:1px solid var(--line);background:var(--bg);color:var(--text-2);
+  border-radius:999px;padding:6px 12px;font-size:12.5px;font-weight:600;cursor:pointer;line-height:1.4}
+.tag:hover{border-color:var(--text-3)}
+.tag.is-on{background:var(--accent);border-color:var(--accent);color:#fff}
+.specgroup{margin-bottom:16px}
+.specgroup > h4{margin:0 0 8px;font-size:12.5px;color:var(--text-2);font-weight:700}
+.taglist{display:flex;flex-wrap:wrap;gap:5px}
+.taglist .tag{cursor:default;background:var(--accent-soft);border-color:var(--accent-soft);color:var(--accent)}
+
+/* ===== 一覧の表示切り替え ===== */
+.segmented{display:inline-flex;border:1px solid var(--line);border-radius:var(--r-sm);overflow:hidden}
+.segmented button{border:0;background:var(--surface);color:var(--text-2);padding:7px 14px;
+  font-size:13px;font-weight:600;cursor:pointer}
+.segmented button.is-on{background:var(--accent);color:#fff}
+
+/* ===== 部屋詳細からの建物リンク ===== */
+.blink{display:flex;align-items:center;gap:12px;padding:11px 14px;border:1px solid var(--line);
+  border-radius:var(--r);background:var(--surface);cursor:pointer;text-align:left;width:100%;margin-bottom:14px}
+.blink:hover{border-color:var(--accent);background:var(--accent-soft)}
+.blink-img{width:54px;height:54px;border-radius:9px;object-fit:cover;background:var(--surface-2);flex-shrink:0}
+.blink-body{min-width:0;flex:1}
+.blink-name{font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.blink-arrow{color:var(--text-3);font-size:20px;flex-shrink:0}
+
+/* ===== テーマ切り替えボタン ===== */
+.themebtn{background:none;border:1px solid var(--line);border-radius:999px;
+  width:32px;height:32px;display:grid;place-items:center;cursor:pointer;font-size:15px;
+  color:var(--text-2);flex-shrink:0;line-height:1;padding:0}
+.themebtn:hover{border-color:var(--accent);color:var(--accent)}
+
+/* 地図タイルは白地なので、ダーク時だけ明度を落として目に刺さらないようにする */
+:root[data-theme="dark"] .leaflet-tile{filter:brightness(.85) contrast(1.03)}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]) .leaflet-tile{filter:brightness(.85) contrast(1.03)}
+}

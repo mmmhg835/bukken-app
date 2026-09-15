@@ -7,6 +7,7 @@ import {
 } from './views.js';
 import { initLightbox } from './gallery.js';
 import { parsePairing } from './pairing.js';
+import { applyTheme, watchSystemTheme, themeButton } from './theme.js';
 
 const main = $('#main');
 
@@ -90,6 +91,9 @@ window.addEventListener('beforeunload', (e) => {
 
 bindRouter(go, render);
 initLightbox();
+applyTheme();
+watchSystemTheme();
+$('#syncBadge').before(themeButton(() => render()));
 
 /**
  * 別端末から QR で渡された設定を取り込む。
