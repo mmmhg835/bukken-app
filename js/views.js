@@ -578,16 +578,13 @@ function priceChart(rows) {
   if (!series.length) {
     return el('div', { class: 'card', style: 'padding:16px;margin-bottom:14px' },
       el('h3', { style: 'margin-bottom:6px' }, '価格の推移'),
-      el('div', { class: 'help' },
-        '価格推移が登録された部屋がありません。部屋の詳細画面の「販売活動」で登録日と価格を入れると、'
-        + 'ここに値下げの動きが重ねて表示されます。'));
+      el('div', { class: 'empty' }, '価格の推移が登録されていません'));
   }
 
   return el('div', { class: 'section' },
     el('h3', {}, '価格の推移'),
     el('div', { class: 'chartwrap' }, stepChart(series, { height: 300 }), chartLegend(series)),
-    el('div', { class: 'tiny muted', style: 'margin-top:8px' },
-      '右端まで伸びている線は募集中。点にカーソルを合わせると日付と価格が出ます。'),
+
   );
 }
 
@@ -761,8 +758,7 @@ function compareTable(rows) {
       }, cmpUI.open.size === sections.length ? 'すべて閉じる' : 'すべて開く'),
       el('button', { class: 'btn btn-sm', onclick: () => go('settings') }, 'ローン条件'),
     ),
-    el('div', { class: 'tiny muted', style: 'margin-bottom:8px' },
-      '緑字＝その項目で最も有利な値。見出しをタップで開閉できます'),
+
     el('div', { class: 'tablewrap' }, el('table', { class: 'cmp' }, thead, body)),
   );
 }
@@ -799,7 +795,6 @@ export function renderMap(root) {
 
   mount(root,
     el('div', { class: 'toolbar' },
-      el('span', { class: 'muted tiny' }, '青ピン＝建物、★＝参照地点（職場・駅など）'),
       el('div', { class: 'spacer' }),
       el('button', { class: 'btn btn-sm', onclick: () => go('settings') }, '参照地点を追加'),
     ),
@@ -965,8 +960,7 @@ function placesSettings() {
   }, '追加');
 
   return el('div', { class: 'card', style: 'padding:14px' },
-    el('div', { class: 'help', style: 'margin-bottom:10px' },
-      '職場や駅などを登録すると、地図に★で表示され、各建物からの距離が出ます。'),
+
     list,
     el('div', { class: 'form', style: 'padding:0;margin-top:10px' },
       el('div', { class: 'field' }, el('label', {}, '名前'), name),
@@ -1013,8 +1007,7 @@ function themeSettings() {
 function qualitySettings() {
   return el('div', { class: 'section card', style: 'padding:16px' },
     el('h3', {}, '画像の保存画質'),
-    el('div', { class: 'help', style: 'margin-bottom:10px' },
-      'アップロード時にこの画質へ変換してから保存します。既にある画像は変わりません。'),
+
     select(store.prefs.imageQuality,
       Object.entries(QUALITY_PRESETS).map(([k, v]) => [k, v.label]),
       (v) => { store.savePrefs({ imageQuality: v }); toast(`画質を「${QUALITY_PRESETS[v].label}」にしました`); }),

@@ -57,9 +57,31 @@ const checks = [
     const { defaultLifeplan, calcPlan, waterfall } = mods.lifeplan;
     const res = calcPlan(defaultLifeplan(), null, null, mods.loan.DEFAULT_TERMS);
     const w = waterfall(res);
-    const sum = res.saving + res.housingTotal + res.fixed + res.variable;
-    if (Math.abs(sum - res.expense) > 1e-9) throw new Error('区分の合計が支出合計と一致しない');
-    if (w.steps.length !== 3) throw new Error('段階表の段数が想定と違う');
+    const sum = res.saving + res.housingTotal + res.carTotal + res.fixed + res.variable;
+    if (Math.abs(sum - res.expense) > 1e-9) {
+      throw new Error(`区分の合計 ${sum} が支出合計 ${res.expense} と一致しない`);
+    }
+    if (w.steps.length !== 4) throw new Error('段階表の段数が想定と違う');
+    // 段階表の最後の残りが、変動費に回せる額と一致すること
+    if (Math.abs(w.variableBudget - res.variableBudget) > 1e-9) {
+      throw new Error('段階表と変動費予算が食い違う');
+    }
+  }],
+  ['incomePatterns', () => {
+    const { defaultLifeplan, calcPlan, incomePatterns } = mods.lifeplan;
+    const plan = defaultLifeplan();
+    const room = { price: 13200, area: 80, kanrihi: 2, shuzen: 2 };
+    const res = calcPlan(plan, room, null, mods.loan.DEFAULT_TERMS);
+    const rows = incomePatterns(plan, room, res);
+    if (rows.length !== 3) throw new Error('年収パターンが3つでない');
+    // 分母が大きくなるほど負担率は下がり、倍率も下がるはず
+    for (let i = 1; i < rows.length; i++) {
+      if (!(rows[i].annual > rows[i - 1].annual)) throw new Error('年収の並びが不正');
+      if (!(rows[i].burdenLoan < rows[i - 1].burdenLoan)) throw new Error('返済負担率（ローン）の並びが不正');
+      if (!(rows[i].burdenHousing < rows[i - 1].burdenHousing)) throw new Error('返済負担率（住居費）の並びが不正');
+      if (!(rows[i].burdenHousing > rows[i].burdenLoan)) throw new Error('住居費ベースがローンのみを下回っている');
+      if (!(rows[i].multiple < rows[i - 1].multiple)) throw new Error('年収倍率の並びが不正');
+    }
   }],
   ['loan', () => {
     const { calcLoan } = mods.loan;

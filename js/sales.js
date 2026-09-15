@@ -147,9 +147,9 @@ function historyEditor(room, repaint) {
   return el('div', { style: 'margin-top:14px' },
     el('h4', { class: 'subhead' }, '価格の推移'),
     rows.length
-      ? el('div', { class: 'histhead' }, el('span', {}, '日付'), el('span', {}, '価格（万円）'), el('span', {}, 'メモ'), el('span', {}))
-      : el('div', { class: 'tiny muted', style: 'margin-bottom:8px' },
-        '価格の推移が未登録です。値下げの経緯が残ると、指値の判断材料になります。'),
+      ? el('div', { class: 'histhead' },
+        el('span', {}, '日付'), el('span', {}, '価格（万円）'), el('span', {}, 'メモ'), el('span', {}))
+      : null,
     ...rows,
     el('div', { style: 'display:flex;gap:8px;margin-top:10px;flex-wrap:wrap' }, add, seed),
   );

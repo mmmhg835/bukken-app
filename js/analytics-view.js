@@ -50,15 +50,10 @@ function equipmentFilter(all, rows, rerender) {
     el('h3', {}, '設備で絞り込む'),
     el('div', { class: 'card', style: 'padding:14px' },
       el('div', { class: 'tagwrap' }, chips),
-      el('div', { class: 'tiny muted', style: 'margin-top:10px' },
+      el('div', { class: 'filterrow' },
+        el('span', { class: 'tiny muted' }, `対象 ${rows.length} / ${all.length} 件`),
         ui.equip.length
-          ? `${ui.equip.join('・')} をすべて持つ ${rows.length}件 / 全${all.length}件を分析中`
-          : `全${all.length}件を分析中。設備を選ぶと、それを備えた部屋だけに絞れます`,
-        ui.equip.length
-          ? el('button', {
-            class: 'btn btn-sm', style: 'margin-left:10px',
-            onclick: () => { ui.equip = []; rerender(); },
-          }, '絞り込みを解除')
+          ? el('button', { class: 'btn btn-sm', onclick: () => { ui.equip = []; rerender(); } }, '解除')
           : null),
     ));
 }
@@ -121,13 +116,11 @@ function scatterSection(rows, rerender) {
         })),
       series.length > 1 ? chartLegend(series) : null,
       !fit && ui.fit && valid.length < 3
-        ? el('div', { class: 'tiny muted', style: 'margin-top:8px' },
-          '近似直線は3件以上のデータが揃うと表示されます。')
+        ? el('div', { class: 'tiny muted', style: 'margin-top:8px' }, '近似直線には3件以上必要')
         : null,
     )
     : el('div', { class: 'panel-chart' },
-      el('div', { class: 'hint', style: 'margin:0' },
-        `${attr.label} と ${metric.label} の両方が入っている部屋がありません。`));
+      el('div', { class: 'empty' }, `${attr.label} と ${metric.label} が未入力です`));
 
   return el('div', { class: 'section' },
     el('h3', {}, '傾向分析'),
@@ -150,10 +143,7 @@ function valueSection(rows) {
   const metric = METRICS[ui.metric], attr = ATTRS[ui.attr];
 
   return el('div', { class: 'section' },
-    el('h3', {}, '割安・割高'),
-    el('div', { class: 'hint' },
-      `${attr.label}から期待される${metric.label}に対し、実際がどれだけ離れているかです。`
-      + 'マイナスが大きいほど、同じ条件の中では割安です。'),
+    el('h3', {}, `割安・割高　${attr.label}から見た${metric.label}`),
     el('div', { class: 'tablewrap' },
       el('table', { class: 'cmp valuetable' },
         el('thead', {}, el('tr', {},
@@ -187,10 +177,7 @@ function areaSection(rows) {
 
   return el('div', { class: 'section' },
     el('h3', {}, hasAddress ? 'エリア別の相場' : '建物別の相場'),
-    !hasAddress
-      ? el('div', { class: 'hint' },
-        '建物に住所を入れると、町名ごとの相場に切り替わります。')
-      : null,
+
     el('div', { class: 'tablewrap' },
       el('table', { class: 'cmp valuetable' },
         el('thead', {}, el('tr', {},

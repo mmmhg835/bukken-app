@@ -5,7 +5,7 @@ import { DEFAULT_TERMS } from './loan.js';
 import { buildingDefaults, SPEC_GROUPS, BUILDING_EQUIPMENT } from './spec.js';
 import { defaultLifeplan, categoryOf } from './lifeplan.js';
 
-export const CURRENT_SCHEMA = 9;
+export const CURRENT_SCHEMA = 10;
 
 export function migrate(data) {
   let d = structuredClone(data);
@@ -17,6 +17,7 @@ export function migrate(data) {
   if (d.schemaVersion < 7) d = v6ToV7(d);
   if (d.schemaVersion < 8) d = v7ToV8(d);
   if (d.schemaVersion < 9) d = v8ToV9(d);
+  if (d.schemaVersion < 10) d = v9ToV10(d);
   d.settings ||= {};
   d.settings.loan = { ...DEFAULT_TERMS, ...(d.settings.loan || {}) };
   d.settings.places ||= [];   // 職場・駅など、地図上の参照地点
@@ -132,6 +133,22 @@ function v8ToV9(d) {
     for (const t of move) if (!b.facilityTags.includes(t)) b.facilityTags.push(t);
   }
   d.schemaVersion = 9;
+  return d;
+}
+
+/**
+ * v10: 車関連を住居費と並ぶ独立した段にする。金額が大きく、
+ * 「車をどうするか」が月次の余裕を左右するため、他の固定費に埋もれさせない。
+ * あわせて返済負担率・年収倍率のための額面年収を追加する。
+ */
+function v9ToV10(d) {
+  const plan = d.settings?.lifeplan;
+  if (!plan) { d.schemaVersion = 10; return d; }
+  for (const g of plan.groups || []) {
+    if (g.kind === 'expense' && (g.id === 'g_car' || /車/.test(g.name || ''))) g.kind = 'car';
+  }
+  plan.grossIncome ||= { primary: { name: '夫', annual: 1230 }, secondary: { name: '妻', annual: 615 } };
+  d.schemaVersion = 10;
   return d;
 }
 

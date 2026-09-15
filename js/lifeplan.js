@@ -30,7 +30,7 @@ export function defaultLifeplan() {
       { id: 'g_housing', name: '住居費', kind: 'housing', items: [
         { id: 'h1', name: '住宅ローン＋管理・修繕等', amount: 33, category: 'fixed' },
       ] },
-      { id: 'g_car', name: '車関連', kind: 'expense', items: [
+      { id: 'g_car', name: '車関連', kind: 'car', items: [
         { id: 'c1', name: '駐車場', amount: 2.5, category: 'fixed' },
         { id: 'c2', name: '車ローン', amount: 8.0, category: 'fixed', temporary: true, note: '5年ローン。完済後は不要' },
         { id: 'c3', name: '維持費', amount: 3.0, category: 'fixed', note: '保険・ガソリン・車検など' },
@@ -64,6 +64,11 @@ export function defaultLifeplan() {
         { id: 'w_trans', name: '交通費', amount: 0.5, category: 'variable' },
       ] },
     ],
+    // 返済負担率と年収倍率は「額面」で見るのが慣行なので、手取りとは別に持つ
+    grossIncome: {
+      primary: { name: '夫', annual: 1230 },
+      secondary: { name: '妻', annual: 615 },
+    },
     selectedRoomId: null,   // null なら住居費の手入力値を使う
   };
 }
@@ -101,16 +106,17 @@ export function calcPlan(plan, room, building, terms, opts = {}) {
     return { ...g, items, total: sum(items) };
   });
 
-  const allItems = groups.flatMap((g) =>
-    g.items.map((it) => ({ ...it, groupName: g.name, groupKind: g.kind })));
-
-  // 住居費グループは、区分に関わらず「住居費」として独立に積む
+  // 住居費と車関連はそれぞれ独立した段として積むので、区分の集計からは外す
+  const isBucket = (g) => g.kind === 'housing' || g.kind === 'car';
   const housingTotal = sum(groups.filter((g) => g.kind === 'housing'), (g) => g.total);
-  const nonHousing = allItems.filter((it) => it.groupKind !== 'housing');
+  const carTotal = sum(groups.filter((g) => g.kind === 'car'), (g) => g.total);
+
+  const rest = groups.filter((g) => !isBucket(g))
+    .flatMap((g) => g.items.map((it) => ({ ...it, groupName: g.name })));
   const byCategory = {
-    saving: nonHousing.filter((it) => categoryOf(it) === 'saving'),
-    fixed: nonHousing.filter((it) => categoryOf(it) === 'fixed'),
-    variable: nonHousing.filter((it) => categoryOf(it) === 'variable'),
+    saving: rest.filter((it) => categoryOf(it) === 'saving'),
+    fixed: rest.filter((it) => categoryOf(it) === 'fixed'),
+    variable: rest.filter((it) => categoryOf(it) === 'variable'),
   };
   const saving = sum(byCategory.saving);
   const fixed = sum(byCategory.fixed);
@@ -121,16 +127,19 @@ export function calcPlan(plan, room, building, terms, opts = {}) {
 
   return {
     income, expense, balance,
-    saving, fixed, variable, housingTotal,
+    saving, fixed, variable, housingTotal, carTotal,
     byCategory,
+    carItems: groups.filter((g) => g.kind === 'car').flatMap((g) => g.items),
     // 変動費に回せる上限。ここが「生活費としていくら使えるか」になる
-    variableBudget: income - saving - housingTotal - fixed,
+    variableBudget: income - saving - housingTotal - carTotal - fixed,
     totalLeft: saving + balance,
     savingRate: income ? (saving / income) * 100 : 0,
     yearlyBalance: balance * 12,
     yearlySaving: (saving + balance) * 12,
     groups,
     housingFromRoom,
+    // 返済負担率に使うローン返済額（管理費・修繕は含めないのが慣行）
+    loanMonthly: housingFromRoom ? housingFromRoom.items[0].amount : null,
   };
 }
 
@@ -151,7 +160,12 @@ export function waterfall(res, roomLabel = null) {
       note: roomLabel || '手入力の想定額',
     },
     {
-      key: 'fixed', label: '固定費', amount: res.fixed,
+      key: 'car', label: '車関連', amount: res.carTotal,
+      items: res.carItems,
+      note: '駐車場・ローン・維持費',
+    },
+    {
+      key: 'fixed', label: 'その他固定費', amount: res.fixed,
       items: res.byCategory.fixed,
       note: '毎月ほぼ決まって出る支出',
     },
@@ -199,4 +213,32 @@ export function affordablePrice(plan, room, building, terms) {
     if (m > loanBudget) hi = mid; else lo = mid;
   }
   return { budget, loanBudget, price: lo };
+}
+
+
+/**
+ * 額面年収に対する返済負担率と年収倍率。
+ * 金融機関は手取りではなく額面で見るため、分母を分けている。
+ */
+export function incomePatterns(plan, room, res) {
+  const g = plan.grossIncome || {};
+  const p = g.primary || { name: '本人', annual: 0 };
+  const sec = g.secondary || { name: '配偶者', annual: 0 };
+  const patterns = [
+    { label: p.name || '本人', annual: Number(p.annual) || 0 },
+    { label: `${p.name} ＋ ${sec.name}の半分`, annual: (Number(p.annual) || 0) + (Number(sec.annual) || 0) / 2 },
+    { label: `${p.name} ＋ ${sec.name}`, annual: (Number(p.annual) || 0) + (Number(sec.annual) || 0) },
+  ];
+  const yearlyLoan = res.loanMonthly != null ? res.loanMonthly * 12 : null;
+  // 管理費・修繕まで含めた住居費ベース。実際に毎月出ていく額での負担を見る
+  const yearlyHousing = res.housingFromRoom ? res.housingTotal * 12 : null;
+  const price = room?.price ?? null;
+  const rate = (num, annual) => (annual && num != null ? (num / annual) * 100 : null);
+
+  return patterns.map((x) => ({
+    ...x,
+    burdenLoan: rate(yearlyLoan, x.annual),
+    burdenHousing: rate(yearlyHousing, x.annual),
+    multiple: x.annual && price != null ? price / x.annual : null,
+  }));
 }

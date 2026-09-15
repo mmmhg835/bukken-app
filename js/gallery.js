@@ -18,8 +18,7 @@ export function gallerySection(owner, rerender, title = '画像') {
 
   const zone = el('div', { class: 'dropzone' },
     el('div', {}, '画像をここにドラッグ、またはタップして選択'),
-    el('div', { class: 'tiny', style: 'margin-top:6px' },
-      '端末側で縮小してから、まとめて1コミットで保存します'),
+
   );
   zone.addEventListener('click', () => input.click());
   zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('over'); });

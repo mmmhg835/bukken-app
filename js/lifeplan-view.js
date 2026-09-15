@@ -2,8 +2,11 @@
 import { store } from './store.js';
 import { el, fmt, mount, toast, uid, preserveFocus } from './util.js';
 import { kv, select, toggle, segmented } from './ui.js';
-import { calcPlan, housingCost, affordablePrice, waterfall, CATEGORIES, isOn, categoryOf } from './lifeplan.js';
-import { burdenRate } from './loan.js';
+import {
+  calcPlan, housingCost, affordablePrice, waterfall,
+  CATEGORIES, isOn, categoryOf, incomePatterns,
+} from './lifeplan.js';
+
 import { derive } from './util.js';
 
 const ui = { afterLoans: false, openGroups: null };
@@ -23,6 +26,7 @@ export function renderLifeplan(root, rerender) {
     summary(res, plan, rerender),
     housingDetail(res, room, building),
     waterfallSection(res, room, building),
+    burdenSection(plan, room, res, mark, rerender),
     groupsSection(plan, res, mark, rerender),
     incomeSection(plan, mark),
     scenarioSection(plan, room, building),
@@ -74,10 +78,11 @@ function summary(res, plan, rerender) {
       kv('毎月の残り', el('span', { class: positive ? 'pos' : 'neg' },
         `${positive ? '+' : ''}${fmt.n(res.balance, 1)}万円`), positive ? '黒字' : '赤字'),
       kv('先取りの資産形成', `${fmt.n(res.saving, 1)}万円`, `貯蓄率 ${res.savingRate.toFixed(1)}%`),
-      kv('固定費', `${fmt.n(res.fixed, 1)}万円`, '住居費を除く'),
+      kv('住居費', `${fmt.n(res.housingTotal, 1)}万円`,
+        res.housingFromRoom ? 'ローン＋管理＋修繕' : '手入力の想定額'),
+      kv('車代', `${fmt.n(res.carTotal, 1)}万円`, '駐車場・ローン・維持費'),
+      kv('その他固定費', `${fmt.n(res.fixed, 1)}万円`, '住居費・車代を除く'),
       kv('変動費', `${fmt.n(res.variable, 1)}万円`, `使える上限 ${fmt.n(res.variableBudget, 1)}万円`),
-      kv('毎月積み上がる額', `${fmt.n(res.totalLeft, 1)}万円`, '先取り＋残り'),
-      kv('返済負担率', burdenRateLabel(res), '住居費 ÷ 年収。25%以下が目安'),
     ),
     el('div', { class: 'stackbar' }, res.groups.map((g, i) =>
       g.total > 0
@@ -90,31 +95,18 @@ function summary(res, plan, rerender) {
         ? el('span', { class: 'stackseg is-left', style: `flex:${res.balance}`, title: `残り ${fmt.n(res.balance, 1)}万円` })
         : null),
     plan.bonus
-      ? el('div', { class: 'tiny muted', style: 'margin-top:10px' },
-        `賞与 年${fmt.n(plan.bonus.annual, 1)}万円は`
-        + (plan.bonus.include ? '計画に含めています。' : '計画に含めていません（上振れバッファ）。'),
-        el('button', {
-          class: 'btn btn-sm', style: 'margin-left:10px',
-          onclick: () => { plan.bonus.include = !plan.bonus.include; store.markDirty(); rerender(); },
-        }, plan.bonus.include ? '計画から外す' : '計画に含める'))
+      ? el('div', { class: 'bonusrow' },
+        el('span', { class: 'tiny muted' }, `賞与 年${fmt.n(plan.bonus.annual, 1)}万円`),
+        toggle('計画に含める', !!plan.bonus.include, (v) => {
+          plan.bonus.include = v; store.markDirty(); rerender();
+        }))
       : null,
   );
 }
 
-/** 住居費が年収に占める割合。金融機関が見る指標にそろえている */
-function burdenRateLabel(res) {
-  const r = burdenRate(res.housingTotal, res.income * 12);
-  if (r == null) return '—';
-  return el('span', { class: r <= 25 ? 'pos' : r <= 35 ? '' : 'neg' }, `${r.toFixed(1)}%`);
-}
-
 /* ===== 住居費の内訳 ===== */
 function housingDetail(res, room, building) {
-  if (!res.housingFromRoom) {
-    return el('div', { class: 'section' },
-      el('div', { class: 'hint' },
-        '物件を選ぶと、その部屋のローン返済・管理費・修繕積立金から住居費を自動計算します。'));
-  }
+  if (!res.housingFromRoom) return null;
   const manual = store.lifeplan.groups.find((g) => g.kind === 'housing').items
     .reduce((s, it) => s + (Number(it.amount) || 0), 0);
   const diff = res.housingFromRoom.total - manual;
@@ -175,6 +167,71 @@ function waterfallSection(res, room, building) {
     ));
 }
 
+/* =========================================================
+   返済負担率と年収倍率
+   ========================================================= */
+/** 列見出しに算式と目安を小さく添える。別途の説明文を置かずに済ませる */
+function thSub(title, sub) {
+  return el('div', { class: 'thsub' }, el('b', {}, title), el('span', {}, sub));
+}
+
+function burdenSection(plan, room, res, mark, rerender) {
+  plan.grossIncome ||= { primary: { name: '夫', annual: 0 }, secondary: { name: '妻', annual: 0 } };
+  const g = plan.grossIncome;
+  const rows = incomePatterns(plan, room, res);
+
+  const personInput = (who) => el('div', { class: 'lpitem', style: 'padding:0' },
+    el('input', {
+      type: 'text', class: 'lpitem-name', style: 'max-width:90px', value: g[who].name ?? '',
+      'data-fkey': `gross-name-${who}`,
+      oninput: (e) => { g[who].name = e.target.value; store.markDirty(); },
+    }),
+    el('input', {
+      type: 'number', step: 'any', inputmode: 'decimal', class: 'lpitem-input',
+      value: g[who].annual ?? '', 'data-fkey': `gross-${who}`,
+      oninput: (e) => { g[who].annual = e.target.value === '' ? 0 : Number(e.target.value); mark(); },
+    }),
+    el('span', { class: 'tiny muted' }, '万円/年'),
+  );
+
+  const cell = (v, fmtFn, judge) => {
+    if (v == null) return el('td', { class: 'muted' }, '—');
+    return el('td', { class: judge ? judge(v) : null }, fmtFn(v));
+  };
+
+  return el('div', { class: 'section' },
+    el('h3', {}, '返済負担率と年収倍率'),
+    el('div', { class: 'panel' },
+      el('div', { class: 'panel-controls' },
+        el('div', { class: 'ctlrow' },
+          el('span', { class: 'ctllabel' }, el('i', { class: 'ctlicon' }, '¥'), '額面年収'),
+          el('div', { style: 'display:flex;gap:18px;flex-wrap:wrap' },
+            personInput('primary'), personInput('secondary')))),
+      el('div', { class: 'panel-chart', style: 'padding:0' },
+        el('div', { class: 'tablewrap', style: 'border:0;border-radius:0' },
+          el('table', { class: 'cmp valuetable' },
+            el('thead', {}, el('tr', {},
+              el('th', { class: 'lab' }, '年収の見方'),
+              el('th', {}, '額面年収'),
+              el('th', {}, thSub('返済負担率', 'ローンのみ　25%以下')),
+              el('th', {}, thSub('返済負担率', '管理費・修繕込み')),
+              el('th', {}, thSub('年収倍率', '価格 ÷ 年収　7倍以下')),
+            )),
+            el('tbody', {}, rows.map((x) => el('tr', {},
+              el('td', { class: 'lab' }, x.label),
+              el('td', {}, `${fmt.man1(Math.round(x.annual))}万円`),
+              cell(x.burdenLoan, (v) => `${v.toFixed(1)}%`,
+                (v) => (v <= 25 ? 'best' : v <= 35 ? null : 'worse')),
+              cell(x.burdenHousing, (v) => `${v.toFixed(1)}%`,
+                (v) => (v <= 30 ? 'best' : v <= 40 ? null : 'worse')),
+              cell(x.multiple, (v) => `${v.toFixed(1)}倍`,
+                (v) => (v <= 7 ? 'best' : v <= 9 ? null : 'worse')),
+            ))),
+          ))),
+    ),
+  );
+}
+
 /* ===== 支出グループ ===== */
 function groupsSection(plan, res, mark, rerender) {
   return el('div', { class: 'section' },
@@ -199,8 +256,7 @@ function groupsSection(plan, res, mark, rerender) {
           ? el('div', { class: 'lpgroup-body' },
             (locked ? calc.items : g.items).map((it) => itemRow(g, it, mark, rerender, locked)),
             locked
-              ? el('div', { class: 'tiny muted', style: 'padding:8px 2px' },
-                '選択中の物件から計算しています。手入力に戻すには、上で「現在の想定」を選んでください。')
+              ? null
               : el('button', {
                 class: 'btn btn-sm', style: 'margin-top:8px',
                 onclick: () => {
@@ -321,8 +377,6 @@ function scenarioSection(plan, currentRoom, currentBuilding) {
 
   return el('div', { class: 'section' },
     el('h3', {}, '物件ごとの月次収支'),
-    el('div', { class: 'hint' },
-      '登録済みの部屋すべてについて、その物件を買った場合の毎月の残りを並べています。'),
     el('div', { class: 'tablewrap' },
       el('table', { class: 'cmp valuetable' },
         el('thead', {}, el('tr', {},
@@ -353,9 +407,7 @@ function scenarioSection(plan, currentRoom, currentBuilding) {
       kv('住居費に回せる上限', `${fmt.n(afford.budget, 1)}万円`, '毎月の残りが0になる水準'),
       kv('うちローンに回せる額', `${fmt.n(afford.loanBudget, 1)}万円`, '管理費・修繕を差し引いた額'),
       kv('買える価格の上限', `${fmt.man1(Math.round(afford.price))}万円`,
-        `${store.loanTerms.rate}% ${store.loanTerms.years}年で試算`),
+        `残りが0になる価格・${store.loanTerms.rate}% ${store.loanTerms.years}年`),
     ),
-    el('div', { class: 'tiny muted', style: 'margin-top:8px' },
-      '上限は毎月の残りがちょうど0になる価格です。余裕を持たせるなら、ここから引いて考えてください。'),
   );
 }
