@@ -603,17 +603,22 @@ function paintLoan(box, r, b, repaint) {
     el('div', { class: 'field' },
       el('label', {}, '返済方式'),
       select(terms.method, Object.entries(METHODS), (v) => { editable.method = v; onEdit(); })),
-    field(editable, ['costRate', '諸費用の目安（価格の％）', 'number'], onEdit),
+    field(editable, ['costRate', '諸費用（価格の％）', 'number'], onEdit),
+    field(editable, ['costFixed', '諸費用の定額分（万円）', 'number'], onEdit),
   );
 
   const result = el('div', { class: 'calcgrid calcgrid-6' },
-    kv('借入額', fmt.man(Math.round(loan.principal))),
+    kv('諸費用', fmt.man(Math.round(loan.fees)),
+      `価格の${terms.costRate}%${terms.costFixed ? ` ＋ ${terms.costFixed}万` : ''}`),
+    kv('購入時の現金', fmt.man(Math.round(loan.cash)),
+      terms.includeFees !== false ? '頭金のみ' : '頭金＋諸費用'),
+    kv('借入額', fmt.man(Math.round(loan.principal)),
+      terms.includeFees !== false ? '諸費用を含む' : '物件価格のみ'),
     kv('毎月返済', `${fmt.yen万(loan.monthly)}`,
       terms.method === 'principal' ? `初回。最終回 ${fmt.yen万(loan.monthlyLast)}` : null),
     kv('総返済額', fmt.man(Math.round(loan.totalPayment))),
     kv('うち利息', fmt.man(Math.round(loan.totalInterest))),
     kv('初回の内訳', `元金 ${fmt.yen万(loan.firstPrincipal)}`, `利息 ${fmt.yen万(loan.firstInterest)}`),
-    kv('諸費用の目安', fmt.man(Math.round(loan.fees)), '仲介手数料・登記・税など'),
   );
 
   mount(box,
@@ -807,7 +812,9 @@ function compareSections() {
     ['資金計画', false, [
       ['総返済額', (x) => fmt.man1(Math.round(x.c.loan?.totalPayment ?? 0)) + '万円', (x) => x.c.loan?.totalPayment, 'min'],
       ['うち利息', (x) => fmt.man1(Math.round(x.c.loan?.totalInterest ?? 0)) + '万円', (x) => x.c.loan?.totalInterest, 'min'],
-      ['諸費用の目安', (x) => fmt.man1(Math.round(x.c.loan?.fees ?? 0)) + '万円', (x) => x.c.loan?.fees, 'min'],
+      ['諸費用', (x) => fmt.man1(Math.round(x.c.loan?.fees ?? 0)) + '万円', (x) => x.c.loan?.fees, 'min'],
+      ['借入額', (x) => fmt.man1(Math.round(x.c.loan?.principal ?? 0)) + '万円', (x) => x.c.loan?.principal, 'min'],
+      ['購入時の現金', (x) => fmt.man1(Math.round(x.c.loan?.cash ?? 0)) + '万円', (x) => x.c.loan?.cash, 'min'],
       ['ローン条件', (x) => {
         const t = { ...store.loanTerms, ...(x.r.loan || {}) };
         return `${t.rate}% ${t.years}年${x.c.usesOwnTerms ? '（個別）' : ''}`;
@@ -1102,7 +1109,11 @@ function loanSettings() {
     el('div', { class: 'field' },
       el('label', {}, '返済方式'),
       select(t.method, Object.entries(METHODS), (v) => { t.method = v; onEdit(); })),
-    field(t, ['costRate', '諸費用の目安（価格の％）', 'number'], onEdit),
+    field(t, ['costRate', '諸費用（価格の％）', 'number'], onEdit),
+    field(t, ['costFixed', '諸費用の定額分（万円）', 'number'], onEdit),
+    el('div', { class: 'field wide' },
+      el('label', {}, '諸費用の扱い'),
+      toggle('諸費用も借入に含める', t.includeFees !== false, (v) => { t.includeFees = v; onEdit(); })),
     el('div', { class: 'field wide' },
       el('label', {}, 'この条件での試算'),
       preview,

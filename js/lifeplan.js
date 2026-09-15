@@ -192,7 +192,8 @@ export function housingCost(room, building, terms) {
     { id: 'kanri', name: '管理費', amount: Number(room.kanrihi) || 0, category: 'fixed' },
     { id: 'shuzen', name: '修繕積立金', amount: Number(room.shuzen) || 0, category: 'fixed' },
   ];
-  return { items, total: sum(items), derived: d };
+  // 諸費用は毎月の支出ではないので items には入れず、別に返す
+  return { items, total: sum(items), derived: d, loan: d.loan };
 }
 
 const round1 = (v) => (v == null ? 0 : Math.round(v * 10) / 10);

@@ -6,6 +6,8 @@ export const DEFAULT_TERMS = {
   years: 50,          // 返済年数
   method: 'equal',    // equal: 元利均等 / principal: 元金均等
   costRate: 7,        // 諸費用（物件価格に対する％の目安）
+  costFixed: 0,       // 諸費用のうち定額で見込む分（万円）
+  includeFees: true,  // 諸費用も借入に含めるか
 };
 
 export const METHODS = {
@@ -21,11 +23,18 @@ export const METHODS = {
  */
 export function calcLoan(price, terms) {
   const t = { ...DEFAULT_TERMS, ...terms };
-  const principal = Math.max(0, (Number(price) || 0) - (Number(t.downPayment) || 0));
+  const p = Number(price) || 0;
+  // 仲介手数料・登記・税など。物件価格に対する割合と定額の合計で見込む
+  const fees = p ? (p * (Number(t.costRate) || 0)) / 100 + (Number(t.costFixed) || 0) : 0;
+  const needed = p + (t.includeFees ? fees : 0);
+  const principal = Math.max(0, needed - (Number(t.downPayment) || 0));
   const n = Math.max(1, Math.round(t.years * 12));
   const r = (Number(t.rate) || 0) / 100 / 12;
 
-  if (principal <= 0) return zero(principal, n, t);
+  if (principal <= 0) return { ...zero(principal, n, t), fees, cash: Math.min(needed, Number(t.downPayment) || 0) };
+
+  // 頭金で払いきれなかった分が借入。諸費用を含めない設定なら現金で用意する
+  const cash = (Number(t.downPayment) || 0) + (t.includeFees ? 0 : fees);
 
   if (t.method === 'principal') {
     // 元金均等：元金は毎月一定、利息は残高に応じて減る
@@ -46,8 +55,7 @@ export function calcLoan(price, terms) {
       monthlyFirst: first, monthlyLast: last,
       totalPayment: total, totalInterest: total - principal,
       firstPrincipal: base, firstInterest: principal * r,
-      fees: principal ? (Number(price) || 0) * (Number(t.costRate) || 0) / 100 : 0,
-      terms: t,
+      fees, cash, terms: t,
     };
   }
 
@@ -60,15 +68,14 @@ export function calcLoan(price, terms) {
     monthly, monthlyFirst: monthly, monthlyLast: monthly,
     totalPayment, totalInterest: totalPayment - principal,
     firstPrincipal: monthly - firstInterest, firstInterest,
-    fees: (Number(price) || 0) * (Number(t.costRate) || 0) / 100,
-    terms: t,
+    fees, cash, terms: t,
   };
 }
 
 function zero(principal, n, t) {
   return {
     principal, months: n, monthly: 0, monthlyFirst: 0, monthlyLast: 0,
-    totalPayment: 0, totalInterest: 0, firstPrincipal: 0, firstInterest: 0, fees: 0, terms: t,
+    totalPayment: 0, totalInterest: 0, firstPrincipal: 0, firstInterest: 0, fees: 0, cash: 0, terms: t,
   };
 }
 

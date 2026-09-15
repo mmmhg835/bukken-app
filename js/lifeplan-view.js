@@ -136,6 +136,7 @@ function housingDetail(res, room, building) {
   const manual = store.lifeplan.groups.find((g) => g.kind === 'housing').items
     .reduce((s, it) => s + (Number(it.amount) || 0), 0);
   const diff = res.housingFromRoom.total - manual;
+  const loan = res.housingFromRoom.loan;
   const t = { ...store.loanTerms, ...(room.loan || {}) };
 
   return el('div', { class: 'section' },
@@ -143,6 +144,15 @@ function housingDetail(res, room, building) {
     el('div', { class: 'calcgrid calcgrid-4' },
       ...res.housingFromRoom.items.map((it) => kv(it.name, `${fmt.n(it.amount, 1)}万円`)),
       kv('住居費 合計', `${fmt.n(res.housingFromRoom.total, 1)}万円`, `ローン ${t.rate}% ${t.years}年`),
+    ),
+    el('div', { class: 'calcgrid calcgrid-4', style: 'margin-top:10px' },
+      kv('物件価格', `${fmt.man1(room.price)}万円`),
+      kv('諸費用', `${fmt.man1(Math.round(loan?.fees ?? 0))}万円`,
+        `価格の${t.costRate}%${t.costFixed ? ` ＋ ${t.costFixed}万円` : ''}`),
+      kv('借入額', `${fmt.man1(Math.round(loan?.principal ?? 0))}万円`,
+        t.includeFees ? '諸費用を含む' : '諸費用は現金'),
+      kv('購入時の現金', `${fmt.man1(Math.round(loan?.cash ?? 0))}万円`,
+        t.includeFees ? '頭金のみ' : '頭金＋諸費用'),
     ),
     el('div', { class: 'tiny muted', style: 'margin-top:8px' },
       '現在の想定（', fmt.n(manual, 1), '万円）との差　',
@@ -190,9 +200,6 @@ function waterfallSection(res, room, building) {
     ));
 }
 
-/* =========================================================
-   グラフ
-   ========================================================= */
 const COLOR = {
   income: SERIES_COLORS[0],
   expense: SERIES_COLORS[3],
@@ -220,6 +227,7 @@ function graphView(plan, room, building, res) {
 }
 
 /** 年ごとの収入と支出。支出が段階的に下がる様子を見る */
+
 function flowSection(rows, marks) {
   const series = [
     { name: '収入', color: COLOR.income, points: rows.map((r) => ({ x: r.year, y: r.income })) },
@@ -240,6 +248,7 @@ function flowSection(rows, marks) {
 }
 
 /** 積み上がる資産。節目のあとで傾きが変わる */
+
 function assetSection(rows, marks) {
   const series = [
     { name: '累積資産', color: COLOR.assets, fill: true, points: rows.map((r) => ({ x: r.year, y: r.assets })) },
@@ -259,6 +268,7 @@ function assetSection(rows, marks) {
 }
 
 /** いま入力している金額が、収入と支出でどう釣り合っているか */
+
 function breakdownSection(res) {
   const income = store.lifeplan.income.filter(isOn)
     .map((i, k) => ({ label: i.name, value: Number(i.amount) || 0, color: SERIES_COLORS[k % SERIES_COLORS.length] }));
@@ -286,9 +296,6 @@ function breakdownSection(res) {
   );
 }
 
-/* =========================================================
-   返済負担比率
-   ========================================================= */
 function burdenView(plan, room, res, mark, rerender) {
   plan.grossIncome ||= {
     primary: { name: '夫', annual: 0, net: 0 },
@@ -305,6 +312,7 @@ function burdenView(plan, room, res, mark, rerender) {
 }
 
 /** 額面と手取りを1行に並べて入力する */
+
 function incomeSettings(plan, mark) {
   const g = plan.grossIncome;
   const field = (who, key, fkey) => el('input', {
@@ -360,6 +368,7 @@ function burdenTable(title, rows, pick, room) {
 }
 
 /** 列見出しに算式と目安を小さく添える。別途の説明文を置かずに済ませる */
+
 function thSub(title, sub) {
   return el('div', { class: 'thsub' }, el('b', {}, title), el('span', {}, sub));
 }

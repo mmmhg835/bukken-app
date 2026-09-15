@@ -5,7 +5,7 @@ import { DEFAULT_TERMS } from './loan.js';
 import { buildingDefaults, SPEC_GROUPS, BUILDING_EQUIPMENT } from './spec.js';
 import { defaultLifeplan, categoryOf } from './lifeplan.js';
 
-export const CURRENT_SCHEMA = 13;
+export const CURRENT_SCHEMA = 14;
 
 export function migrate(data) {
   let d = structuredClone(data);
@@ -21,6 +21,7 @@ export function migrate(data) {
   if (d.schemaVersion < 11) d = v10ToV11(d);
   if (d.schemaVersion < 12) d = v11ToV12(d);
   if (d.schemaVersion < 13) d = v12ToV13(d);
+  if (d.schemaVersion < 14) d = v13ToV14(d);
   d.settings ||= {};
   d.settings.loan = { ...DEFAULT_TERMS, ...(d.settings.loan || {}) };
   d.settings.places ||= [];   // 職場・駅など、地図上の参照地点
@@ -192,6 +193,19 @@ function v12ToV13(d) {
     }
   }
   d.schemaVersion = 13;
+  return d;
+}
+
+/** v14: 諸費用の定額分と、諸費用を借入に含めるかの設定を追加 */
+function v13ToV14(d) {
+  const apply = (t) => {
+    if (!t) return;
+    t.costFixed ??= 0;
+    t.includeFees ??= true;   // 諸費用込みで資金計画を立てるのが実態に近い
+  };
+  apply(d.settings?.loan);
+  for (const r of d.rooms || []) apply(r.loan);
+  d.schemaVersion = 14;
   return d;
 }
 
