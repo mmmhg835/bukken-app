@@ -8,6 +8,7 @@ import { geocode, drawMap, distanceMeters, walkMinutes } from './map.js';
 import { pairingUrl, renderQr } from './pairing.js';
 import { QUALITY_PRESETS } from './image.js';
 import { THEMES, currentTheme, setTheme } from './theme.js';
+import { SKINS, currentSkin, setSkin } from './skin.js';
 import { salesSection } from './sales.js';
 import { BUILDING_FORM, SPEC_GROUPS, RENOVATION } from './spec.js';
 import { analyze, LISTING_STATUS, CLOSED_STATUS, formatDate } from './price.js';
@@ -996,6 +997,10 @@ function usageSettings() {
 
 function themeSettings() {
   return el('div', { class: 'section card', style: 'padding:16px' },
+    el('h3', {}, 'デザイン'),
+    segmented(currentSkin(), SKINS, (v) => { setSkin(v); rerender(); }),
+    el('div', { class: 'tiny muted', style: 'margin:10px 0 18px' },
+      'クラシックは以前の見た目です。いつでも戻せます。'),
     el('h3', {}, '配色'),
     el('div', { class: 'help', style: 'margin-bottom:10px' },
       '「端末の設定に従う」なら、iPhone や Mac のダークモードに合わせて自動で切り替わります。'

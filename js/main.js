@@ -10,6 +10,7 @@ import { renderAnalysis } from './analytics-view.js';
 import { renderLifeplan } from './lifeplan-view.js';
 import { parsePairing } from './pairing.js';
 import { applyTheme, watchSystemTheme, themeButton } from './theme.js';
+import { applySkin } from './skin.js';
 
 const main = $('#main');
 
@@ -95,6 +96,7 @@ window.addEventListener('beforeunload', (e) => {
 
 bindRouter(go, render);
 initLightbox();
+applySkin();
 applyTheme();
 watchSystemTheme();
 $('#syncBadge').before(themeButton(() => render()));

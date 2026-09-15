@@ -1,0 +1,137 @@
+/* ===========================================================
+   新デザイン。すべて [data-skin="v2"] の下に閉じてあるので、
+   クラシックに戻しても一切影響しない。
+   =========================================================== */
+
+:root[data-skin="v2"]{
+  --bg:#f6f5f1; --surface:#ffffff; --surface-2:#f1efe8; --line:#e4e1d8;
+  --text:#1b1f1c; --text-2:#5b6360; --text-3:#8e948f;
+  --accent:#1f5c47; --accent-soft:#e7efea;
+  --good:#1f7a5c; --warn:#a96a12; --bad:#b2402f;
+  --shadow:0 1px 2px rgba(31,45,38,.05),0 6px 20px rgba(31,45,38,.07);
+  --r:16px; --r-sm:10px;
+  --nav-w:236px;
+}
+@media (prefers-color-scheme:dark){
+  :root[data-skin="v2"]:not([data-theme="light"]){
+    --bg:#11140f; --surface:#191d18; --surface-2:#212621; --line:#2e332d;
+    --text:#e9ece6; --text-2:#9aa39c; --text-3:#6f7871;
+    --accent:#5fba97; --accent-soft:#1a2b24;
+    --good:#5fba97; --warn:#e0a955; --bad:#e08472;
+    --shadow:0 1px 2px rgba(0,0,0,.45),0 8px 24px rgba(0,0,0,.4);
+  }
+}
+:root[data-skin="v2"][data-theme="dark"]{
+  --bg:#11140f; --surface:#191d18; --surface-2:#212621; --line:#2e332d;
+  --text:#e9ece6; --text-2:#9aa39c; --text-3:#6f7871;
+  --accent:#5fba97; --accent-soft:#1a2b24;
+  --good:#5fba97; --warn:#e0a955; --bad:#e08472;
+  --shadow:0 1px 2px rgba(0,0,0,.45),0 8px 24px rgba(0,0,0,.4);
+}
+
+/* ===== 左サイドバー ===== */
+@media (min-width:861px){
+  :root[data-skin="v2"] body{
+    display:grid; grid-template-columns:var(--nav-w) minmax(0,1fr); min-height:100vh;
+  }
+  :root[data-skin="v2"] .appbar{
+    position:sticky; top:0; height:100vh; align-self:start;
+    display:flex; flex-direction:column; gap:6px;
+    border-bottom:0; border-right:1px solid var(--line);
+    background:var(--surface); padding:22px 14px 18px;
+  }
+  :root[data-skin="v2"] .appbar-in{
+    flex-direction:column; align-items:stretch; gap:14px; padding:0 6px 14px; max-width:none;
+  }
+  :root[data-skin="v2"] .brand{ font-size:17px; white-space:normal; line-height:1.35 }
+  :root[data-skin="v2"] .appbar-right{ justify-content:flex-start }
+  :root[data-skin="v2"] .tabs{
+    flex-direction:column; gap:3px; padding:0; overflow:visible; max-width:none; margin:0;
+  }
+  :root[data-skin="v2"] .tab{
+    display:flex; align-items:center; gap:11px; width:100%; text-align:left;
+    padding:10px 12px; border-radius:var(--r-sm); border-bottom:0; font-size:14px;
+  }
+  :root[data-skin="v2"] .tab:hover{ background:var(--surface-2); color:var(--text) }
+  :root[data-skin="v2"] .tab.is-active{
+    background:var(--accent-soft); color:var(--accent); border-bottom:0; font-weight:700;
+  }
+  :root[data-skin="v2"] .main{ padding:30px 34px 60px; max-width:1320px }
+}
+
+/* ===== モバイルは下部タブ ===== */
+@media (max-width:860px){
+  :root[data-skin="v2"] body{ padding-bottom:calc(66px + var(--safe-b)) }
+  :root[data-skin="v2"] .appbar{ padding-bottom:0 }
+  :root[data-skin="v2"] .tabs{
+    position:fixed; left:0; right:0; bottom:0; z-index:50;
+    background:var(--surface); border-top:1px solid var(--line);
+    padding:6px 4px calc(6px + var(--safe-b)); gap:0; overflow:visible;
+    box-shadow:0 -2px 14px rgba(0,0,0,.06);
+  }
+  :root[data-skin="v2"] .tab{
+    flex:1; display:flex; flex-direction:column; align-items:center; gap:3px;
+    padding:6px 2px; border-bottom:0; font-size:10.5px; min-width:0;
+  }
+  :root[data-skin="v2"] .tab.is-active{ border-bottom:0; color:var(--accent) }
+  :root[data-skin="v2"] .brand-sub{ display:none }
+}
+
+:root[data-skin="v2"] .brand-sub{
+  display:block; font-size:11px; font-weight:600; color:var(--text-3);
+  letter-spacing:.02em; margin-top:3px;
+}
+:root[data-skin="v2"] .tab-ico{
+  display:block; width:18px; height:18px; flex-shrink:0; fill:none;
+  stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round;
+}
+
+/* ===== 全体の質感 ===== */
+:root[data-skin="v2"] .card,
+:root[data-skin="v2"] .panel,
+:root[data-skin="v2"] .tablewrap{ border-radius:var(--r) }
+:root[data-skin="v2"] .section > h3{
+  font-size:15px; color:var(--text); font-weight:700; margin-bottom:12px;
+}
+:root[data-skin="v2"] .btn{ border-radius:var(--r-sm); font-weight:700 }
+:root[data-skin="v2"] .btn-primary{ background:var(--accent); border-color:var(--accent) }
+:root[data-skin="v2"] .badge{ padding:4px 10px; font-size:11.5px }
+:root[data-skin="v2"] .badge-ok{ background:var(--accent-soft); color:var(--accent) }
+
+/* ===== 物件カード ===== */
+:root[data-skin="v2"] .grid{ gap:18px; grid-template-columns:repeat(auto-fill,minmax(310px,1fr)) }
+:root[data-skin="v2"] .pcard{ border-radius:var(--r); overflow:hidden }
+:root[data-skin="v2"] .pcard:hover{ box-shadow:0 8px 28px rgba(31,45,38,.12) }
+:root[data-skin="v2"] .pcard-img{ aspect-ratio:16/10 }
+:root[data-skin="v2"] .pcard-body{ padding:15px 17px 17px; gap:8px }
+:root[data-skin="v2"] .pcard-name{ font-size:16px; letter-spacing:.01em }
+:root[data-skin="v2"] .pcard-price{ font-size:23px }
+:root[data-skin="v2"] .pcard-price small{ font-size:13px }
+:root[data-skin="v2"] .roomchip{ background:var(--surface-2); border-color:var(--line) }
+:root[data-skin="v2"] .roomchip.is-top{ background:var(--accent-soft); border-color:var(--accent); color:var(--accent) }
+
+/* ===== 指標・表 ===== */
+:root[data-skin="v2"] .calcgrid{ border-radius:var(--r) }
+:root[data-skin="v2"] .calcgrid > div{ padding:14px 16px }
+:root[data-skin="v2"] .calcgrid .k{ font-size:11px; letter-spacing:.03em }
+:root[data-skin="v2"] .calcgrid .v{ font-size:20px }
+:root[data-skin="v2"] table.cmp thead th{ background:var(--surface-2) }
+:root[data-skin="v2"] table.cmp td.best{ color:var(--good) }
+
+/* ===== 操作部品 ===== */
+:root[data-skin="v2"] .segctl{ border-radius:12px }
+:root[data-skin="v2"] .segctl-item.is-on{ background:var(--surface); color:var(--accent) }
+:root[data-skin="v2"] .tag.is-on{ background:var(--accent); border-color:var(--accent) }
+:root[data-skin="v2"] .subtabs{ gap:2px }
+:root[data-skin="v2"] .subtab.is-active{ color:var(--accent); border-bottom-color:var(--accent) }
+:root[data-skin="v2"] .switch input:checked + .track,
+:root[data-skin="v2"] .miniswitch input:checked + .track{ background:var(--accent) }
+:root[data-skin="v2"] .chipbtn.is-on{ background:var(--accent); border-color:var(--accent) }
+:root[data-skin="v2"] .catsel.cat-saving{ background:var(--accent); border-color:var(--accent) }
+
+/* ===== ライフプラン（13番の構成を明るい配色で） ===== */
+:root[data-skin="v2"] .stackseg.is-saving{ background:var(--accent) }
+:root[data-skin="v2"] .stackseg.is-housing{ background:#4b8f74 }
+:root[data-skin="v2"] .wfresult{ background:var(--accent-soft) }
+:root[data-skin="v2"] .wfresult-big{ color:var(--accent) }
+:root[data-skin="v2"] .lpgroup-head{ padding:14px 16px }
