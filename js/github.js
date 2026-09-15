@@ -87,6 +87,53 @@ export class GitHubRepo {
     });
   }
 
+  // ===== Git Data API：複数ファイルを1コミットにまとめる =====
+  #git(path) { return `${API}/repos/${this.owner}/${this.repo}/git/${path}`; }
+
+  async #post(path, body) {
+    const res = await this.#req(this.#git(path), {
+      method: 'POST',
+      headers: { ...this.#headers(), 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    return res.json();
+  }
+
+  /**
+   * entries: [{ path, base64 }] をまとめて1コミットで push する。
+   * Contents API を1ファイルずつ叩くとコミットが乱立し、枚数ぶん往復も発生するため。
+   * @returns {Promise<string>} 作成したコミットの sha
+   */
+  async commitFiles(entries, message) {
+    if (!entries.length) return null;
+
+    // 1) ブランチの現在地を取得
+    const refRes = await this.#req(this.#git(`ref/heads/${this.branch}`), { headers: this.#headers(), cache: 'no-store' });
+    const headSha = (await refRes.json()).object.sha;
+    const commitRes = await this.#req(this.#git(`commits/${headSha}`), { headers: this.#headers() });
+    const baseTree = (await commitRes.json()).tree.sha;
+
+    // 2) 中身を blob として登録（並列度を抑えて二次制限を避ける）
+    const blobs = [];
+    const CONCURRENCY = 4;
+    for (let i = 0; i < entries.length; i += CONCURRENCY) {
+      const chunk = entries.slice(i, i + CONCURRENCY);
+      const shas = await Promise.all(chunk.map((e) =>
+        this.#post('blobs', { content: e.base64, encoding: 'base64' }).then((b) => b.sha)));
+      chunk.forEach((e, j) => blobs.push({ path: e.path, mode: '100644', type: 'blob', sha: shas[j] }));
+    }
+
+    // 3) ツリーとコミットを作ってブランチを進める
+    const tree = await this.#post('trees', { base_tree: baseTree, tree: blobs });
+    const commit = await this.#post('commits', { message, tree: tree.sha, parents: [headSha] });
+    await this.#req(this.#git(`refs/heads/${this.branch}`), {
+      method: 'PATCH',
+      headers: { ...this.#headers(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sha: commit.sha }),
+    });
+    return commit.sha;
+  }
+
   /** 削除にはファイルの sha が必要なので単体取得する */
   async shaOf(path) {
     try {

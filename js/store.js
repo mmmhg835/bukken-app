@@ -1,10 +1,11 @@
 // アプリの状態管理。実体は GitHub のプライベートリポジトリ、IndexedDB はオフライン用キャッシュ。
-import { GitHubRepo, blobToB64 } from './github.js';
+import { GitHubRepo, blobToB64, utf8ToB64 } from './github.js';
 import { idb } from './idb.js';
-import { processImage } from './image.js';
+import { processImage, coverDataUrl, DEFAULT_PRESET, QUALITY_PRESETS } from './image.js';
 import { uid } from './util.js';
 
 const CFG_KEY = 'bukken.config.v1';
+const PREF_KEY = 'bukken.prefs.v1';
 const DATA_PATH = 'properties.json';
 
 const EMPTY = { schemaVersion: 1, updatedAt: null, properties: [] };
@@ -12,6 +13,7 @@ const EMPTY = { schemaVersion: 1, updatedAt: null, properties: [] };
 class Store extends EventTarget {
   // 既定の接続先。トークンだけは端末ごとに入力が必要
   config = { owner: 'mmmhg835', repo: 'bukken-data', branch: 'main', token: '' };
+  prefs = { imageQuality: DEFAULT_PRESET };
   data = structuredClone(EMPTY);
   sha = null;
   dirty = false;
@@ -30,6 +32,10 @@ class Store extends EventTarget {
       const saved = JSON.parse(localStorage.getItem(CFG_KEY) || '{}');
       Object.assign(this.config, saved);
     } catch { /* 破損時は既定値のまま */ }
+    try {
+      const p = JSON.parse(localStorage.getItem(PREF_KEY) || '{}');
+      if (QUALITY_PRESETS[p.imageQuality]) this.prefs.imageQuality = p.imageQuality;
+    } catch { /* 既定値のまま */ }
 
     const cached = await idb.get('kv', 'data');
     if (cached) { this.data = cached.data; this.sha = cached.sha; this.dirty = !!cached.dirty; }
@@ -37,6 +43,12 @@ class Store extends EventTarget {
     this.syncState = this.configured ? 'idle' : 'unconfigured';
     this.emit();
     if (this.configured) await this.sync();
+  }
+
+  savePrefs(patch) {
+    Object.assign(this.prefs, patch);
+    localStorage.setItem(PREF_KEY, JSON.stringify(this.prefs));
+    this.emit();
   }
 
   saveConfig(cfg) {
@@ -140,49 +152,85 @@ class Store extends EventTarget {
   }
 
   // ===== 画像 =====
-  /** 端末で縮小 → images/<物件ID>/ にコミット → properties.json に登録 */
+  /**
+   * 端末で縮小 → 本体とサムネを images/<物件ID>/ へ、properties.json も含めて1コミットで保存する。
+   * 1枚ずつ Contents API を叩くとコミットが乱立し、枚数ぶん往復が発生するため。
+   */
   async addImages(propId, files, category = '概要', onProgress = () => {}) {
     const p = this.find(propId);
     if (!p) throw new Error('物件が見つかりません');
     if (!this.configured) throw new Error('GitHub 接続が未設定です（設定タブ）');
 
     const list = [...files].filter((f) => f.type.startsWith('image/'));
+    if (!list.length) throw new Error('画像ファイルが見つかりませんでした');
+
+    const entries = [];
+    const added = [];
     let done = 0;
     for (const file of list) {
-      onProgress(++done, list.length, file.name);
-      const { blob, thumb, width, height } = await processImage(file);
-      const safe = file.name.replace(/\.[^.]+$/, '').replace(/[^\w\-一-龠ぁ-んァ-ヶ]/g, '_').slice(0, 40);
-      const path = `images/${propId}/${Date.now().toString(36)}_${safe || 'photo'}.jpg`;
+      onProgress(++done, list.length, file.name, '変換中');
+      const { full, thumb, cover, width, height } = await processImage(file, this.prefs.imageQuality);
+      const stem = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+      const path = `images/${propId}/${stem}.jpg`;
+      const thumbPath = `images/${propId}/${stem}_t.jpg`;
 
-      await this.repo.put(path, await blobToB64(blob), `add: ${p.name} の画像を追加`);
-      await idb.set('img', path, blob);                       // すぐ表示できるようキャッシュ
+      entries.push({ path, base64: await blobToB64(full) });
+      entries.push({ path: thumbPath, base64: await blobToB64(thumb) });
+      await idb.set('img', path, full);        // 通信を待たずに表示できるようにしておく
+      await idb.set('img', thumbPath, thumb);
 
-      p.images.push({
-        path, category, caption: '', width, height,
-        name: file.name, addedAt: new Date().toISOString(),
-      });
-      if (!p.coverThumb) { p.coverThumb = thumb; p.cover = path; }
+      const meta = {
+        path, thumbPath, category, caption: '', width, height,
+        bytes: full.size, name: file.name, addedAt: new Date().toISOString(),
+      };
+      added.push(meta);
+      p.images.push(meta);
+      if (!p.cover) { p.cover = path; p.coverThumb = cover; }
     }
-    await this.save(`add: ${p.name} に画像 ${list.length} 枚を追加`);
+
+    this.data.updatedAt = new Date().toISOString();
+    entries.push({ path: 'properties.json', base64: utf8ToB64(JSON.stringify(this.data, null, 2)) });
+
+    onProgress(list.length, list.length, '', 'アップロード中');
+    try {
+      await this.repo.commitFiles(entries, `add: ${p.name} に画像 ${list.length} 枚を追加`);
+    } catch (e) {
+      // コミットに失敗したら、追加した画像情報を元に戻す
+      p.images = p.images.filter((im) => !added.includes(im));
+      throw e;
+    }
+
+    // コミット後の properties.json の sha を取り直す（次回の保存で衝突しないように）
+    const got = await this.repo.getJson(DATA_PATH).catch(() => null);
+    if (got) this.sha = got.sha;
+    this.dirty = false;
+    this.syncState = 'ok';
+    await this.#cache();
+    this.emit();
     return list.length;
   }
 
   async deleteImage(propId, path) {
     const p = this.find(propId);
-    const sha = await this.repo.shaOf(path);
-    if (sha) await this.repo.remove(path, sha, `delete: 画像を削除 (${path})`);
+    const target = p.images.find((im) => im.path === path);
+    for (const f of [path, target?.thumbPath].filter(Boolean)) {
+      const sha = await this.repo.shaOf(f);
+      if (sha) await this.repo.remove(f, sha, `delete: 画像を削除 (${f})`);
+      await idb.del('img', f);
+      this.#urls.delete(f);
+    }
     p.images = p.images.filter((im) => im.path !== path);
-    await idb.del('img', path);
-    this.#urls.delete(path);
-    if (p.cover === path) { p.cover = p.images[0]?.path || null; p.coverThumb = null; }
+    if (p.cover === path) {
+      p.cover = p.images[0]?.path || null;
+      p.coverThumb = p.cover ? await coverDataUrl(await this.#blob(p.cover)) : null;
+    }
     await this.save('delete: 画像を削除');
   }
 
   async setCover(propId, path) {
     const p = this.find(propId);
     p.cover = path;
-    const blob = await this.#blob(path);
-    p.coverThumb = await blobToThumb(blob);
+    p.coverThumb = await coverDataUrl(await this.#blob(path));
     await this.save('update: カバー画像を変更');
   }
 
@@ -208,11 +256,6 @@ class Store extends EventTarget {
     this.#urls.clear();
     await idb.clear('img');
   }
-}
-
-async function blobToThumb(blob) {
-  const { thumb } = await processImage(new File([blob], 'c.jpg', { type: 'image/jpeg' }));
-  return thumb;
 }
 
 export const store = new Store();

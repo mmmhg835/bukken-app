@@ -39,10 +39,11 @@
     "cover": "images/p1/xxx.jpg",                   // カバー画像のパス
     "coverThumb": "data:image/jpeg;base64,…",       // 一覧を即表示するための小サムネ
     "images": [{
-      "path": "images/p1/xxx.jpg",
+      "path": "images/p1/xxx.jpg",        // 拡大表示に使う本体
+      "thumbPath": "images/p1/xxx_t.jpg", // 格子表示に使う長辺480pxのサムネ
       "category": "間取り",   // util.js の CATEGORIES
       "caption": "", "name": "IMG_7538.JPG",
-      "width": 1600, "height": 1200, "addedAt": "ISO8601"
+      "width": 2560, "height": 1920, "bytes": 612345, "addedAt": "ISO8601"
     }]
   }]
 }
@@ -57,7 +58,7 @@
 |---|---|
 | フォームを編集 | メモリ上の `store.data` を更新 → `dirty=true` → IndexedDB にキャッシュ |
 | 4秒放置 / 「保存」 | `properties.json` を PUT（`sha` 付き）＝ 1コミット |
-| 画像を追加 | 端末で縮小 → 画像を PUT（枚数ぶんコミット）→ 最後に `properties.json` を PUT |
+| 画像を追加 | 端末で本体＋サムネを生成 → **`properties.json` も含めて1コミット**（Git Data API） |
 | 画像を削除 | ファイルを DELETE → `properties.json` を PUT |
 
 **衝突制御**: `properties.json` の `sha` を保持し、PUT 時に渡す。別端末が先に更新していると
@@ -79,10 +80,32 @@
 > この仕組みは Web 版の制約に対する回避策。ネイティブ化する際は
 > キーチェーン＋iCloud に置き換わり、QR ペアリングごと不要になる。
 
+## 画像の扱い
+
+1枚の写真から3つの表現を作る。用途ごとに解像度を分けないと、一覧で拡大ボケが起きるか、
+ギャラリーで巨大な画像を何十枚も読むことになるため。
+
+| | 解像度 | 置き場所 | 用途 |
+|---|---|---|---|
+| 本体 | 画質設定による（既定 長辺2560px） | `images/<ID>/xxx.jpg` | 拡大表示・一覧カードのカバー |
+| サムネ | 長辺480px | `images/<ID>/xxx_t.jpg` | ギャラリーの格子 |
+| カバー | 長辺320pxの data URL | `properties.json` 内 | 一覧を通信なしで即描画する仮表示 |
+
+画質は `js/image.js` の `QUALITY_PRESETS` で3段階（標準/高画質/原寸）。
+**原寸かつ元が JPEG の場合は再エンコードせず元データをそのまま使う**。
+間取り図や物件概要など、細かい文字を含む資料が再圧縮で読めなくなるのを避けるため。
+
+### まとめてコミットする理由
+
+複数枚を Contents API で1枚ずつ PUT すると、枚数ぶんコミットが乱立し往復も増える。
+`GitHubRepo.commitFiles()` は Git Data API（blob → tree → commit → ref）を使い、
+**画像も `properties.json` も1コミットにまとめる**。blob 作成のみ並列4本に絞って
+二次レート制限を避けている。
+
 ## キャッシュ
 
 - `IndexedDB / kv / data` … 最後に同期した `properties.json`（オフラインでも一覧が開ける）
-- `IndexedDB / img / <path>` … 画像 Blob。表示時に `URL.createObjectURL` して使う
+- `IndexedDB / img / <path>` … 画像 Blob（本体・サムネとも）。表示時に `URL.createObjectURL` して使う
 - `sw.js` … アプリのシェル（HTML/CSS/JS）のみ。API 通信とデータには触らない
 
 ## 意図的に採用していないもの

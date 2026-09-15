@@ -31,4 +31,5 @@ Claude と ChatGPT で交互に開発するときは、相手に最初にこれ�
 | 自動計算のルール変更 | `js/util.js` の `derive()` |
 | 画像カテゴリを増やす | `js/util.js` の `CATEGORIES` |
 | 検討ステータスを増やす | `js/util.js` の `STATUSES` |
-| 画像の縮小サイズ変更 | `js/image.js` の `MAX_EDGE` / `QUALITY` |
+| 画質プリセットの変更 | `js/image.js` の `QUALITY_PRESETS` |
+| まとめてコミットする処理 | `js/github.js` の `commitFiles()` |

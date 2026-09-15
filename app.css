@@ -120,6 +120,7 @@ table.cmp tr:hover td.lab{background:var(--surface-2)}
 /* ===== gallery ===== */
 .dropzone{border:2px dashed var(--line);border-radius:var(--r);padding:22px;text-align:center;color:var(--text-2);margin-bottom:14px;transition:.15s}
 .dropzone.over{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+.dropzone.busy{opacity:.55;pointer-events:none}
 .gal-group{margin-bottom:18px}
 .gal-group h4{margin:0 0 8px;font-size:13px;color:var(--text-2);font-weight:700}
 .gal{display:grid;gap:8px;grid-template-columns:repeat(auto-fill,minmax(112px,1fr))}

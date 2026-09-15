@@ -2,6 +2,7 @@
 import { store } from './store.js';
 import { $, el, fmt, derive, toast, STATUSES, CATEGORIES, debounce } from './util.js';
 import { pairingUrl, renderQr } from './pairing.js';
+import { QUALITY_PRESETS } from './image.js';
 
 export const route = { view: 'list', id: null };
 
@@ -51,10 +52,16 @@ function sorter(key) {
 
 function card(p) {
   const c = derive(p);
+  // 埋め込みサムネで即座に描画し、キャッシュ済みの実画像に差し替える（拡大ボケ防止）
+  const cover = p.cover || p.images?.[0]?.path;
+  const img = cover || p.coverThumb
+    ? el('img', { src: p.coverThumb || '', alt: p.name, loading: 'lazy' })
+    : null;
+  if (img && cover) {
+    store.imageUrl(cover).then((u) => { img.src = u; }).catch(() => { /* サムネのまま */ });
+  }
   const imgBox = el('div', { class: 'pcard-img' },
-    p.coverThumb
-      ? el('img', { src: p.coverThumb, alt: p.name, loading: 'lazy' })
-      : el('div', { class: 'ph' }, '画像なし'),
+    img || el('div', { class: 'ph' }, '画像なし'),
     p.images?.length ? el('span', { class: 'imgcount' }, `${p.images.length}枚`) : null,
   );
   return el('article', { class: 'card pcard', onclick: () => go('detail', p.id) },
@@ -270,11 +277,16 @@ function gallerySection(p) {
   async function upload(files) {
     if (!files?.length) return;
     try {
+      zone.classList.add('busy');
       const n = await store.addImages(p.id, files, category,
-        (i, total, name) => toast(`アップロード中 ${i}/${total}… ${name}`));
-      toast(`${n}枚をコミットしました`);
+        (i, total, name, phase) => toast(
+          phase === 'アップロード中'
+            ? `${total}枚をGitHubへ送信中…`
+            : `画像を変換中 ${i}/${total}… ${name}`));
+      toast(`${n}枚を1コミットで保存しました`);
       rerender();
     } catch (e) { toast(e.message, true); }
+    finally { zone.classList.remove('busy'); }
   }
 
   paintGroups();
@@ -317,7 +329,11 @@ function thumb(p, im) {
     ),
   );
   fig.addEventListener('click', () => openLightbox(p, im.path));
-  store.imageUrl(im.path).then((u) => { img.src = u; }).catch(() => { fig.style.opacity = .4; });
+  // 格子は軽いサムネ、拡大時に本体を読む（古い画像はサムネが無いので本体で代用）
+  store.imageUrl(im.thumbPath || im.path)
+    .then((u) => { img.src = u; })
+    .catch(() => store.imageUrl(im.path).then((u) => { img.src = u; }))
+    .catch(() => { fig.style.opacity = .4; });
   return fig;
 }
 
@@ -407,8 +423,23 @@ export function renderSettings(root) {
     ),
   );
 
+  const qualitySection = el('div', { class: 'section card', style: 'padding:16px' },
+    el('h3', {}, '画像の保存画質'),
+    el('div', { class: 'help', style: 'margin-bottom:10px' },
+      'アップロード時にこの画質へ変換してから保存します。既にある画像は変わりません。'),
+    select(store.prefs.imageQuality,
+      Object.entries(QUALITY_PRESETS).map(([k, v]) => [k, v.label]),
+      (v) => { store.savePrefs({ imageQuality: v }); toast(`画質を「${QUALITY_PRESETS[v].label}」にしました`); }),
+    el('div', { class: 'tiny muted', style: 'margin-top:10px;line-height:1.8' },
+      el('div', {}, '標準 … 長辺1600px。枚数が多いときや通信が細いとき向け（約200KB/枚）'),
+      el('div', {}, '高画質 … 長辺2560px。通常はこれで十分（約600KB/枚）'),
+      el('div', {}, '原寸 … 変換せずそのまま保存。間取り図や物件概要など、細かい文字を読みたい資料向け（数MB/枚）'),
+    ),
+  );
+
   root.replaceChildren(el('div', { class: 'settings' },
     el('div', { class: 'section' }, el('h3', {}, 'GitHub 接続'), form, status),
+    qualitySection,
     pairingSection(),
     el('div', { class: 'section card', style: 'padding:16px' },
       el('h3', {}, 'トークンの作り方'),
