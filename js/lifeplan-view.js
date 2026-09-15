@@ -5,7 +5,7 @@ import { kv, select, toggle, segmented, numberInput } from './ui.js';
 import {
   calcPlan, housingCost, affordablePrice, waterfall,
   CATEGORIES, isOn, categoryOf, incomePatterns, project, milestones,
-  WHO, netIncomeByWho,
+  WHO,
 } from './lifeplan.js';
 import { lineChart, stackedBarChart, chartLegend, SERIES_COLORS } from './chart.js';
 import { saleView } from './sale-view.js';
@@ -520,7 +520,11 @@ function burdenView(plan, room, res, mark, rerender) {
   return el('div', {},
     incomeSettings(plan, mark),
     burdenTable('額面年収', rows, (x) => x.gross, room),
-    burdenTable('手取り年収', rows, (x) => x.net, room),
+    burdenTable('手取り年収', rows, (x) => x.net, room,
+      el('button', {
+        class: 'btn btn-sm',
+        onclick: () => { location.hash = '#/plan'; },
+      }, '手取りを直す（ライフプラン）')),
     room ? null : el('div', { class: 'empty' }, '対象の物件を選んでください'),
   );
 }
@@ -529,10 +533,13 @@ function burdenView(plan, room, res, mark, rerender) {
  * 額面だけをここで入力する。
  * 手取りはライフプランの収入から集計するので、入力欄は置かない。
  * 二か所に持たせると、片方だけ直したときに必ず食い違う。
+ *
+ * 集計した手取りの額はこのカードには出さない。入力欄（額面）と読み取り専用の
+ * 数字（手取り）が同じ行に並ぶと、どちらを直せばいいのか分からなくなるため。
+ * 手取りは「手取り年収」の表の側で見せる。
  */
 function incomeSettings(plan, mark) {
   const g = plan.grossIncome;
-  const net = netIncomeByWho(plan);
 
   const row = (who) => el('div', { class: 'incrow' },
     el('input', {
@@ -545,34 +552,17 @@ function incomeSettings(plan, mark) {
       value: g[who].annual, cls: 'lpitem-input', fkey: `gross-${who}`,
       onInput: (num) => { g[who].annual = num ?? 0; mark(); },
     }),
-    el('span', { class: 'tiny muted' }, '手取り'),
-    el('span', { class: 'netval' }, fmt.man1(Math.round(net[who]))),
     el('span', { class: 'tiny muted' }, '万円/年'),
   );
 
   return el('div', { class: 'section' },
     el('h3', {}, '年収'),
     el('div', { class: 'card', style: 'padding:14px' },
-      row('primary'), row('secondary'),
-      net.shared
-        ? el('div', { class: 'incrow' },
-          el('span', { class: 'lpitem-name', style: 'max-width:110px' }, WHO.shared),
-          el('span', { class: 'tiny muted' }, ''),
-          el('span', {}, ''),
-          el('span', { class: 'tiny muted' }, '手取り'),
-          el('span', { class: 'netval' }, fmt.man1(Math.round(net.shared))),
-          el('span', { class: 'tiny muted' }, '万円/年'))
-        : null,
-      el('div', { class: 'toolbar', style: 'margin-top:10px' },
-        el('button', {
-          class: 'btn btn-sm',
-          onclick: () => { location.hash = '#/plan'; },
-        }, '手取りを直す（ライフプラン）')),
-    ),
+      row('primary'), row('secondary')),
   );
 }
 
-function burdenTable(title, rows, pick, room) {
+function burdenTable(title, rows, pick, room, footer = null) {
   const cell = (v, format, judge) =>
     (v == null ? el('td', { class: 'muted' }, '—')
       : el('td', { class: judge(v) }, format(v)));
@@ -599,6 +589,7 @@ function burdenTable(title, rows, pick, room) {
           );
         })),
       )),
+    footer ? el('div', { class: 'toolbar', style: 'margin-top:10px' }, footer) : null,
   );
 }
 
