@@ -2,7 +2,7 @@
 import { calcLoan, DEFAULT_TERMS } from './loan.js';
 
 /** 表示用の版数。更新が届いているかを設定画面で確認できるようにしている */
-export const APP_VERSION = 'v18';
+export const APP_VERSION = 'v19';
 
 export const TSUBO_SQM = 3.305785;          // 1坪 = 3.305785㎡
 export const STATUSES = ['検討中', '内見済', '本命', '申込検討', '見送り'];
@@ -86,6 +86,25 @@ export const fmt = {
 export function mount(node, ...children) {
   node.replaceChildren(
     ...children.flat().filter((c) => c !== null && c !== undefined && c !== false));
+}
+
+/**
+ * 再描画をまたいで入力欄のフォーカスとカーソル位置を保つ。
+ * 金額を1文字打つたびに描き直す画面では、これが無いと続けて入力できない。
+ * 対象の要素には data-fkey で安定した識別子を付けておく。
+ */
+export function preserveFocus(render) {
+  const active = document.activeElement;
+  const key = active?.dataset?.fkey;
+  const start = active?.selectionStart ?? null;
+  const end = active?.selectionEnd ?? null;
+  render();
+  if (!key) return;
+  const next = document.querySelector(`[data-fkey="${CSS.escape(key)}"]`);
+  if (!next) return;
+  next.focus();
+  // input[type=number] では setSelectionRange が使えないので無視してよい
+  try { if (start != null) next.setSelectionRange(start, end); } catch { /* noop */ }
 }
 
 export function toast(msg, isErr = false) {

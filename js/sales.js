@@ -1,6 +1,6 @@
 // 部屋詳細の「販売活動」セクション。掲載状況・価格推移の入力と指標・グラフ。
 import { store } from './store.js';
-import { el, fmt, toast, mount } from './util.js';
+import { el, fmt, toast, mount, preserveFocus } from './util.js';
 import { kv, select } from './ui.js';
 import { analyze, syncPrice, formatDate, today, LISTING_STATUS, CLOSED_STATUS } from './price.js';
 import { stepChart } from './chart.js';
@@ -21,7 +21,7 @@ export function salesSection(room, onChange) {
     syncPrice(room);
     store.markDirty();
     onChange();
-    paint();
+    preserveFocus(paint);   // 日付や価格を打つ間もフォーカスを保つ
   }
   paint();
   return el('div', { class: 'section' }, el('h3', {}, '販売活動'), box);
@@ -44,6 +44,7 @@ function statusRow(room, repaint) {
       el('label', {}, '登録日（掲載開始）'),
       el('input', {
         type: 'date', value: room.listedAt ?? '',
+        'data-fkey': 'listedAt',
         oninput: (e) => { room.listedAt = e.target.value || null; repaint(); },
       })),
     el('div', { class: 'field' },
@@ -90,11 +91,12 @@ function historyEditor(room, repaint) {
   room.priceHistory ||= [];
   const rows = room.priceHistory.map((h, i) => el('div', { class: 'histrow' },
     el('input', {
-      type: 'date', value: h.date ?? '',
+      type: 'date', value: h.date ?? '', 'data-fkey': `hist-date-${i}`,
       oninput: (e) => { h.date = e.target.value || null; repaint(); },
     }),
     el('input', {
-      type: 'number', step: 'any', inputmode: 'decimal', value: h.price ?? '', placeholder: '価格（万円）',
+      type: 'number', step: 'any', inputmode: 'decimal', value: h.price ?? '',
+      placeholder: '価格（万円）', 'data-fkey': `hist-price-${i}`,
       oninput: (e) => { h.price = e.target.value === '' ? null : Number(e.target.value); repaint(); },
     }),
     el('input', {

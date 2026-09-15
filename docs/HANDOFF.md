@@ -21,8 +21,10 @@ Claude と ChatGPT で交互に開発するときは、相手に最初にこれ�
 5. **設備は自由記述にしない**。表記ゆれで比較できなくなるため `spec.js` のタグで持つ
 6. **アプリ側リポジトリに個人データを置かない**（物件名・価格・画像はすべて data リポジトリ）
 7. スキーマを変える場合は `schemaVersion` を上げ、`docs/ARCHITECTURE.md` の表も更新する
-8. 変更後は `node tools/serve.mjs` で開いて、一覧 / 建物 / 部屋 / 比較 / 地図 / 設定が壊れていないことを確認する
-9. 条件分岐で子要素を差し替えるときは `replaceChildren` ではなく `util.js` の `mount()` を使う
+8. **入力のたびに画面を描き直す箇所では `util.js` の `preserveFocus()` を使う**
+   （そのままだと1文字ごとにフォーカスが外れ、続けて入力できなくなる）
+9. 変更後は `node tools/serve.mjs` で開いて、一覧 / 建物 / 部屋 / 比較 / 地図 / 設定が壊れていないことを確認する
+10. 条件分岐で子要素を差し替えるときは `replaceChildren` ではなく `util.js` の `mount()` を使う
    （`replaceChildren` は `null` を文字列 "null" として描画してしまう）
 
 ---

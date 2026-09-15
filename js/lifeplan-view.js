@@ -1,8 +1,9 @@
 // ライフプランタブ。項目を編集しながら、物件ごとの月次収支を試算する。
 import { store } from './store.js';
-import { el, fmt, mount, toast, uid } from './util.js';
+import { el, fmt, mount, toast, uid, preserveFocus } from './util.js';
 import { kv, select, toggle, segmented } from './ui.js';
 import { calcPlan, housingCost, affordablePrice, waterfall, CATEGORIES, isOn, categoryOf } from './lifeplan.js';
+import { burdenRate } from './loan.js';
 import { derive } from './util.js';
 
 const ui = { afterLoans: false, openGroups: null };
@@ -14,7 +15,8 @@ export function renderLifeplan(root, rerender) {
   const res = calcPlan(plan, room, building, store.loanTerms, { excludeTemporary: ui.afterLoans });
 
   if (!ui.openGroups) ui.openGroups = new Set(['住居費']);
-  const mark = () => { store.markDirty(); rerender(); };
+  // 金額を打つたびに再描画されるため、フォーカスを保ったまま描き直す
+  const mark = () => { store.markDirty(); preserveFocus(rerender); };
 
   mount(root,
     propertyPicker(plan, room, building, rerender),
@@ -75,6 +77,7 @@ function summary(res, plan, rerender) {
       kv('固定費', `${fmt.n(res.fixed, 1)}万円`, '住居費を除く'),
       kv('変動費', `${fmt.n(res.variable, 1)}万円`, `使える上限 ${fmt.n(res.variableBudget, 1)}万円`),
       kv('毎月積み上がる額', `${fmt.n(res.totalLeft, 1)}万円`, '先取り＋残り'),
+      kv('返済負担率', burdenRateLabel(res), '住居費 ÷ 年収。25%以下が目安'),
     ),
     el('div', { class: 'stackbar' }, res.groups.map((g, i) =>
       g.total > 0
@@ -96,6 +99,13 @@ function summary(res, plan, rerender) {
         }, plan.bonus.include ? '計画から外す' : '計画に含める'))
       : null,
   );
+}
+
+/** 住居費が年収に占める割合。金融機関が見る指標にそろえている */
+function burdenRateLabel(res) {
+  const r = burdenRate(res.housingTotal, res.income * 12);
+  if (r == null) return '—';
+  return el('span', { class: r <= 25 ? 'pos' : r <= 35 ? '' : 'neg' }, `${r.toFixed(1)}%`);
 }
 
 /* ===== 住居費の内訳 ===== */
@@ -226,7 +236,8 @@ function itemRow(group, item, mark, rerender, locked) {
       oninput: (e) => { item.name = e.target.value; store.markDirty(); },
     }),
     el('input', {
-      type: 'number', step: 'any', inputmode: 'decimal', class: 'lpitem-input', value: item.amount ?? '',
+      type: 'number', step: 'any', inputmode: 'decimal', class: 'lpitem-input',
+      value: item.amount ?? '', 'data-fkey': `amt-${item.id}`,
       oninput: (e) => { item.amount = e.target.value === '' ? 0 : Number(e.target.value); mark(); },
     }),
     el('span', { class: 'tiny muted' }, '万円'),
@@ -265,7 +276,8 @@ function incomeSection(plan, mark) {
           oninput: (e) => { it.name = e.target.value; store.markDirty(); },
         }),
         el('input', {
-          type: 'number', step: 'any', inputmode: 'decimal', class: 'lpitem-input', value: it.amount ?? '',
+          type: 'number', step: 'any', inputmode: 'decimal', class: 'lpitem-input',
+          value: it.amount ?? '', 'data-fkey': `inc-${it.id}`,
           oninput: (e) => { it.amount = e.target.value === '' ? 0 : Number(e.target.value); mark(); },
         }),
         el('span', { class: 'tiny muted' }, '万円'),
@@ -278,7 +290,7 @@ function incomeSection(plan, mark) {
         el('span', { class: 'lpitem-name' }, '賞与（年額）'),
         el('input', {
           type: 'number', step: 'any', inputmode: 'decimal', class: 'lpitem-input',
-          value: plan.bonus?.annual ?? '',
+          value: plan.bonus?.annual ?? '', 'data-fkey': 'bonus',
           oninput: (e) => { plan.bonus.annual = Number(e.target.value) || 0; mark(); },
         }),
         el('span', { class: 'tiny muted' }, '万円/年'),

@@ -22,11 +22,13 @@ const fmtDate = (t) => {
 
 /** 目盛りが半端な値にならないよう、1/2/5×10ⁿ に丸める */
 function niceStep(range, targetTicks) {
-  const raw = range / targetTicks;
+  const raw = Math.abs(range) / targetTicks;
+  // 0 を返すと目盛りの for ループが進まなくなるため、必ず正の値にする
+  if (!Number.isFinite(raw) || raw <= 0) return 1;
   const mag = 10 ** Math.floor(Math.log10(raw));
   const norm = raw / mag;
   const step = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10;
-  return step * mag;
+  return step * mag || 1;
 }
 
 /**

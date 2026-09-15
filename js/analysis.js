@@ -82,7 +82,8 @@ export function builtYearOf(building) {
 export function areaOf(building) {
   const a = String(building?.address || '').trim();
   if (!a) return { pref: '', city: '', town: '' };
-  const m = a.match(/^(.+?[都道府県])?(.+?[市区町村郡])?(.*)$/);
+  // 「京都府」を「京都」と切ってしまうため、都道府県は総当たりではなく明示的に判定する
+  const m = a.match(/^(東京都|北海道|京都府|大阪府|.{2,3}県)?(.+?[市区町村郡])?(.*)$/);
   const pref = (m?.[1] || '').trim();
   const city = (m?.[2] || '').trim();
   // 丁目・番地の手前までを町名とする

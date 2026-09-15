@@ -228,6 +228,8 @@ class Store extends EventTarget {
 
     const entries = [];
     const added = [];
+    // 失敗したときに元へ戻せるよう、カバー画像の状態を控えておく
+    const prevCover = { cover: o.cover, coverThumb: o.coverThumb };
     let done = 0;
     for (const file of list) {
       onProgress(++done, list.length, file.name, '変換中');
@@ -258,6 +260,7 @@ class Store extends EventTarget {
       await this.repo.commitFiles(entries, `add: ${o.name || o.label} に画像 ${list.length} 枚を追加`);
     } catch (e) {
       o.images = o.images.filter((im) => !added.includes(im));
+      Object.assign(o, prevCover);
       throw e;
     }
 
