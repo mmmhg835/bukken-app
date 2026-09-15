@@ -5,20 +5,23 @@ import { section, segmented, controlRow, toggle, select } from './ui.js';
 import {
   METRICS, ATTRS, GROUPINGS, buildRows, linearFit, residuals,
   groupStats, histogram, monthlyTrend, areaOf,
+  EQUIPMENT_FILTERS, filterByEquipment, hasEquipment,
 } from './analysis.js';
 import { scatterChart, histogramChart, stepChart, chartLegend, SERIES_COLORS } from './chart.js';
 import { CLOSED_STATUS } from './price.js';
 
-const ui = { metric: 'tsubo', attr: 'area', group: 'building', fit: true, histMetric: 'tsubo' };
+const ui = { metric: 'tsubo', attr: 'area', group: 'building', fit: true, histMetric: 'tsubo', equip: [] };
 
 export function renderAnalysis(root, rerender) {
-  const rows = buildRows(store);
-  if (rows.length < 1) {
+  const all = buildRows(store);
+  const rows = filterByEquipment(all, ui.equip);
+  if (all.length < 1) {
     mount(root, el('div', { class: 'empty' }, '分析できる部屋がありません。まず物件を登録してください。'));
     return;
   }
 
   mount(root,
+    equipmentFilter(all, rows, rerender),
     scatterSection(rows, rerender),
     valueSection(rows),
     areaSection(rows),
@@ -27,10 +30,47 @@ export function renderAnalysis(root, rerender) {
   );
 }
 
+/** 設備での絞り込み。条件を満たす部屋だけを対象に分析できる */
+function equipmentFilter(all, rows, rerender) {
+  const chips = EQUIPMENT_FILTERS.map(({ name, on }) => {
+    const count = all.filter((x) => hasEquipment(x, name)).length;
+    const active = ui.equip.includes(name);
+    return el('button', {
+      class: 'tag' + (active ? ' is-on' : '') + (count ? '' : ' is-empty'),
+      title: `${on}の設備　該当 ${count}件`,
+      onclick: () => {
+        const i = ui.equip.indexOf(name);
+        if (i >= 0) ui.equip.splice(i, 1); else ui.equip.push(name);
+        rerender();
+      },
+    }, `${name} ${count}`);
+  });
+
+  return el('div', { class: 'section' },
+    el('h3', {}, '設備で絞り込む'),
+    el('div', { class: 'card', style: 'padding:14px' },
+      el('div', { class: 'tagwrap' }, chips),
+      el('div', { class: 'tiny muted', style: 'margin-top:10px' },
+        ui.equip.length
+          ? `${ui.equip.join('・')} をすべて持つ ${rows.length}件 / 全${all.length}件を分析中`
+          : `全${all.length}件を分析中。設備を選ぶと、それを備えた部屋だけに絞れます`,
+        ui.equip.length
+          ? el('button', {
+            class: 'btn btn-sm', style: 'margin-left:10px',
+            onclick: () => { ui.equip = []; rerender(); },
+          }, '絞り込みを解除')
+          : null),
+    ));
+}
+
 /* =========================================================
    相関（散布図）
    ========================================================= */
 function scatterSection(rows, rerender) {
+  if (!rows.length) {
+    return el('div', { class: 'section' },
+      el('div', { class: 'empty' }, '絞り込み条件に合う部屋がありません。'));
+  }
   const metric = METRICS[ui.metric], attr = ATTRS[ui.attr], group = GROUPINGS[ui.group];
 
   const valid = rows.filter((x) => Number.isFinite(metric.get(x)) && Number.isFinite(attr.get(x)));

@@ -2,6 +2,7 @@
 // 手持ちの数件でも「相場からの乖離」が見えるようにするのが目的。
 import { TSUBO_SQM, derive } from './util.js';
 import { analyze } from './price.js';
+import { BUILDING_EQUIPMENT, ROOM_EQUIPMENT } from './spec.js';
 
 /* ===== 軸の定義 ===== */
 
@@ -26,6 +27,18 @@ export const ATTRS = {
   salesDays: { label: '販売期間', unit: '日', get: (x) => x.a.salesDays },
 };
 
+/** 設備は建物側と部屋側のどちらに入っていても、同じ「有無」として扱う */
+export function hasEquipment(x, name) {
+  return (x.r.roomEquipmentTags || []).includes(name)
+    || (x.b.equipmentTags || []).includes(name);
+}
+
+/** 絞り込みに使える設備の一覧 */
+export const EQUIPMENT_FILTERS = [
+  ...BUILDING_EQUIPMENT.map((name) => ({ name, on: '建物' })),
+  ...ROOM_EQUIPMENT.map((name) => ({ name, on: '部屋' })),
+];
+
 /** 色分け（系列の分け方） */
 export const GROUPINGS = {
   none:     { label: '指定なし', get: () => 'すべて' },
@@ -36,7 +49,18 @@ export const GROUPINGS = {
   layout:   { label: '間取り', get: (x) => x.r.layout || '未設定' },
   listing:  { label: '募集状況', get: (x) => x.r.listingStatus || '募集中' },
   status:   { label: '検討状態', get: (x) => x.r.status || '検討中' },
+  renovation: { label: 'リノベ区分', get: (x) => x.r.renovation || 'なし' },
+  // 設備ごとの有無。価格差の理由を探すときに使う
+  ...Object.fromEntries(EQUIPMENT_FILTERS.map(({ name }) => [
+    `eq:${name}`, { label: `${name}の有無`, get: (x) => (hasEquipment(x, name) ? 'あり' : 'なし') },
+  ])),
 };
+
+/** 指定した設備をすべて持つ行だけに絞る */
+export function filterByEquipment(rows, names) {
+  if (!names?.length) return rows;
+  return rows.filter((x) => names.every((n) => hasEquipment(x, n)));
+}
 
 /* ===== 値の取り出し ===== */
 

@@ -160,7 +160,7 @@ class Store extends EventTarget {
     const r = {
       id: uid('r'), buildingId, label: '新規の部屋', status: '検討中', rating: 0,
       listingStatus: '募集中', listedAt: null, closedAt: null, priceHistory: [],
-      roomEquipmentTags: [],
+      roomEquipmentTags: [], renovation: 'なし',
       price: null, area: null, layout: '', floor: null, balcony: null,
       kanrihi: null, shuzen: null,
       refMonthly: null, refLoanPrincipal: null, refLoanInterest: null, loan: null,

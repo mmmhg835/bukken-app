@@ -5,7 +5,7 @@ import { DEFAULT_TERMS } from './loan.js';
 import { buildingDefaults, SPEC_GROUPS } from './spec.js';
 import { defaultLifeplan, categoryOf } from './lifeplan.js';
 
-export const CURRENT_SCHEMA = 7;
+export const CURRENT_SCHEMA = 8;
 
 export function migrate(data) {
   let d = structuredClone(data);
@@ -15,6 +15,7 @@ export function migrate(data) {
   if (d.schemaVersion < 5) d = v4ToV5(d);
   if (d.schemaVersion < 6) d = v5ToV6(d);
   if (d.schemaVersion < 7) d = v6ToV7(d);
+  if (d.schemaVersion < 8) d = v7ToV8(d);
   d.settings ||= {};
   d.settings.loan = { ...DEFAULT_TERMS, ...(d.settings.loan || {}) };
   d.settings.places ||= [];   // 職場・駅など、地図上の参照地点
@@ -97,6 +98,22 @@ function v6ToV7(d) {
     for (const it of plan.income || []) it.enabled ??= true;
   }
   d.schemaVersion = 7;
+  return d;
+}
+
+/**
+ * v8: 部屋にリノベ区分を追加。
+ * 既存のリフォーム記述から推定して埋める（「全室」「全面」があればフルリノベ）。
+ */
+function v7ToV8(d) {
+  for (const r of d.rooms || []) {
+    if (r.renovation) continue;
+    const t = String(r.reform || '');
+    r.renovation = !t || /既存|なし/.test(t) ? 'なし'
+      : /全室|全面|フルリノベ|スケルトン/.test(t) ? 'フルリノベ'
+      : '一部リノベ';
+  }
+  d.schemaVersion = 8;
   return d;
 }
 

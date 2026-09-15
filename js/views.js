@@ -9,7 +9,7 @@ import { pairingUrl, renderQr } from './pairing.js';
 import { QUALITY_PRESETS } from './image.js';
 import { THEMES, currentTheme, setTheme } from './theme.js';
 import { salesSection } from './sales.js';
-import { BUILDING_FORM, SPEC_GROUPS, ROOM_EQUIPMENT } from './spec.js';
+import { BUILDING_FORM, SPEC_GROUPS, RENOVATION } from './spec.js';
 import { analyze, LISTING_STATUS, CLOSED_STATUS, formatDate } from './price.js';
 import { stepChart, chartLegend, SERIES_COLORS } from './chart.js';
 
@@ -296,7 +296,6 @@ const ROOM_FIELDS = [
   ['kanrihi', '管理費（万円/月）', 'number'],
   ['shuzen', '修繕積立金（万円/月）', 'number'],
   ['url', '掲載ページのURL', 'text', true],
-  ['reform', 'リフォーム', 'textarea'],
   ['viewNote', '眺望・住戸特徴', 'textarea'],
   ['roomNote', '間取り・室内メモ', 'textarea'],
   ['memo', '自由メモ', 'textarea'],
@@ -350,10 +349,28 @@ export function renderRoom(root, id) {
     section(null, calcBox),
     salesSection(r, () => { paint(); }),
     section('資金計画', loanBox),
+    section('リノベーション', renovationRow(r)),
     section('部屋情報', buildingPicker, form),
     specSection(r, 'room'),
     gallerySection(r, rerender, '部屋の写真（室内・間取り図・眺望）'),
   );
+}
+
+/** リノベの有無は価格差の理由になるので、自由記述とは別に区分として持つ */
+function renovationRow(r) {
+  return el('div', { class: 'panel' },
+    el('div', { class: 'panel-controls' },
+      el('div', { class: 'ctlrow' },
+        el('span', { class: 'ctllabel' }, el('i', { class: 'ctlicon' }, '✦'), 'リノベ区分'),
+        segmented(r.renovation || 'なし', RENOVATION.map((x) => [x, x]),
+          (v) => { r.renovation = v; mark(); rerender(); })),
+      el('div', { class: 'ctlrow' },
+        el('span', { class: 'ctllabel' }, el('i', { class: 'ctlicon' }, '✎'), '内容'),
+        el('textarea', {
+          class: 'renotext', rows: 2, placeholder: '例: 2026/06完了（水回り・壁床・全室・建具等）',
+          oninput: (e) => { r.reform = e.target.value; mark(); },
+        }, r.reform ?? '')),
+    ));
 }
 
 /** 部屋から建物へ一手で戻れるようにする。写真を交互に見るとき往復が多いため */
@@ -650,12 +667,13 @@ function compareSections() {
       ['中学校区', (x) => x.b.juniorHighSchool || '—'],
     ]],
     ['設備', false, [
+      ['建物の設備', tag('equipmentTags'), null, null, true],
+      ['部屋の設備', tag('roomEquipmentTags'), null, null, true],
       ['建物構造', tag('structureTags'), null, null, true],
       ['共用施設', tag('facilityTags'), null, null, true],
-      ['共用設備', tag('equipmentTags'), null, null, true],
-      ['専有設備', tag('roomEquipmentTags'), null, null, true],
     ]],
     ['メモ・評価', true, [
+      ['リノベ区分', (x) => x.r.renovation || 'なし'],
       ['評価', (x) => fmt.stars(x.r.rating), (x) => x.r.rating, 'max'],
       ['検討状態', (x) => x.r.status || '—'],
       ['リフォーム', (x) => x.r.reform || '—', null, null, true],

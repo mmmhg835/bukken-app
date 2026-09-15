@@ -13,31 +13,27 @@ export const SHARED_FACILITIES = [
   'キッズルーム', 'スタディルーム', 'コンビニ', 'カフェ',
 ];
 
-/** 共用設備（建物の備え） */
-export const SHARED_EQUIPMENT = [
-  'オートロック', 'ダブルオートロック', 'トリプルオートロック', 'セキュリティシステム',
-  '宅配ボックス', '防犯カメラ', '24時間対応ゴミ置場', '24時間有人管理',
-  'コンシェルジュ', '内廊下', '免震ラウンジ', '非常用発電機', 'EV用充電器',
+/**
+ * 建物の設備。建物に備わっていて、どの部屋でも同じものだけを置く。
+ * 選択肢を絞っているのは、数が多いと押すのが面倒になり結局入力されないため。
+ */
+export const BUILDING_EQUIPMENT = [
+  'ディスポーザー', '24時間ゴミ出し', '各階ゴミ置き場', 'トランクルーム',
 ];
 
-/**
- * 専有設備は部屋側に持たせる。
- * リフォーム済みの住戸だけ食洗機がある、といった差が実際に出るため。
- */
+/** 部屋の設備。住戸ごとに有無が変わるものだけを置く */
 export const ROOM_EQUIPMENT = [
-  '複層ガラス', 'ハイサッシ', 'フラットフロア', '床暖房', 'ビルトインエアコン',
-  'ディスポーザー', '食洗機', 'カウンターキッチン', 'ミストサウナ',
-  '浴室暖房乾燥機', '浴室乾燥機', 'オートバスシステム', '追い焚き',
-  'モニター付インターホン', 'トランクルーム',
-  'ウォークインクローゼット', 'シューズインクローゼット', '24時間換気',
-  '角住戸', 'ルーフバルコニー', '専用庭', '納戸', '和室',
+  '食洗機', '床暖房', 'ビルトインエアコン', 'SIC', '角部屋', 'ルーフバルコニー',
 ];
+
+/** リノベーションの状態。部屋ごとに持つ */
+export const RENOVATION = ['なし', '一部リノベ', 'フルリノベ'];
 
 export const SPEC_GROUPS = {
+  equipmentTags: { label: '建物の設備', options: BUILDING_EQUIPMENT, on: 'building' },
   structureTags: { label: '建物構造', options: BUILDING_STRUCTURE, on: 'building' },
   facilityTags: { label: '共用施設', options: SHARED_FACILITIES, on: 'building' },
-  equipmentTags: { label: '共用設備', options: SHARED_EQUIPMENT, on: 'building' },
-  roomEquipmentTags: { label: '専有設備', options: ROOM_EQUIPMENT, on: 'room' },
+  roomEquipmentTags: { label: '部屋の設備', options: ROOM_EQUIPMENT, on: 'room' },
 };
 
 /** 建物の入力欄。見出しごとにまとめて表示する */

@@ -452,3 +452,6 @@ table.cmp tr.is-current td{background:var(--accent-soft)}
   .wfresult-sub{margin-left:0;text-align:left}
   .wfstep-detail{margin-left:0}
 }
+.tag.is-empty{opacity:.45}
+.renotext{width:100%;border:1px solid var(--line);background:var(--bg);border-radius:var(--r-sm);
+  padding:8px 10px;font-size:13.5px;line-height:1.6;resize:vertical;min-width:0}

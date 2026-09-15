@@ -56,7 +56,9 @@ export function statusBadge(status) {
  */
 export function tagPicker(obj, key, options, onChange) {
   obj[key] ||= [];
-  const chips = options.map((opt) => {
+  // 選択肢を絞り込んだ後も、以前に選んだ値が消えないよう末尾に残す
+  const extras = obj[key].filter((v) => !options.includes(v));
+  const chips = [...options, ...extras].map((opt) => {
     const on = obj[key].includes(opt);
     const chip = el('button', {
       type: 'button', class: 'tag' + (on ? ' is-on' : ''),
