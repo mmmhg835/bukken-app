@@ -2,10 +2,10 @@
 // v1 は「物件」の平坦な配列だったが、同じ建物の別部屋が重複して登録されるため
 // v2 で「建物（buildings）」と「部屋（rooms）」に分けた。
 import { DEFAULT_TERMS } from './loan.js';
-import { buildingDefaults, SPEC_GROUPS } from './spec.js';
+import { buildingDefaults, SPEC_GROUPS, BUILDING_EQUIPMENT } from './spec.js';
 import { defaultLifeplan, categoryOf } from './lifeplan.js';
 
-export const CURRENT_SCHEMA = 8;
+export const CURRENT_SCHEMA = 9;
 
 export function migrate(data) {
   let d = structuredClone(data);
@@ -16,6 +16,7 @@ export function migrate(data) {
   if (d.schemaVersion < 6) d = v5ToV6(d);
   if (d.schemaVersion < 7) d = v6ToV7(d);
   if (d.schemaVersion < 8) d = v7ToV8(d);
+  if (d.schemaVersion < 9) d = v8ToV9(d);
   d.settings ||= {};
   d.settings.loan = { ...DEFAULT_TERMS, ...(d.settings.loan || {}) };
   d.settings.places ||= [];   // 職場・駅など、地図上の参照地点
@@ -114,6 +115,23 @@ function v7ToV8(d) {
       : '一部リノベ';
   }
   d.schemaVersion = 8;
+  return d;
+}
+
+/**
+ * v9: 旧「共用設備」（オートロック・宅配ボックス等）を共用施設へ移す。
+ * equipmentTags は建物固有の4項目に絞り直したため、それ以外の値が行き場を失っていた。
+ */
+function v8ToV9(d) {
+  for (const b of d.buildings || []) {
+    b.equipmentTags ||= [];
+    b.facilityTags ||= [];
+    const stay = b.equipmentTags.filter((t) => BUILDING_EQUIPMENT.includes(t));
+    const move = b.equipmentTags.filter((t) => !BUILDING_EQUIPMENT.includes(t));
+    b.equipmentTags = stay;
+    for (const t of move) if (!b.facilityTags.includes(t)) b.facilityTags.push(t);
+  }
+  d.schemaVersion = 9;
   return d;
 }
 

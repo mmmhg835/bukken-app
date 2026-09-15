@@ -5,13 +5,22 @@ export const BUILDING_STRUCTURE = [
   '免震', '制震', '耐震', '二重床', '二重天井', 'アウトフレーム設計', '断熱構造', '外壁タイル貼り',
 ];
 
-/** 共用施設（使える場所） */
-export const SHARED_FACILITIES = [
-  '機械式駐車場', '平置き駐車場', '来客用駐車場', '身障者用駐車場', '駐輪場', 'バイク置場',
-  'ゲストルーム', 'パーティールーム', 'キッチンルーム', 'バー', 'ラウンジ',
-  'ジム', 'プール', 'スパ', 'サウナ', '温泉', 'セラピールーム',
-  'キッズルーム', 'スタディルーム', 'コンビニ', 'カフェ',
+/**
+ * 共用施設・設備。建物に備わっていて、部屋によらず共通のもの。
+ * 「使える場所」と「建物の備え」を1つの表にまとめている。
+ * 分けても入力の手間が増えるだけで、探すときはどちらも同じ感覚で見るため。
+ */
+export const FACILITY_SECTIONS = [
+  ['セキュリティ・管理', ['オートロック', 'ダブルオートロック', '防犯カメラ', '宅配ボックス',
+    'コンシェルジュ', '24時間有人管理', '内廊下', '非常用発電機']],
+  ['駐車・駐輪', ['機械式駐車場', '平置き駐車場', '来客用駐車場', '身障者用駐車場',
+    '駐輪場', 'バイク置場', 'EV用充電器']],
+  ['共用スペース', ['ゲストルーム', 'パーティールーム', 'キッチンルーム', 'バー', 'ラウンジ',
+    'ジム', 'プール', 'スパ', 'サウナ', '温泉', 'セラピールーム',
+    'キッズルーム', 'スタディルーム', 'コンビニ', 'カフェ']],
 ];
+
+export const SHARED_FACILITIES = FACILITY_SECTIONS.flatMap(([, list]) => list);
 
 /**
  * 建物の設備。建物に備わっていて、どの部屋でも同じものだけを置く。
@@ -32,7 +41,7 @@ export const RENOVATION = ['なし', '一部リノベ', 'フルリノベ'];
 export const SPEC_GROUPS = {
   equipmentTags: { label: '建物の設備', options: BUILDING_EQUIPMENT, on: 'building' },
   structureTags: { label: '建物構造', options: BUILDING_STRUCTURE, on: 'building' },
-  facilityTags: { label: '共用施設', options: SHARED_FACILITIES, on: 'building' },
+  facilityTags: { label: '共用施設・設備', options: SHARED_FACILITIES, on: 'building', sections: FACILITY_SECTIONS },
   roomEquipmentTags: { label: '部屋の設備', options: ROOM_EQUIPMENT, on: 'room' },
 };
 

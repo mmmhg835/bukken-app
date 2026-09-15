@@ -455,3 +455,6 @@ table.cmp tr.is-current td{background:var(--accent-soft)}
 .tag.is-empty{opacity:.45}
 .renotext{width:100%;border:1px solid var(--line);background:var(--bg);border-radius:var(--r-sm);
   padding:8px 10px;font-size:13.5px;line-height:1.6;resize:vertical;min-width:0}
+.tagsub{margin-bottom:10px}
+.tagsub:last-child{margin-bottom:0}
+.tagsub-title{font-size:11px;color:var(--text-3);font-weight:700;margin-bottom:5px;letter-spacing:.04em}

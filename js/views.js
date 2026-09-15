@@ -199,7 +199,7 @@ function specSection(owner, on) {
     el('div', { class: 'card', style: 'padding:14px' },
       groups.map(([key, g]) => el('div', { class: 'specgroup' },
         el('h4', {}, `${g.label}（${(owner[key] || []).length}）`),
-        tagPicker(owner, key, g.options, mark),
+        tagPicker(owner, key, g.options, mark, g.sections),
       ))),
   );
 }

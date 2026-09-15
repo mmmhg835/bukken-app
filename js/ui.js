@@ -54,10 +54,20 @@ export function statusBadge(status) {
  * 文字列の配列を切り替えるチェックリスト。
  * 自由記述だと表記ゆれで比較できないため、設備はタグで持つ。
  */
-export function tagPicker(obj, key, options, onChange) {
+export function tagPicker(obj, key, options, onChange, sections = null) {
   obj[key] ||= [];
   // 選択肢を絞り込んだ後も、以前に選んだ値が消えないよう末尾に残す
   const extras = obj[key].filter((v) => !options.includes(v));
+
+  // 項目が多いものは小見出しで束ねる。並びだけで探すのは辛いため
+  if (sections) {
+    const groups = [...sections, ...(extras.length ? [['その他', extras]] : [])];
+    return el('div', {},
+      groups.map(([title, list]) => el('div', { class: 'tagsub' },
+        el('div', { class: 'tagsub-title' }, title),
+        el('div', { class: 'tagwrap' }, list.map((opt) => tagChip(obj, key, opt, onChange))))));
+  }
+
   const chips = [...options, ...extras].map((opt) => {
     const on = obj[key].includes(opt);
     const chip = el('button', {
@@ -72,6 +82,19 @@ export function tagPicker(obj, key, options, onChange) {
     return chip;
   });
   return el('div', { class: 'tagwrap' }, chips);
+}
+
+function tagChip(obj, key, opt, onChange) {
+  const chip = el('button', {
+    type: 'button', class: 'tag' + (obj[key].includes(opt) ? ' is-on' : ''),
+    onclick: () => {
+      const i = obj[key].indexOf(opt);
+      if (i >= 0) obj[key].splice(i, 1); else obj[key].push(opt);
+      chip.classList.toggle('is-on');
+      onChange();
+    },
+  }, opt);
+  return chip;
 }
 
 /**
