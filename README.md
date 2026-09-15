@@ -20,11 +20,13 @@
 
 ## ローカルで動かす
 
-`file://` だと ES モジュールが読めないので、簡易サーバー経由で開いてください。
+`file://` だと ES モジュールが読めないので、同梱の簡易サーバー経由で開いてください（依存なし）。
 
 ```bash
-npx serve .
+node tools/serve.mjs 8765
 ```
+
+→ http://localhost:8765 を開く
 
 ## ディレクトリ
 
@@ -38,6 +40,7 @@ js/github.js          GitHub Contents API クライアント
 js/image.js           アップロード前の画像縮小（長辺1600px / サムネ420px）
 js/idb.js             IndexedDB ラッパ
 js/util.js            整形・自動計算（坪単価・月額合計・築年数）
+tools/serve.mjs       ローカル確認用の静的サーバー（依存なし）
 tools/make-icons.mjs  PWA アイコン生成（依存なし）
 docs/ARCHITECTURE.md  設計メモ
 docs/HANDOFF.md       AI に引き継ぐときのテンプレ
