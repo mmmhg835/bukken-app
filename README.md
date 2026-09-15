@@ -41,6 +41,9 @@ js/views.js           一覧 / 建物 / 部屋 / 比較 / 地図 / 設定 の描
 js/ui.js              画面共通の小さな部品
 js/gallery.js         画像ギャラリーと全画面ビューワ
 js/loan.js            住宅ローン試算（元利均等・元金均等）
+js/price.js           販売活動の分析（販売期間・価格改定・値下げ幅）
+js/chart.js           価格推移のステップチャート（依存なしSVG）
+js/sales.js           部屋詳細の「販売活動」セクション
 js/map.js             地図表示と住所ジオコーディング（国土地理院）
 js/migrate.js         properties.json のスキーマ移行
 js/store.js           状態管理（GitHub が実体、IndexedDB がキャッシュ）

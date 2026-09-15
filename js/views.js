@@ -7,6 +7,9 @@ import { calcLoan, METHODS, DEFAULT_TERMS } from './loan.js';
 import { geocode, drawMap, distanceMeters, walkMinutes } from './map.js';
 import { pairingUrl, renderQr } from './pairing.js';
 import { QUALITY_PRESETS } from './image.js';
+import { salesSection } from './sales.js';
+import { analyze, LISTING_STATUS, CLOSED_STATUS, formatDate } from './price.js';
+import { stepChart, chartLegend, SERIES_COLORS } from './chart.js';
 
 export const route = { view: 'list', id: null };
 export let go = () => {};
@@ -290,6 +293,7 @@ export function renderRoom(root, id) {
     el('button', { class: 'back', onclick: () => go('b', r.buildingId) }, `‹ ${b?.name || '建物'} へ戻る`),
     head,
     section(null, calcBox),
+    salesSection(r, () => { paint(); }),
     section('資金計画', loanBox),
     section('部屋情報', buildingPicker, form),
     gallerySection(r, rerender),
@@ -360,15 +364,108 @@ function paintLoan(box, r, b, repaint) {
 /* =========================================================
    比較（部屋を列にした表）
    ========================================================= */
-export function renderCompare(root) {
-  const rows = [];
-  for (const b of store.buildings) {
-    for (const r of store.roomsOf(b.id)) rows.push({ b, r, c: derive(r, b, store.loanTerms) });
-  }
-  if (!rows.length) { mount(root, el('div', { class: 'empty' }, '比較する部屋がありません。')); return; }
+/** 比較対象に選んだ部屋。未選択なら全件を対象にする */
+const selection = new Set();
 
+export function renderCompare(root) {
+  const all = [];
+  for (const b of store.buildings) {
+    for (const r of store.roomsOf(b.id)) all.push({ b, r });
+  }
+  if (!all.length) { mount(root, el('div', { class: 'empty' }, '比較する部屋がありません。')); return; }
+
+  // 一度も選んでいなければ全件、選択済みなら交差をとる（削除された部屋を除く）
+  const ids = new Set(all.map((x) => x.r.id));
+  for (const id of [...selection]) if (!ids.has(id)) selection.delete(id);
+  const picked = selection.size ? all.filter((x) => selection.has(x.r.id)) : all;
+  const rows = picked.map((x) => ({ ...x, c: derive(x.r, x.b, store.loanTerms), a: analyze(x.r) }));
+
+  mount(root,
+    selector(all),
+    priceChart(rows),
+    compareTable(rows),
+  );
+}
+
+/** 比較する部屋のチェックボックス一覧 */
+function selector(all) {
+  const boxes = all.map(({ b, r }) => {
+    const on = !selection.size || selection.has(r.id);
+    return el('label', { class: 'pickchip' + (on ? ' is-on' : '') },
+      el('input', {
+        type: 'checkbox', checked: on,
+        onchange: (e) => {
+          // 「全件表示」状態から触られたら、まず全件を選択済みにしてから差し引く
+          if (!selection.size) all.forEach((x) => selection.add(x.r.id));
+          if (e.target.checked) selection.add(r.id); else selection.delete(r.id);
+          if (selection.size === all.length) selection.clear();
+          rerender();
+        },
+      }),
+      el('span', {},
+        el('b', {}, r.label),
+        el('span', { class: 'tiny muted' }, ` ${b.name}`),
+        CLOSED_STATUS.includes(r.listingStatus)
+          ? el('span', { class: 'badge badge-muted', style: 'margin-left:6px' }, r.listingStatus) : null,
+      ));
+  });
+
+  return el('div', { class: 'card', style: 'padding:12px 14px;margin-bottom:14px' },
+    el('div', { class: 'toolbar', style: 'margin-bottom:8px' },
+      el('span', { class: 'tiny muted' },
+        selection.size ? `${selection.size} 件を比較中` : `全 ${all.length} 件を比較中`),
+      el('div', { class: 'spacer' }),
+      el('button', { class: 'btn btn-sm', onclick: () => { selection.clear(); rerender(); } }, 'すべて選択'),
+      el('button', {
+        class: 'btn btn-sm',
+        onclick: () => {
+          selection.clear();
+          all.filter((x) => !CLOSED_STATUS.includes(x.r.listingStatus)).forEach((x) => selection.add(x.r.id));
+          rerender();
+        },
+      }, '募集中のみ'),
+    ),
+    el('div', { class: 'pickgrid' }, boxes),
+  );
+}
+
+/** 選んだ部屋の価格推移を重ねる */
+function priceChart(rows) {
+  const series = rows
+    .filter((x) => x.a.history.length)
+    .map((x, i) => ({
+      name: `${x.b.name} ${x.r.label}`,
+      color: SERIES_COLORS[i % SERIES_COLORS.length],
+      points: x.a.history.map((h) => ({ date: h.date, price: h.price })),
+      open: !x.a.closed,
+    }));
+
+  if (!series.length) {
+    return el('div', { class: 'card', style: 'padding:16px;margin-bottom:14px' },
+      el('h3', { style: 'margin-bottom:6px' }, '価格の推移'),
+      el('div', { class: 'help' },
+        '価格推移が登録された部屋がありません。部屋の詳細画面の「販売活動」で登録日と価格を入れると、'
+        + 'ここに値下げの動きが重ねて表示されます。'));
+  }
+
+  return el('div', { class: 'section' },
+    el('h3', {}, '価格の推移'),
+    el('div', { class: 'chartwrap' }, stepChart(series, { height: 300 }), chartLegend(series)),
+    el('div', { class: 'tiny muted', style: 'margin-top:8px' },
+      '右端まで伸びている線は募集中。点にカーソルを合わせると日付と価格が出ます。'),
+  );
+}
+
+function compareTable(rows) {
   const defs = [
-    ['価格', (x) => fmt.man1(x.r.price) + '万円', (x) => x.r.price, 'min'],
+    ['現在価格', (x) => fmt.man1(x.r.price) + '万円', (x) => x.r.price, 'min'],
+    ['当初価格', (x) => (x.a.initial != null ? fmt.man1(x.a.initial) + '万円' : '—')],
+    ['値下げ額', (x) => (x.a.totalChange ? `${fmt.man1(Math.round(x.a.totalChange))}万円（${x.a.changeRate.toFixed(1)}%）` : '—'),
+      (x) => x.a.totalChange, 'min'],
+    ['価格改定回数', (x) => `${x.a.changeCount}回`, (x) => x.a.changeCount, 'max'],
+    ['販売期間', (x) => (x.a.salesDays != null ? `${x.a.salesDays}日` : '—'), (x) => x.a.salesDays, 'max'],
+    ['募集状況', (x) => x.r.listingStatus || '募集中'],
+    ['登録日', (x) => formatDate(x.a.listedAt)],
     ['坪単価', (x) => fmt.n(x.c.tsuboPrice, 1) + '万円', (x) => x.c.tsuboPrice, 'min'],
     ['専有面積', (x) => fmt.sqm(x.r.area), (x) => x.r.area, 'max'],
     ['間取り', (x) => x.r.layout || '—'],
@@ -381,17 +478,14 @@ export function renderCompare(root) {
     ['管理＋修繕', (x) => fmt.yen万(x.c.kanriShuzen) + '/月', (x) => x.c.kanriShuzen, 'min'],
     ['ローン返済', (x) => fmt.yen万(x.c.loanMonthly) + '/月', (x) => x.c.loanMonthly, 'min'],
     ['月額合計', (x) => fmt.yen万(x.c.monthly) + '/月', (x) => x.c.monthly, 'min'],
-    ['年額合計', (x) => fmt.yen万(x.c.yearly) + '/年', (x) => x.c.yearly, 'min'],
-    ['総返済額', (x) => fmt.man1(Math.round(x.c.loan?.totalPayment ?? 0)) + '万円',
-      (x) => x.c.loan?.totalPayment, 'min'],
-    ['うち利息', (x) => fmt.man1(Math.round(x.c.loan?.totalInterest ?? 0)) + '万円',
-      (x) => x.c.loan?.totalInterest, 'min'],
+    ['総返済額', (x) => fmt.man1(Math.round(x.c.loan?.totalPayment ?? 0)) + '万円', (x) => x.c.loan?.totalPayment, 'min'],
+    ['うち利息', (x) => fmt.man1(Math.round(x.c.loan?.totalInterest ?? 0)) + '万円', (x) => x.c.loan?.totalInterest, 'min'],
     ['リフォーム', (x) => x.r.reform || '—', null, null, true],
     ['眺望・住戸特徴', (x) => x.r.viewNote || '—', null, null, true],
     ['間取り・室内メモ', (x) => x.r.roomNote || '—', null, null, true],
     ['メモ', (x) => x.r.memo || '—', null, null, true],
     ['評価', (x) => fmt.stars(x.r.rating), (x) => x.r.rating, 'max'],
-    ['状態', (x) => x.r.status || '—'],
+    ['検討状態', (x) => x.r.status || '—'],
     ['画像', (x) => `${x.r.images?.length || 0}枚`],
   ];
 
@@ -408,7 +502,9 @@ export function renderCompare(root) {
     let best = null;
     if (pick && dir) {
       const vals = rows.map(pick).filter((v) => v != null && !isNaN(v));
-      if (vals.length > 1) best = dir === 'min' ? Math.min(...vals) : Math.max(...vals);
+      const lo = Math.min(...vals), hi = Math.max(...vals);
+      // 全部同じ値なら差がないので強調しない
+      if (vals.length > 1 && lo !== hi) best = dir === 'min' ? lo : hi;
     }
     return el('tr', {},
       el('td', { class: 'lab' }, label),
@@ -420,9 +516,9 @@ export function renderCompare(root) {
     );
   }));
 
-  mount(root,
+  return el('div', {},
     el('div', { class: 'toolbar' },
-      el('span', { class: 'muted tiny' }, '緑字＝その項目で最も条件が良い値。ローンは共通条件で計算'),
+      el('span', { class: 'muted tiny' }, '緑字＝その項目で最も有利な値（差がある項目のみ）。ローンは共通条件で計算'),
       el('div', { class: 'spacer' }),
       el('button', { class: 'btn btn-sm', onclick: () => go('settings') }, 'ローン条件を変更'),
     ),

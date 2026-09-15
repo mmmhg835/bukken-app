@@ -112,10 +112,10 @@ table.cmp tr:hover td.lab{background:var(--surface-2)}
 }
 .field textarea{resize:vertical;min-height:70px;line-height:1.6}
 .field.wide{grid-column:1/-1}
-.calcgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:1px;background:var(--line);border-radius:var(--r);overflow:hidden;border:1px solid var(--line)}
+.calcgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:1px;background:var(--line);border-radius:var(--r);overflow:hidden;border:1px solid var(--line)}
 .calcgrid div{background:var(--surface);padding:12px 14px}
 .calcgrid .k{font-size:11.5px;color:var(--text-2);font-weight:600}
-.calcgrid .v{font-size:18px;font-weight:800;margin-top:2px}
+.calcgrid .v{font-size:18px;font-weight:800;margin-top:2px;white-space:nowrap;letter-spacing:-.01em}
 
 /* ===== gallery ===== */
 .dropzone{border:2px dashed var(--line);border-radius:var(--r);padding:22px;text-align:center;color:var(--text-2);margin-bottom:14px;transition:.15s}
@@ -193,3 +193,33 @@ table.cmp tr:hover td.lab{background:var(--surface-2)}
 
 /* 計算カードの補助行 */
 .calcgrid .k + .v + .k{color:var(--text-3)}
+
+/* ===== 販売活動・価格推移 ===== */
+.subhead{margin:0 0 8px;font-size:13px;color:var(--text-2);font-weight:700}
+.chartwrap{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px;overflow-x:auto}
+.chart{width:100%;height:auto;display:block;min-width:460px}
+.chart-grid{stroke:var(--line);stroke-width:1}
+.chart-axis{stroke:var(--text-3);stroke-width:1}
+.chart-lab{fill:var(--text-2);font-size:11px;font-family:inherit}
+.chart-legend{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:10px;font-size:12.5px;color:var(--text-2)}
+.chart-legend span{display:inline-flex;align-items:center;gap:6px}
+.chart-legend i{width:11px;height:11px;border-radius:3px;display:inline-block}
+
+.histhead,.histrow{display:grid;grid-template-columns:150px 130px 1fr auto;gap:8px;align-items:center}
+.histhead{font-size:11.5px;color:var(--text-2);font-weight:600;margin-bottom:6px}
+.histrow{margin-bottom:8px}
+.histrow input{border:1px solid var(--line);background:var(--bg);border-radius:var(--r-sm);padding:7px 9px;width:100%;min-width:0}
+@media(max-width:600px){
+  .histhead{display:none}
+  .histrow{grid-template-columns:1fr 1fr;gap:6px}
+  .histrow input:nth-child(3){grid-column:1/-1}
+  .histrow .btn{grid-column:1/-1}
+}
+
+/* ===== 比較対象の選択 ===== */
+.pickgrid{display:grid;gap:6px;grid-template-columns:repeat(auto-fill,minmax(230px,1fr))}
+.pickchip{display:flex;align-items:center;gap:8px;padding:7px 10px;border:1px solid var(--line);
+  border-radius:var(--r-sm);cursor:pointer;background:var(--bg);font-size:13px;line-height:1.4}
+.pickchip.is-on{border-color:var(--accent);background:var(--accent-soft)}
+.pickchip input{margin:0;flex-shrink:0}
+.pickchip > span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

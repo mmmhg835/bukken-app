@@ -3,15 +3,32 @@
 // v2 で「建物（buildings）」と「部屋（rooms）」に分けた。
 import { DEFAULT_TERMS } from './loan.js';
 
-export const CURRENT_SCHEMA = 2;
+export const CURRENT_SCHEMA = 3;
 
 export function migrate(data) {
   let d = structuredClone(data);
   if (!d.schemaVersion || d.schemaVersion < 2) d = v1ToV2(d);
+  if (d.schemaVersion < 3) d = v2ToV3(d);
   d.settings ||= {};
   d.settings.loan = { ...DEFAULT_TERMS, ...(d.settings.loan || {}) };
   d.settings.places ||= [];   // 職場・駅など、地図上の参照地点
   d.schemaVersion = CURRENT_SCHEMA;
+  return d;
+}
+
+/**
+ * v3: 募集状況と価格推移を追加。
+ * 値下げの経緯や販売期間を残せないと、指値の判断材料にならないため。
+ */
+function v2ToV3(d) {
+  for (const r of d.rooms || []) {
+    r.listingStatus ??= '募集中';
+    r.listedAt ??= null;      // 掲載開始日
+    r.closedAt ??= null;      // 募集終了日
+    // 価格が入っていれば、日付未定の1点として履歴の起点にする
+    r.priceHistory ??= [];
+  }
+  d.schemaVersion = 3;
   return d;
 }
 
@@ -55,6 +72,7 @@ function v1ToV2(d) {
       label: p.floor ? `${p.floor}階` : `部屋${rooms.length + 1}`,
       status: p.status || '検討中',
       rating: p.rating || 0,
+      listingStatus: '募集中', listedAt: null, closedAt: null, priceHistory: [],
       price: p.price ?? null,
       area: p.area ?? null,
       layout: p.layout || '',
