@@ -1,10 +1,10 @@
 // アプリ本体だけをキャッシュする軽量 Service Worker。
 // 物件データと画像は IndexedDB 側でキャッシュしているのでここでは扱わない。
-const CACHE = 'bukken-app-v3';
+const CACHE = 'bukken-app-v4';
 const SHELL = [
   './', './index.html', './app.css',
   './js/main.js', './js/views.js', './js/store.js', './js/github.js',
-  './js/util.js', './js/idb.js', './js/image.js',
+  './js/util.js', './js/idb.js', './js/image.js', './js/pairing.js',
   './manifest.webmanifest',
 ];
 

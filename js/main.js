@@ -2,12 +2,13 @@
 import { store } from './store.js';
 import { $, $$, toast, debounce } from './util.js';
 import { route, bindRouter, renderList, renderCompare, renderDetail, renderSettings, initLightbox } from './views.js';
+import { parsePairing } from './pairing.js';
 
 const main = $('#main');
 
 function parseHash() {
   const [view = 'list', id = null] = location.hash.replace(/^#\/?/, '').split('/');
-  return { view: ['list', 'compare', 'detail', 'settings'].includes(view) ? view : 'list', id };
+  return { view: ['list', 'compare', 'detail', 'settings', 'setup'].includes(view) ? view : 'list', id };
 }
 
 function go(view, id) {
@@ -25,6 +26,11 @@ function render() {
   $$('#tabs .tab').forEach((t) =>
     t.classList.toggle('is-active', t.dataset.view === (route.view === 'detail' ? 'list' : route.view)));
 
+  // QR から来た設定リンクは画面を描く前に取り込む（起動済みのアプリで踏まれた場合もここを通る）
+  if (route.view === 'setup') {
+    if (route.id && !consuming) consumePairing(route.id);
+    return;
+  }
   if (route.view === 'compare') renderCompare(main);
   else if (route.view === 'settings') renderSettings(main);
   else if (route.view === 'detail' && route.id) renderDetail(main, route.id);
@@ -76,6 +82,36 @@ window.addEventListener('beforeunload', (e) => {
 
 bindRouter(go, render);
 initLightbox();
+
+/**
+ * 別端末から QR で渡された設定を取り込む。
+ * トークンが履歴に残らないよう、読み取り後すぐ URL から消す。
+ */
+let consuming = false;
+
+async function consumePairing(payload) {
+  consuming = true;
+  const cfg = parsePairing(payload);
+  history.replaceState(null, '', location.pathname + '#/settings');
+  if (!cfg) {
+    consuming = false;
+    toast('設定リンクが壊れています。もう一度 QR を表示してください。', true);
+    location.hash = '#/settings';
+    return;
+  }
+  store.saveConfig(cfg);
+  try {
+    const info = await store.repo.check();
+    await store.sync();
+    toast(`接続しました: ${info.fullName}`);
+    location.hash = '#/list';
+  } catch (e) {
+    toast(e.message, true);
+  } finally {
+    consuming = false;
+    if (route.view === 'setup') render();
+  }
+}
 
 (async () => {
   await store.init();

@@ -1,6 +1,7 @@
 // 画面描画。すべて store の状態から組み立てる。
 import { store } from './store.js';
 import { $, el, fmt, derive, toast, STATUSES, CATEGORIES, debounce } from './util.js';
+import { pairingUrl, renderQr } from './pairing.js';
 
 export const route = { view: 'list', id: null };
 
@@ -408,6 +409,7 @@ export function renderSettings(root) {
 
   root.replaceChildren(el('div', { class: 'settings' },
     el('div', { class: 'section' }, el('h3', {}, 'GitHub 接続'), form, status),
+    pairingSection(),
     el('div', { class: 'section card', style: 'padding:16px' },
       el('h3', {}, 'トークンの作り方'),
       el('div', {
@@ -466,6 +468,50 @@ function tokenField(cfg) {
     el('div', { style: 'display:flex;gap:8px;align-items:center' }, input, toggle),
     meta,
   );
+}
+
+/** Mac で表示した QR を iPhone のカメラで読むだけで設定を引き継げるようにする */
+function pairingSection() {
+  const box = el('div', { style: 'margin-top:12px' });
+  const section = el('div', { class: 'section card', style: 'padding:16px' },
+    el('h3', {}, 'スマホに設定を引き継ぐ'),
+    el('div', { class: 'help' },
+      'この端末の接続設定を QR コードにします。iPhone の標準カメラアプリで読み取り、'
+      + '表示されるリンクを開くだけで設定が完了します（入力は不要です）。'),
+    box,
+  );
+
+  if (!store.configured) {
+    box.append(el('div', { class: 'tiny muted' }, '先にこの端末で接続を完了してください。'));
+    return section;
+  }
+
+  const btn = el('button', {
+    class: 'btn btn-primary', style: 'margin-top:4px',
+    onclick: async () => {
+      btn.disabled = true;
+      try {
+        const img = await renderQr(pairingUrl(store.config), 340);
+        box.replaceChildren(
+          el('div', { style: 'display:inline-block;margin-top:10px' }, img),
+          el('div', { class: 'tiny', style: 'color:var(--warn);margin-top:8px;max-width:420px;line-height:1.7' },
+            '⚠ この QR にはアクセストークンが含まれています。'
+            + '画面共有やスクリーンショットの取り扱いに注意してください。'
+            + '読み取り後は、この画面を離れれば QR は消えます。'),
+          el('button', {
+            class: 'btn btn-sm', style: 'margin-top:8px',
+            onclick: () => { box.replaceChildren(btn); btn.disabled = false; },
+          }, 'QR を隠す'),
+        );
+      } catch (e) {
+        toast(e.message, true);
+        btn.disabled = false;
+      }
+    },
+  }, 'QR コードを表示');
+
+  box.append(btn);
+  return section;
 }
 
 function cfgField(key, label, cfg, ph, type = 'text') {
