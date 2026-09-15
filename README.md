@@ -58,6 +58,8 @@ js/image.js           アップロード前の画像縮小（長辺1600px / サ�
 js/pairing.js         QR による端末間の設定引き継ぎ
 js/idb.js             IndexedDB ラッパ
 js/util.js            整形・自動計算（坪単価・ローン・月額合計・築年数）
+tools/smoke.mjs       全モジュールの読み込み確認（コミット前に実行）
+tools/verify-loan.mjs ローン計算の検証
 tools/serve.mjs       ローカル確認用の静的サーバー（依存なし）
 tools/make-icons.mjs  PWA アイコン生成（依存なし）
 docs/ARCHITECTURE.md  設計メモ

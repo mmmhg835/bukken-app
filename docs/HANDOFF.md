@@ -23,8 +23,11 @@ Claude と ChatGPT で交互に開発するときは、相手に最初にこれ�
 7. スキーマを変える場合は `schemaVersion` を上げ、`docs/ARCHITECTURE.md` の表も更新する
 8. **入力のたびに画面を描き直す箇所では `util.js` の `preserveFocus()` を使う**
    （そのままだと1文字ごとにフォーカスが外れ、続けて入力できなくなる）
-9. 変更後は `node tools/serve.mjs` で開いて、一覧 / 建物 / 部屋 / 比較 / 地図 / 設定が壊れていないことを確認する
-10. 条件分岐で子要素を差し替えるときは `replaceChildren` ではなく `util.js` の `mount()` を使う
+9. **コミット前に `node tools/smoke.mjs` を必ず実行する**
+   全モジュールを読み込んで import 漏れや未定義参照を検出する。
+   ブロック単位の書き換えで隣の関数を巻き込む事故が実際に3回起きている
+10. 変更後は `node tools/serve.mjs` で開いて、一覧 / 建物 / 部屋 / 比較 / 地図 / 設定が壊れていないことを確認する
+11. 条件分岐で子要素を差し替えるときは `replaceChildren` ではなく `util.js` の `mount()` を使う
    （`replaceChildren` は `null` を文字列 "null" として描画してしまう）
 
 ---

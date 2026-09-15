@@ -68,7 +68,7 @@ function propertyPicker(plan, room, building, rerender) {
 function summary(res, plan, rerender) {
   const positive = res.balance >= 0;
   return el('div', { class: 'section' },
-    el('div', { class: 'calcgrid' },
+    el('div', { class: 'calcgrid calcgrid-4' },
       kv('収入合計', `${fmt.n(res.income, 1)}万円`, '手取り／月'),
       kv('支出合計', `${fmt.n(res.expense, 1)}万円`, '住居費・生活費・積立'),
       kv('毎月の残り', el('span', { class: positive ? 'pos' : 'neg' },
@@ -122,13 +122,14 @@ function housingDetail(res, room, building) {
 
   return el('div', { class: 'section' },
     el('h3', {}, `${building.name} ${room.label} の住居費`),
-    el('div', { class: 'calcgrid' },
+    el('div', { class: 'calcgrid calcgrid-4' },
       ...res.housingFromRoom.items.map((it) => kv(it.name, `${fmt.n(it.amount, 1)}万円`)),
-      kv('住居費 合計', `${fmt.n(res.housingFromRoom.total, 1)}万円`,
-        `ローン ${t.rate}% ${t.years}年`),
-      kv('現在の想定との差', el('span', { class: diff <= 0 ? 'pos' : 'neg' },
-        `${diff > 0 ? '+' : ''}${fmt.n(diff, 1)}万円`), `手入力 ${fmt.n(manual, 1)}万円`),
-    ));
+      kv('住居費 合計', `${fmt.n(res.housingFromRoom.total, 1)}万円`, `ローン ${t.rate}% ${t.years}年`),
+    ),
+    el('div', { class: 'tiny muted', style: 'margin-top:8px' },
+      '現在の想定（', fmt.n(manual, 1), '万円）との差　',
+      el('b', { class: diff <= 0 ? 'pos' : 'neg' }, `${diff > 0 ? '+' : ''}${fmt.n(diff, 1)}万円`)),
+  );
 }
 
 /* =========================================================
@@ -348,7 +349,7 @@ function scenarioSection(plan, currentRoom, currentBuilding) {
           el('td', {}, `${fmt.n(res.totalLeft, 1)}万`),
         ))),
       )),
-    el('div', { class: 'calcgrid', style: 'margin-top:14px' },
+    el('div', { class: 'calcgrid calcgrid-3', style: 'margin-top:14px' },
       kv('住居費に回せる上限', `${fmt.n(afford.budget, 1)}万円`, '毎月の残りが0になる水準'),
       kv('うちローンに回せる額', `${fmt.n(afford.loanBudget, 1)}万円`, '管理費・修繕を差し引いた額'),
       kv('買える価格の上限', `${fmt.man1(Math.round(afford.price))}万円`,

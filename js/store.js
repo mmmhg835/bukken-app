@@ -2,7 +2,7 @@
 import { GitHubRepo, blobToB64, utf8ToB64 } from './github.js';
 import { idb } from './idb.js';
 import { processImage, coverDataUrl, DEFAULT_PRESET, QUALITY_PRESETS } from './image.js';
-import { migrate } from './migrate.js';
+import { migrate, CURRENT_SCHEMA } from './migrate.js';
 import { DEFAULT_TERMS } from './loan.js';
 import { defaultLifeplan } from './lifeplan.js';
 import { buildingDefaults, SPEC_GROUPS } from './spec.js';

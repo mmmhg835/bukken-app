@@ -306,7 +306,7 @@ export function renderRoom(root, id) {
   if (!r) { go('list'); return; }
   const b = store.building(r.buildingId);
 
-  const calcBox = el('div', { class: 'calcgrid' });
+  const calcBox = el('div', { class: 'calcgrid calcgrid-6' });
   const loanBox = el('div');
   const paint = () => { paintCalc(calcBox, r, b); paintLoan(loanBox, r, b, paint); };
   paint();
@@ -423,7 +423,7 @@ function paintLoan(box, r, b, repaint) {
     field(editable, ['costRate', '諸費用の目安（価格の％）', 'number'], onEdit),
   );
 
-  const result = el('div', { class: 'calcgrid' },
+  const result = el('div', { class: 'calcgrid calcgrid-6' },
     kv('借入額', fmt.man(Math.round(loan.principal))),
     kv('毎月返済', `${fmt.yen万(loan.monthly)}`,
       terms.method === 'principal' ? `初回。最終回 ${fmt.yen万(loan.monthlyLast)}` : null),
