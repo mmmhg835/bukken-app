@@ -2,8 +2,9 @@
 import { GitHubRepo, blobToB64, utf8ToB64 } from './github.js';
 import { idb } from './idb.js';
 import { processImage, coverDataUrl, DEFAULT_PRESET, QUALITY_PRESETS } from './image.js';
-import { migrate, CURRENT_SCHEMA } from './migrate.js';
+import { migrate } from './migrate.js';
 import { DEFAULT_TERMS } from './loan.js';
+import { defaultLifeplan } from './lifeplan.js';
 import { buildingDefaults, SPEC_GROUPS } from './spec.js';
 import { uid } from './util.js';
 
@@ -11,15 +12,16 @@ const CFG_KEY = 'bukken.config.v1';
 const PREF_KEY = 'bukken.prefs.v1';
 const DATA_PATH = 'properties.json';
 
-const EMPTY = {
-  schemaVersion: CURRENT_SCHEMA, updatedAt: null,
-  settings: { loan: { ...DEFAULT_TERMS }, places: [] }, buildings: [], rooms: [],
-};
+/**
+ * 初期データ。項目を直接並べず migrate() に通して作る。
+ * スキーマに項目を足したとき、ここへの追記漏れで新規データだけ壊れるのを防ぐ。
+ */
+const emptyData = () => migrate({ schemaVersion: 1, properties: [] });
 
 class Store extends EventTarget {
   config = { owner: 'mmmhg835', repo: 'bukken-data', branch: 'main', token: '' };
   prefs = { imageQuality: DEFAULT_PRESET };
-  data = structuredClone(EMPTY);
+  data = emptyData();
   sha = null;
   dirty = false;
   syncState = 'idle';   // idle | syncing | ok | error | unconfigured
@@ -189,7 +191,10 @@ class Store extends EventTarget {
   }
 
   // ===== 家計シミュレーション =====
-  get lifeplan() { return this.data.settings.lifeplan; }
+  get lifeplan() {
+    this.data.settings.lifeplan ||= defaultLifeplan();
+    return this.data.settings.lifeplan;
+  }
 
   // ===== 参照地点（職場・駅など） =====
   get places() { return this.data.settings.places || []; }

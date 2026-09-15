@@ -3,9 +3,9 @@
 // v2 で「建物（buildings）」と「部屋（rooms）」に分けた。
 import { DEFAULT_TERMS } from './loan.js';
 import { buildingDefaults, SPEC_GROUPS } from './spec.js';
-import { defaultLifeplan } from './lifeplan.js';
+import { defaultLifeplan, categoryOf } from './lifeplan.js';
 
-export const CURRENT_SCHEMA = 6;
+export const CURRENT_SCHEMA = 7;
 
 export function migrate(data) {
   let d = structuredClone(data);
@@ -14,6 +14,7 @@ export function migrate(data) {
   if (d.schemaVersion < 4) d = v3ToV4(d);
   if (d.schemaVersion < 5) d = v4ToV5(d);
   if (d.schemaVersion < 6) d = v5ToV6(d);
+  if (d.schemaVersion < 7) d = v6ToV7(d);
   d.settings ||= {};
   d.settings.loan = { ...DEFAULT_TERMS, ...(d.settings.loan || {}) };
   d.settings.places ||= [];   // 職場・駅など、地図上の参照地点
@@ -76,6 +77,26 @@ function v5ToV6(d) {
   d.settings ||= {};
   d.settings.lifeplan ||= defaultLifeplan();
   d.schemaVersion = 6;
+  return d;
+}
+
+/**
+ * v7: 家計の項目に ON/OFF と 積立・固定・変動 の区分を追加。
+ * 旧 saving フラグは区分 'saving' に読み替える。
+ */
+function v6ToV7(d) {
+  const plan = d.settings?.lifeplan;
+  if (plan) {
+    for (const g of plan.groups || []) {
+      for (const it of g.items || []) {
+        it.enabled ??= true;
+        if (!it.category) it.category = it.saving ? 'saving' : 'fixed';
+        delete it.saving;
+      }
+    }
+    for (const it of plan.income || []) it.enabled ??= true;
+  }
+  d.schemaVersion = 7;
   return d;
 }
 

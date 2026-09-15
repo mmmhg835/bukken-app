@@ -2,7 +2,7 @@
 import { store } from './store.js';
 import { el, fmt, mount, toast, uid } from './util.js';
 import { kv, select, toggle, segmented } from './ui.js';
-import { calcPlan, housingCost, affordablePrice } from './lifeplan.js';
+import { calcPlan, housingCost, affordablePrice, waterfall, CATEGORIES, isOn, categoryOf } from './lifeplan.js';
 import { derive } from './util.js';
 
 const ui = { afterLoans: false, openGroups: null };
@@ -20,6 +20,7 @@ export function renderLifeplan(root, rerender) {
     propertyPicker(plan, room, building, rerender),
     summary(res, plan, rerender),
     housingDetail(res, room, building),
+    waterfallSection(res, room, building),
     groupsSection(plan, res, mark, rerender),
     incomeSection(plan, mark),
     scenarioSection(plan, room, building),
@@ -71,8 +72,9 @@ function summary(res, plan, rerender) {
       kv('毎月の残り', el('span', { class: positive ? 'pos' : 'neg' },
         `${positive ? '+' : ''}${fmt.n(res.balance, 1)}万円`), positive ? '黒字' : '赤字'),
       kv('先取りの資産形成', `${fmt.n(res.saving, 1)}万円`, `貯蓄率 ${res.savingRate.toFixed(1)}%`),
+      kv('固定費', `${fmt.n(res.fixed, 1)}万円`, '住居費を除く'),
+      kv('変動費', `${fmt.n(res.variable, 1)}万円`, `使える上限 ${fmt.n(res.variableBudget, 1)}万円`),
       kv('毎月積み上がる額', `${fmt.n(res.totalLeft, 1)}万円`, '先取り＋残り'),
-      kv('年間', `${fmt.n(res.yearlySaving, 0)}万円`, '積み上がる額 × 12'),
     ),
     el('div', { class: 'stackbar' }, res.groups.map((g, i) =>
       g.total > 0
@@ -116,6 +118,49 @@ function housingDetail(res, room, building) {
         `ローン ${t.rate}% ${t.years}年`),
       kv('現在の想定との差', el('span', { class: diff <= 0 ? 'pos' : 'neg' },
         `${diff > 0 ? '+' : ''}${fmt.n(diff, 1)}万円`), `手入力 ${fmt.n(manual, 1)}万円`),
+    ));
+}
+
+/* =========================================================
+   収入から順に差し引く段階表
+   ========================================================= */
+function waterfallSection(res, room, building) {
+  const w = waterfall(res, room ? `${building.name} ${room.label}` : null);
+  const yen = (v) => `${fmt.n(v, 1)}万円`;
+
+  const stepRow = (st, i) => el('div', { class: 'wfstep' },
+    el('div', { class: 'wfstep-head' },
+      el('span', { class: 'wfstep-no' }, String(i + 1)),
+      el('span', { class: 'wfstep-label' }, st.label),
+      el('span', { class: 'wfstep-minus' }, `− ${yen(st.amount)}`),
+    ),
+    el('div', { class: 'wfstep-detail' },
+      st.items.length
+        ? st.items.map((it) => el('span', { class: 'wfchip' }, `${it.name} ${fmt.n(it.amount, 1)}`))
+        : el('span', { class: 'tiny muted' }, st.note)),
+    el('div', { class: 'wfstep-after' },
+      el('span', { class: 'tiny muted' }, '残り'),
+      el('b', {}, yen(st.after))),
+  );
+
+  return el('div', { class: 'section' },
+    el('h3', {}, 'この物件だと、生活費にいくら使えるか'),
+    el('div', { class: 'panel wfpanel' },
+      el('div', { class: 'wfhead' },
+        el('span', {}, '月の手取り収入'),
+        el('b', {}, yen(res.income))),
+      w.steps.map(stepRow),
+      el('div', { class: 'wfresult' },
+        el('div', {},
+          el('div', { class: 'tiny muted' }, '変動費に使える額'),
+          el('div', { class: 'wfresult-big' }, yen(w.variableBudget))),
+        el('div', { class: 'wfresult-sub' },
+          el('div', {}, `いまの変動費　− ${yen(w.variableActual)}`),
+          el('div', { class: w.rest >= 0 ? 'pos' : 'neg' },
+            `差し引き　${w.rest >= 0 ? '+' : ''}${yen(w.rest)}`)),
+      ),
+      el('div', { class: 'wfvar' },
+        w.variableItems.map((it) => el('span', { class: 'wfchip' }, `${it.name} ${fmt.n(it.amount, 1)}`))),
     ));
 }
 
@@ -173,7 +218,9 @@ function itemRow(group, item, mark, rerender, locked) {
       el('span', { class: 'lpitem-amount' }, `${fmt.n(item.amount, 1)}万円`),
     );
   }
-  return el('div', { class: 'lpitem' },
+  const on = isOn(item);
+  return el('div', { class: 'lpitem' + (on ? '' : ' is-off') },
+    miniSwitch(on, (v) => { item.enabled = v; mark(); }, on ? '計算に入れています' : '計算から外しています'),
     el('input', {
       type: 'text', class: 'lpitem-name', value: item.name,
       oninput: (e) => { item.name = e.target.value; store.markDirty(); },
@@ -183,11 +230,11 @@ function itemRow(group, item, mark, rerender, locked) {
       oninput: (e) => { item.amount = e.target.value === '' ? 0 : Number(e.target.value); mark(); },
     }),
     el('span', { class: 'tiny muted' }, '万円'),
-    el('button', {
-      class: 'chipbtn' + (item.saving ? ' is-on' : ''),
-      title: '資産形成・積立として扱う（貯蓄率に算入）',
-      onclick: () => { item.saving = !item.saving; mark(); },
-    }, '積立'),
+    el('select', {
+      class: 'catsel cat-' + categoryOf(item),
+      onchange: (e) => { item.category = e.target.value; mark(); },
+    }, Object.entries(CATEGORIES).map(([k, c]) =>
+      el('option', { value: k, selected: k === categoryOf(item) }, c.label))),
     el('button', {
       class: 'chipbtn' + (item.temporary ? ' is-on' : ''),
       title: '期限付きの支出（完済すると無くなる）',
@@ -195,12 +242,15 @@ function itemRow(group, item, mark, rerender, locked) {
     }, '期限付'),
     el('button', {
       class: 'chipbtn is-del',
-      onclick: () => {
-        group.items.splice(group.items.indexOf(item), 1);
-        mark();
-      },
+      onclick: () => { group.items.splice(group.items.indexOf(item), 1); mark(); },
     }, '削除'),
   );
+}
+
+/** 一覧の行に置ける小さなON/OFFスイッチ */
+function miniSwitch(checked, onChange, title) {
+  const input = el('input', { type: 'checkbox', checked, onchange: (e) => onChange(e.target.checked) });
+  return el('label', { class: 'miniswitch', title }, input, el('span', { class: 'track' }));
 }
 
 /* ===== 収入 ===== */
@@ -208,7 +258,8 @@ function incomeSection(plan, mark) {
   return el('div', { class: 'section' },
     el('h3', {}, '収入'),
     el('div', { class: 'card lpgroup-body', style: 'padding:14px' },
-      plan.income.map((it) => el('div', { class: 'lpitem' },
+      plan.income.map((it) => el('div', { class: 'lpitem' + (isOn(it) ? '' : ' is-off') },
+        miniSwitch(isOn(it), (v) => { it.enabled = v; mark(); }, '計算に入れるか'),
         el('input', {
           type: 'text', class: 'lpitem-name', value: it.name,
           oninput: (e) => { it.name = e.target.value; store.markDirty(); },
