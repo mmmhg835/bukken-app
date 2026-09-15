@@ -1,60 +1,93 @@
-# AI への引き継ぎテンプレ
+# AI への引き継ぎ
 
-Claude と ChatGPT で交互に開発するときは、相手に最初にこれを渡してください。
+Claude と ChatGPT で交互に開発しています。相手に最初にこれを渡してください。
 
----
-
-物件検討用の PWA を開発しています。2つのリポジトリに分かれています。
 公開URL: https://mmmhg835.github.io/bukken-app/
+アプリ本体: https://github.com/mmmhg835/bukken-app （Public）
+データ: https://github.com/mmmhg835/bukken-data （Private）
 
-- `mmmhg835/bukken-app` （Public）… アプリ本体。HTML/CSS/素の ES モジュールのみ。**ビルドツールなし**
-- `mmmhg835/bukken-data` （Private）… `properties.json` と `images/<物件ID>/*.jpg`
-
-設計は `docs/ARCHITECTURE.md` に全部書いてあります。**作業前に必ず読んでください。**
-
-守ってほしいこと:
-
-1. **ビルドツールやフレームワークを導入しない**（React / Vite / TypeScript などへの移行は提案のみ、勝手に実行しない）
-2. **派生値を `properties.json` に保存しない**。坪単価やローン返済額は `js/util.js` の `derive()` で計算する
-3. **建物と部屋の区別を崩さない**。別の部屋でも同じ値になる項目は建物側に置く
-4. **検討状態（status）と募集状況（listingStatus）を統合しない**。別の軸として扱う
-5. **画面に説明文を足さない**。ラベルと構造で伝わるようにする
-6. **設備は自由記述にしない**。表記ゆれで比較できなくなるため `spec.js` のタグで持つ
-7. **アプリ側リポジトリに個人データを置かない**（物件名・価格・画像はすべて data リポジトリ）
-8. スキーマを変える場合は `schemaVersion` を上げ、`docs/ARCHITECTURE.md` の表も更新する
-9. **入力のたびに画面を描き直す箇所では `util.js` の `preserveFocus()` を使う**
-   （そのままだと1文字ごとにフォーカスが外れ、続けて入力できなくなる）
-10. **コミット前に `node tools/smoke.mjs` を必ず実行する**
-   全モジュールを読み込んで import 漏れや未定義参照を検出する。
-   ブロック単位の書き換えで隣の関数を巻き込む事故が実際に3回起きている
-11. 変更後は `node tools/serve.mjs` で開いて、一覧 / 建物 / 部屋 / 比較 / 地図 / 設定が壊れていないことを確認する
-12. 条件分岐で子要素を差し替えるときは `replaceChildren` ではなく `util.js` の `mount()` を使う
-   （`replaceChildren` は `null` を文字列 "null" として描画してしまう）
+**作業前に必ず [ARCHITECTURE.md](ARCHITECTURE.md) を読んでください。** 設計の理由がすべて書いてあります。
 
 ---
 
-## よくある作業
+## これは何か
 
-| やりたいこと | 触るファイル |
+中古マンションの購入検討を、写真・価格推移・相場分析・家計シミュレーションまで
+一つで完結させるアプリ。ビルドツールなしの素の ES モジュールで、
+ブラウザから GitHub Contents API を直接叩いてデータを読み書きする。サーバーは無い。
+
+| | |
 |---|---|
-| 建物の項目を追加 | `js/spec.js` の `BUILDING_FORM` |
+| 現在の版 | アプリ v28 / データスキーマ v13 |
+| 規模 | JS 約5,000行・21モジュール |
+| 画面 | 一覧 / 比較 / 分析 / ライフプラン / 地図 / 設定 |
+
+## 守ってほしいこと
+
+1. **ビルドツールやフレームワークを導入しない**（React / Vite / TypeScript への移行は提案のみ。勝手に実行しない）
+2. **派生値を `properties.json` に保存しない**。坪単価・ローン返済額・販売期間は都度計算する
+3. **建物と部屋の区別を崩さない**。別の部屋でも同じ値になる項目は建物側
+4. **検討状態（status）と募集状況（listingStatus）を統合しない**。別の軸
+5. **画面に説明文を足さない**。ラベル・列見出しの副題・構造で伝わるようにする
+6. **設備は自由記述にしない**。表記ゆれで比較できなくなるので `spec.js` のタグで持つ
+7. **アプリ側リポジトリに個人データを置かない**（物件名・価格・画像はすべて data リポジトリ）
+8. スキーマを変えるときは `js/migrate.js` に移行を書き、`CURRENT_SCHEMA` を上げる。
+   `store.js` の初期データは migrate 経由で作られるので追記は不要
+9. **入力のたびに再描画する箇所では `util.js` の `preserveFocus()` を使う**
+   （無いと1文字ごとにフォーカスが外れ、続けて入力できない）
+10. 条件分岐で子要素を差し替えるときは `replaceChildren` ではなく `util.js` の `mount()`
+    （`replaceChildren` は `null` を文字列 "null" として描画してしまう）
+11. 指標グリッドは列数を項目数の約数に固定する（`calcgrid-3/4/6`）。半端な空きマスが出るため
+
+## コミット前に必ず実行する
+
+```bash
+node tools/smoke.mjs          # 全モジュールの読み込みと整合性
+node tools/verify-loan.mjs    # ローン計算（返済表と突き合わせ）
+node tools/verify-lifeplan.mjs # 家計の初期値
+node tools/serve.mjs 8765     # 画面確認
+```
+
+`smoke.mjs` は必須。ブロック単位の書き換えで**隣の関数を巻き込む事故が3回**起きており、
+これを入れてからは公開前に検出できている。
+
+公開後に更新が届かないときは `sw.js` の `VERSION` と `util.js` の `APP_VERSION` を
+同じ値に上げる（GitHub Pages が `max-age=600` を返すため）。
+
+## どこを触ればいいか
+
+| やりたいこと | ファイル |
+|---|---|
+| 建物の入力項目を追加 | `js/spec.js` の `BUILDING_FORM` |
 | 設備の選択肢を追加 | `js/spec.js` の各配列 |
-| 配色・テーマ | `js/theme.js` と `app.css` の `:root` |
-| 公開後に更新が届かない | `sw.js` の `VERSION` と `util.js` の `APP_VERSION` を揃えて上げる |
-| 部屋の項目を追加 | `js/views.js` の `ROOM_FIELDS` |
-| ローン計算の仕様変更 | `js/loan.js`（変更後は `node tools/verify-loan.mjs` を実行） |
-| 販売活動の指標を追加 | `js/price.js` の `analyze()` |
-| グラフの見た目 | `js/chart.js` |
-| 新しい設定項目を足す | `js/migrate.js` に移行を書く。`store.js` の初期データは migrate 経由で作られるので追記不要 |
-| 家計の項目を変更 | `js/lifeplan.js` の `defaultLifeplan()`（変更後は `node tools/verify-lifeplan.mjs`） |
+| 部屋の入力項目を追加 | `js/views.js` の `ROOM_FIELDS` |
+| 比較表に行を追加 | `js/views.js` の `compareSections()` |
 | 分析の軸を追加 | `js/analysis.js` の `METRICS` / `ATTRS` / `GROUPINGS` |
 | 分析画面の構成 | `js/analytics-view.js` |
-| 比較対象の選択 | `js/views.js` の `selector()` |
-| 地図・ジオコーディング | `js/map.js` |
-| スキーマ変更と移行 | `js/migrate.js`（`CURRENT_SCHEMA` を上げる） |
-| 比較表に項目を追加 | `js/views.js` の `compareSections()` |
-| 自動計算のルール変更 | `js/util.js` の `derive()` |
-| 画像カテゴリを増やす | `js/util.js` の `CATEGORIES` |
-| 検討ステータスを増やす | `js/util.js` の `STATUSES` |
-| 画質プリセットの変更 | `js/image.js` の `QUALITY_PRESETS` |
-| まとめてコミットする処理 | `js/github.js` の `commitFiles()` |
+| 家計の項目・計算 | `js/lifeplan.js`（変更後は `verify-lifeplan.mjs`） |
+| ライフプランの画面 | `js/lifeplan-view.js`（サブタブ plan / burden / graph） |
+| ローン計算 | `js/loan.js`（変更後は必ず `verify-loan.mjs`） |
+| 販売活動の指標 | `js/price.js` の `analyze()` |
+| グラフの描画 | `js/chart.js`（ステップ・散布・ヒストグラム・折れ線・積み上げ棒） |
+| 地図・住所検索 | `js/map.js`（国土地理院。APIキー不要） |
+| 配色・テーマ | `js/theme.js` と `app.css` の `:root` |
+| スキーマ変更 | `js/migrate.js` |
+
+## いまのデータ
+
+建物4棟・部屋6室。**住所・価格推移・写真がほぼ未入力**なので、
+地図とエリア分析、相場推移はまだ動かない。「新規物件」という空の建物が1件残っている。
+
+## 次にやるとよいこと
+
+1. 各建物の住所を入れる → 地図とエリア別相場が有効に
+2. 各部屋の登録日と価格推移を入れる → 販売期間・値下げ分析・相場推移が有効に
+3. 額面年収を実際の値に直す（いまは手取りからの概算が入っている）
+4. 過去の募集情報を一括取り込みするスクリプト（形式が決まれば作る）
+
+### 見送っている案
+
+- ネイティブ iOS アプリ化（Apple Developer 登録済み。仕様が固まってからの想定）
+- 生涯コスト比較（購入価格＋35年のランニング＋利息の総額）
+- 想定利回り、売り急ぎ度スコア、階数プレミアムの分析
+- 昇給率・物価上昇をグラフの前提に加える
