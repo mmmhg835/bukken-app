@@ -4,14 +4,15 @@ import { el, fmt, mount, toast, uid, preserveFocus } from './util.js';
 import { kv, select, toggle, segmented } from './ui.js';
 import {
   calcPlan, housingCost, affordablePrice, waterfall,
-  CATEGORIES, isOn, categoryOf, incomePatterns,
+  CATEGORIES, isOn, categoryOf, incomePatterns, project, milestones,
 } from './lifeplan.js';
+import { lineChart, stackedBarChart, chartLegend, SERIES_COLORS } from './chart.js';
 
 import { derive } from './util.js';
 
 const ui = { afterLoans: false, openGroups: null };
 
-const SUBTABS = [['plan', 'ライフプラン'], ['burden', '返済負担比率']];
+const SUBTABS = [['plan', 'ライフプラン'], ['burden', '返済負担比率'], ['graph', 'グラフ']];
 
 /**
  * @param {string} sub 'plan' | 'burden'。物件と収入の前提を共有したまま切り替える
@@ -30,9 +31,9 @@ export function renderLifeplan(root, rerender, sub = 'plan') {
   mount(root,
     subTabs(view),
     propertyPicker(plan, room, building, rerender, view),
-    view === 'burden'
-      ? burdenView(plan, room, res, mark, rerender)
-      : planView(plan, room, building, res, mark, rerender),
+    view === 'burden' ? burdenView(plan, room, res, mark, rerender)
+      : view === 'graph' ? graphView(plan, room, building, res)
+        : planView(plan, room, building, res, mark, rerender),
   );
 }
 
@@ -193,6 +194,97 @@ function waterfallSection(res, room, building) {
 }
 
 /* =========================================================
+   グラフ
+   ========================================================= */
+const COLOR = {
+  income: SERIES_COLORS[0],
+  expense: SERIES_COLORS[3],
+  assets: SERIES_COLORS[1],
+  saving: '#0f766e',
+  housing: '#2563eb',
+  car: '#7c3aed',
+  fixed: '#0ea5e9',
+  variable: '#94a3b8',
+  left: '#d97706',
+};
+
+function graphView(plan, room, building, res) {
+  const years = Math.max(40, (room ? { ...store.loanTerms, ...(room.loan || {}) } : store.loanTerms).years + 5);
+  const rows = project(plan, room, building, store.loanTerms, years);
+  const marks = milestones(plan, room, store.loanTerms)
+    .filter((m) => m.year <= years)
+    .map((m) => ({ x: m.year, label: m.label }));
+
+  return el('div', {},
+    flowSection(rows, marks),
+    assetSection(rows, marks),
+    breakdownSection(res),
+  );
+}
+
+/** 年ごとの収入と支出。支出が段階的に下がる様子を見る */
+function flowSection(rows, marks) {
+  const series = [
+    { name: '収入', color: COLOR.income, points: rows.map((r) => ({ x: r.year, y: r.income })) },
+    { name: '支出', color: COLOR.expense, points: rows.map((r) => ({ x: r.year, y: r.expense })) },
+  ];
+  return el('div', { class: 'section' },
+    el('h3', {}, '収入と支出の推移'),
+    el('div', { class: 'panel' }, el('div', { class: 'panel-chart' },
+      el('div', { class: 'chartwrap' },
+        lineChart(series, { xLabel: '経過年数', yLabel: '年額（万円）', xUnit: '年', marks, height: 300 })),
+      chartLegend(series))),
+  );
+}
+
+/** 積み上がる資産。節目のあとで傾きが変わる */
+function assetSection(rows, marks) {
+  const series = [
+    { name: '累積資産', color: COLOR.assets, fill: true, points: rows.map((r) => ({ x: r.year, y: r.assets })) },
+  ];
+  const at = (y) => rows.find((r) => r.year === y);
+  return el('div', { class: 'section' },
+    el('h3', {}, '資産の積み上がり'),
+    el('div', { class: 'panel' }, el('div', { class: 'panel-chart' },
+      el('div', { class: 'chartwrap' },
+        lineChart(series, { xLabel: '経過年数', yLabel: '累積（万円）', xUnit: '年', marks, height: 280 })))),
+    el('div', { class: 'calcgrid calcgrid-4', style: 'margin-top:12px' },
+      ...[5, 10, 20, 30].map((y) => at(y)
+        ? kv(`${y}年後`, `${fmt.man1(Math.round(at(y).assets))}万円`, `年間 ${fmt.n(at(y).saving + at(y).balance, 0)}万円`)
+        : kv(`${y}年後`, '—')),
+    ),
+  );
+}
+
+/** いま入力している金額が、収入と支出でどう釣り合っているか */
+function breakdownSection(res) {
+  const income = store.lifeplan.income.filter(isOn)
+    .map((i, k) => ({ label: i.name, value: Number(i.amount) || 0, color: SERIES_COLORS[k % SERIES_COLORS.length] }));
+  if (store.lifeplan.bonus?.include) {
+    income.push({ label: '賞与', value: (store.lifeplan.bonus.annual || 0) / 12, color: SERIES_COLORS[4] });
+  }
+
+  const expense = [
+    { label: '資産形成', value: res.saving, color: COLOR.saving },
+    { label: '住居費', value: res.housingTotal, color: COLOR.housing },
+    { label: '車代', value: res.carTotal, color: COLOR.car },
+    { label: 'その他固定費', value: res.fixed, color: COLOR.fixed },
+    { label: '変動費', value: res.variable, color: COLOR.variable },
+    { label: '残り', value: Math.max(0, res.balance), color: COLOR.left },
+  ];
+
+  return el('div', { class: 'section' },
+    el('h3', {}, '毎月の収入と支出'),
+    el('div', { class: 'panel' }, el('div', { class: 'panel-chart' },
+      el('div', { class: 'chartwrap' },
+        stackedBarChart([
+          { name: '収入', parts: income },
+          { name: '支出', parts: expense },
+        ], { height: 340 })))),
+  );
+}
+
+/* =========================================================
    返済負担比率
    ========================================================= */
 function burdenView(plan, room, res, mark, rerender) {
@@ -343,9 +435,22 @@ function itemRow(group, item, mark, rerender, locked) {
       el('option', { value: k, selected: k === categoryOf(item) }, c.label))),
     el('button', {
       class: 'chipbtn' + (item.temporary ? ' is-on' : ''),
-      title: '期限付きの支出（完済すると無くなる）',
-      onclick: () => { item.temporary = !item.temporary; mark(); },
+      onclick: () => {
+        item.temporary = !item.temporary;
+        if (item.temporary) item.remainingYears ??= 5;
+        mark();
+      },
     }, '期限付'),
+    item.temporary
+      ? el('span', { class: 'remain' },
+        'あと',
+        el('input', {
+          type: 'number', step: '1', min: '0', inputmode: 'numeric',
+          value: item.remainingYears ?? '', 'data-fkey': `rem-${item.id}`,
+          oninput: (e) => { item.remainingYears = e.target.value === '' ? null : Number(e.target.value); mark(); },
+        }),
+        '年')
+      : null,
     el('button', {
       class: 'chipbtn is-del',
       onclick: () => { group.items.splice(group.items.indexOf(item), 1); mark(); },

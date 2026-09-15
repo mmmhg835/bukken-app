@@ -273,3 +273,138 @@ function trim(v) {
   if (a >= 10) return v.toFixed(1);
   return v.toFixed(2);
 }
+
+
+/* =========================================================
+   折れ線（横軸が数値）
+   ========================================================= */
+
+/**
+ * @param {Array} series [{ name, color, points: [{x, y}] }]
+ * @param {object} opts { xLabel, yLabel, height, marks: [{x, label}] }
+ */
+export function lineChart(series, opts = {}) {
+  const { xLabel = '', yLabel = '', height = 300, marks = [], xUnit = '' } = opts;
+  const pts = series.flatMap((s) => s.points);
+  if (!pts.length) return n('svg', { viewBox: '0 0 10 10' });
+
+  const W = 780, H = height;
+  const pad = { t: 16, r: 16, b: 44, l: 76 };
+  const iw = W - pad.l - pad.r, ih = H - pad.t - pad.b;
+
+  const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs);
+  let y0 = Math.min(0, ...ys), y1 = Math.max(...ys);
+  if (y0 === y1) y1 = y0 + 1;
+  y1 += (y1 - y0) * 0.08;
+
+  const X = (v) => pad.l + ((v - x0) / (x1 - x0 || 1)) * iw;
+  const Y = (v) => pad.t + ih - ((v - y0) / (y1 - y0)) * ih;
+
+  const svg = n('svg', { viewBox: `0 0 ${W} ${H}`, class: 'chart', preserveAspectRatio: 'xMidYMid meet' });
+
+  const yStep = niceStep(y1 - y0, 5);
+  for (let v = Math.ceil(y0 / yStep) * yStep; v <= y1; v += yStep) {
+    svg.append(
+      n('line', { x1: pad.l, x2: W - pad.r, y1: Y(v), y2: Y(v), class: 'chart-grid' }),
+      n('text', { x: pad.l - 8, y: Y(v) + 4, class: 'chart-lab', 'text-anchor': 'end' }, trim(v)),
+    );
+  }
+  const xStep = niceStep(x1 - x0, 8);
+  for (let v = Math.ceil(x0 / xStep) * xStep; v <= x1; v += xStep) {
+    svg.append(n('text', { x: X(v), y: H - 24, class: 'chart-lab', 'text-anchor': 'middle' }, `${trim(v)}${xUnit}`));
+  }
+
+  // 支出が変わる節目に縦線を引く
+  for (const mk of marks) {
+    if (mk.x < x0 || mk.x > x1) continue;
+    svg.append(
+      n('line', { x1: X(mk.x), x2: X(mk.x), y1: pad.t, y2: pad.t + ih,
+        stroke: 'var(--text-3)', 'stroke-width': 1, 'stroke-dasharray': '3 4', opacity: '.7' }),
+      n('text', { x: X(mk.x) + 4, y: pad.t + 12, class: 'chart-lab', 'text-anchor': 'start' }, mk.label),
+    );
+  }
+
+  svg.append(
+    n('line', { x1: pad.l, x2: W - pad.r, y1: Y(Math.max(y0, 0)), y2: Y(Math.max(y0, 0)), class: 'chart-axis' }),
+    n('text', { x: pad.l + iw / 2, y: H - 6, class: 'chart-lab', 'text-anchor': 'middle' }, xLabel),
+    n('text', { x: 14, y: pad.t + ih / 2, class: 'chart-lab', 'text-anchor': 'middle',
+      transform: `rotate(-90 14 ${pad.t + ih / 2})` }, yLabel),
+  );
+
+  series.forEach((s, si) => {
+    const color = s.color || SERIES_COLORS[si % SERIES_COLORS.length];
+    const d = s.points.map((p, i) => `${i ? 'L' : 'M'} ${X(p.x)} ${Y(p.y)}`).join(' ');
+    if (s.fill) {
+      svg.append(n('path', {
+        d: `${d} L ${X(s.points[s.points.length - 1].x)} ${Y(Math.max(y0, 0))} L ${X(s.points[0].x)} ${Y(Math.max(y0, 0))} Z`,
+        fill: color, opacity: '.12',
+      }));
+    }
+    svg.append(n('path', { d, fill: 'none', stroke: color, 'stroke-width': 2.4, 'stroke-linejoin': 'round' }));
+  });
+
+  return svg;
+}
+
+/* =========================================================
+   積み上げ棒
+   ========================================================= */
+
+/**
+ * @param {Array} bars [{ name, parts: [{ label, value, color }] }]
+ */
+export function stackedBarChart(bars, opts = {}) {
+  const { height = 320, unit = '万円' } = opts;
+  const totals = bars.map((b) => b.parts.reduce((s, p) => s + Math.max(0, p.value), 0));
+  const max = Math.max(...totals, 1);
+
+  const W = 780, H = height;
+  const pad = { t: 16, r: 16, b: 46, l: 66 };
+  const iw = W - pad.l - pad.r, ih = H - pad.t - pad.b;
+  const Y = (v) => pad.t + ih - (v / max) * ih;
+
+  const svg = n('svg', { viewBox: `0 0 ${W} ${H}`, class: 'chart', preserveAspectRatio: 'xMidYMid meet' });
+
+  const step = niceStep(max, 5);
+  for (let v = 0; v <= max; v += step) {
+    svg.append(
+      n('line', { x1: pad.l, x2: W - pad.r, y1: Y(v), y2: Y(v), class: 'chart-grid' }),
+      n('text', { x: pad.l - 8, y: Y(v) + 4, class: 'chart-lab', 'text-anchor': 'end' }, trim(v)),
+    );
+  }
+
+  const slot = iw / bars.length;
+  const bw = Math.min(140, slot * 0.5);
+  bars.forEach((bar, i) => {
+    const cx = pad.l + slot * (i + 0.5);
+    const x = cx - bw / 2;
+    let acc = 0;
+    bar.parts.filter((p) => p.value > 0).forEach((p, j) => {
+      const h = (p.value / max) * ih;
+      const rect = n('rect', {
+        x, y: Y(acc + p.value), width: bw, height: Math.max(1, h),
+        fill: p.color || SERIES_COLORS[j % SERIES_COLORS.length], rx: 2,
+      });
+      rect.append(n('title', {}, `${p.label}　${trim(p.value)}${unit}`));
+      svg.append(rect);
+      // 帯が十分に高いときだけラベルを載せる
+      if (h > 22) {
+        svg.append(n('text', {
+          x: cx, y: Y(acc + p.value / 2) + 4, 'text-anchor': 'middle',
+          fill: '#fff', 'font-size': 11, 'font-weight': 700, 'font-family': 'inherit',
+        }, `${p.label} ${trim(p.value)}`));
+      }
+      acc += p.value;
+    });
+    svg.append(
+      n('text', { x: cx, y: Y(acc) - 8, 'text-anchor': 'middle', class: 'chart-lab' },
+        `${trim(acc)}${unit}`),
+      n('text', { x: cx, y: H - 22, 'text-anchor': 'middle', class: 'chart-lab',
+        'font-size': 12.5 }, bar.name),
+    );
+  });
+
+  svg.append(n('line', { x1: pad.l, x2: W - pad.r, y1: pad.t + ih, y2: pad.t + ih, class: 'chart-axis' }));
+  return svg;
+}

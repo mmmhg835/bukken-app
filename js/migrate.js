@@ -5,7 +5,7 @@ import { DEFAULT_TERMS } from './loan.js';
 import { buildingDefaults, SPEC_GROUPS, BUILDING_EQUIPMENT } from './spec.js';
 import { defaultLifeplan, categoryOf } from './lifeplan.js';
 
-export const CURRENT_SCHEMA = 12;
+export const CURRENT_SCHEMA = 13;
 
 export function migrate(data) {
   let d = structuredClone(data);
@@ -20,6 +20,7 @@ export function migrate(data) {
   if (d.schemaVersion < 10) d = v9ToV10(d);
   if (d.schemaVersion < 11) d = v10ToV11(d);
   if (d.schemaVersion < 12) d = v11ToV12(d);
+  if (d.schemaVersion < 13) d = v12ToV13(d);
   d.settings ||= {};
   d.settings.loan = { ...DEFAULT_TERMS, ...(d.settings.loan || {}) };
   d.settings.places ||= [];   // 職場・駅など、地図上の参照地点
@@ -179,6 +180,18 @@ function v11ToV12(d) {
     person.net = monthly[index] ? Math.round((Number(monthly[index].amount) || 0) * 12) : fallback[key];
   }
   d.schemaVersion = 12;
+  return d;
+}
+
+/** v13: 期限付きの支出に残り年数を持たせ、将来の推移を描けるようにする */
+function v12ToV13(d) {
+  const guess = { 車ローン: 5, 奨学金: 10 };
+  for (const g of d.settings?.lifeplan?.groups || []) {
+    for (const it of g.items || []) {
+      if (it.temporary && it.remainingYears == null) it.remainingYears = guess[it.name] ?? null;
+    }
+  }
+  d.schemaVersion = 13;
   return d;
 }
 

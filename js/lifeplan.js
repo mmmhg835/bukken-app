@@ -34,7 +34,7 @@ export function defaultLifeplan() {
       ] },
       { id: 'g_car', name: '車関連', kind: 'car', items: [
         { id: 'c1', name: '駐車場', amount: 2.5, category: 'fixed' },
-        { id: 'c2', name: '車ローン', amount: 8.0, category: 'fixed', temporary: true, note: '5年ローン。完済後は不要' },
+        { id: 'c2', name: '車ローン', amount: 8.0, category: 'fixed', temporary: true, remainingYears: 5 },
         { id: 'c3', name: '維持費', amount: 3.0, category: 'fixed', note: '保険・ガソリン・車検など' },
       ] },
       { id: 'g_husband', name: '夫の生活費', kind: 'expense', items: [
@@ -46,7 +46,7 @@ export function defaultLifeplan() {
         { id: 'h_phone', name: '携帯（端末代込）', amount: 1.1, category: 'fixed' },
         { id: 'h_gym', name: 'ジム', amount: 1.1, category: 'fixed' },
         { id: 'h_hair', name: '美容院', amount: 1.0, category: 'variable' },
-        { id: 'h_loan', name: '奨学金', amount: 2.0, category: 'fixed', temporary: true },
+        { id: 'h_loan', name: '奨学金', amount: 2.0, category: 'fixed', temporary: true, remainingYears: 10 },
         { id: 'h_ins', name: '積立型生命保険', amount: 2.5, category: 'saving' },
         { id: 'h_fur', name: '家具家電積立', amount: 2.0, category: 'saving' },
         { id: 'h_trip', name: '旅行積立', amount: 3.0, category: 'saving' },
@@ -251,4 +251,68 @@ export function incomePatterns(plan, room, res) {
       net: { annual: net, loan: rate(yearlyLoan, net), housing: rate(yearlyHousing, net), multiple: times(net) },
     };
   });
+}
+
+
+/**
+ * 将来の収支を年単位で伸ばす。
+ * 期限付きの支出は残り年数で消え、住宅ローンは返済年数で終わる。
+ * 「いつ楽になるのか」を金額で見えるようにするのが目的。
+ * @returns {Array<{year, income, expense, balance, saving, assets}>} すべて年額（万円）
+ */
+export function project(plan, room, building, terms, years = 40) {
+  const applied = { ...terms, ...(room?.loan || {}) };
+  const housing = room ? housingCost(room, building, terms) : null;
+  const loanMonthly = housing ? housing.items[0].amount : 0;
+  const runningMonthly = housing ? housing.items[1].amount + housing.items[2].amount : 0;
+  const manualHousing = sum((plan.groups.find((g) => g.kind === 'housing')?.items || []).filter(isOn));
+
+  const items = plan.groups
+    .filter((g) => g.kind !== 'housing')
+    .flatMap((g) => g.items.filter(isOn));
+
+  const incomeMonthly = sum(plan.income.filter(isOn))
+    + (plan.bonus?.include ? (plan.bonus.annual || 0) / 12 : 0);
+
+  const rows = [];
+  let assets = 0;
+  for (let year = 1; year <= years; year++) {
+    const alive = items.filter((it) =>
+      !(it.temporary && Number(it.remainingYears) > 0 && year > Number(it.remainingYears)));
+    const housingMonthly = housing
+      ? (year <= applied.years ? loanMonthly : 0) + runningMonthly
+      : manualHousing;
+
+    const expenseMonthly = sum(alive) + housingMonthly;
+    const savingMonthly = sum(alive.filter((it) => categoryOf(it) === 'saving'));
+    const balanceMonthly = incomeMonthly - expenseMonthly;
+    // 先取りの積立と月次の残りが、そのまま資産として積み上がる
+    assets += (savingMonthly + balanceMonthly) * 12;
+
+    rows.push({
+      year,
+      income: incomeMonthly * 12,
+      expense: expenseMonthly * 12,
+      balance: balanceMonthly * 12,
+      saving: savingMonthly * 12,
+      housing: housingMonthly * 12,
+      assets,
+    });
+  }
+  return rows;
+}
+
+/** 収支が変わる節目（支出が減る年）を拾う。グラフの注記に使う */
+export function milestones(plan, room, terms) {
+  const applied = { ...terms, ...(room?.loan || {}) };
+  const marks = [];
+  for (const g of plan.groups) {
+    for (const it of g.items) {
+      if (isOn(it) && it.temporary && Number(it.remainingYears) > 0) {
+        marks.push({ year: Number(it.remainingYears), label: `${it.name} 完済` });
+      }
+    }
+  }
+  if (room) marks.push({ year: applied.years, label: '住宅ローン完済' });
+  return marks.sort((a, b) => a.year - b.year);
 }
