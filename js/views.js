@@ -736,25 +736,24 @@ function picker(all) {
   return el('div', { class: 'card picker' }, head, el('div', { class: 'picker-body' }, groups));
 }
 
+/**
+ * 選択の1行。3行のカードを敷き詰めると、数字が縦に揃わず探すのに目が滑る。
+ * 1行に固定幅の列で並べて、価格・面積・坪単価が列として読めるようにする。
+ */
 function roomTile(r, b) {
   const on = selection.has(r.id);
   const c = derive(r, b, store.loanTerms);
   const closed = CLOSED_STATUS.includes(r.listingStatus);
 
   return el('button', {
-    class: 'rtile' + (on ? ' is-on' : ''),
+    class: 'rtile' + (on ? ' is-on' : '') + (closed ? ' is-closed' : ''),
     onclick: () => { if (on) selection.delete(r.id); else selection.add(r.id); rerender(); },
   },
     el('span', { class: 'rtile-check' }, on ? '✓' : ''),
-    el('span', { class: 'rtile-body' },
-      el('span', { class: 'rtile-top' },
-        el('b', {}, r.label || '(部屋)'),
-        closed ? el('span', { class: 'badge badge-muted' }, r.listingStatus) : null,
-      ),
-      el('span', { class: 'rtile-price' }, `${fmt.man1(r.price)}万円`),
-      el('span', { class: 'rtile-sub' },
-        `${fmt.sqm(r.area)}・${r.layout || '—'}　坪${fmt.n(c.tsuboPrice, 0)}万`),
-    ),
+    el('span', { class: 'rtile-name' }, r.label || '(部屋)'),
+    el('span', { class: 'rtile-price' }, `${fmt.man1(r.price)}万`),
+    el('span', { class: 'rtile-area' }, r.area != null ? `${r.area}㎡` : '—'),
+    el('span', { class: 'rtile-tsubo' }, c.tsuboPrice != null ? `坪${fmt.n(c.tsuboPrice, 0)}` : '—'),
   );
 }
 
