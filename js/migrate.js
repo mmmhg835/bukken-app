@@ -6,7 +6,7 @@ import { buildingDefaults, SPEC_GROUPS, BUILDING_EQUIPMENT } from './spec.js';
 import { defaultLifeplan, categoryOf } from './lifeplan.js';
 import { DEFAULT_SALE } from './sale.js';
 
-export const CURRENT_SCHEMA = 17;
+export const CURRENT_SCHEMA = 18;
 
 export function migrate(data) {
   let d = structuredClone(data);
@@ -26,6 +26,7 @@ export function migrate(data) {
   if (d.schemaVersion < 15) d = v14ToV15(d);
   if (d.schemaVersion < 16) d = v15ToV16(d);
   if (d.schemaVersion < 17) d = v16ToV17(d);
+  if (d.schemaVersion < 18) d = v17ToV18(d);
   d.settings ||= {};
   d.settings.loan = { ...DEFAULT_TERMS, ...(d.settings.loan || {}) };
   d.settings.places ||= [];   // 職場・駅など、地図上の参照地点
@@ -268,6 +269,24 @@ function v16ToV17(d) {
   d.settings.sale = { ...DEFAULT_SALE, ...(d.settings.sale || {}) };
   for (const r of d.rooms || []) r.salePrice ??= null;   // null なら現在価格を使う
   d.schemaVersion = 17;
+  return d;
+}
+
+/**
+ * v18: 内見と相場坪単価を追加。
+ * 相場坪単価は掲載サイトの外（マンションレビュー・ISOGE 等）から持ってくる値で、
+ * 階や向きの補正が入って住戸ごとに変わるため、建物ではなく部屋に持たせる。
+ * 内見の記録も、同じ建物でも住戸ごとに結果が違うので部屋側。
+ */
+function v17ToV18(d) {
+  for (const r of d.rooms || []) {
+    r.marketTsubo ??= null;    // 相場の坪単価（万円/坪）
+    r.marketSource ??= '';     // どこの相場か（マンションレビュー・ISOGE など）
+    r.viewingAt ??= null;      // 内見した日
+    r.viewingChecks ??= {};    // 項目名 → 'ok' | 'bad'
+    r.viewingNote ??= '';      // 内見の所感
+  }
+  d.schemaVersion = 18;
   return d;
 }
 

@@ -35,7 +35,7 @@ Object.defineProperty(globalThis, 'location', {
 const FILES = [
   'util', 'loan', 'spec', 'price', 'chart', 'idb', 'image', 'github', 'migrate', 'store',
   'ui', 'gallery', 'map', 'pairing', 'theme', 'analysis', 'lifeplan', 'sales', 'parse', 'sale',
-  'analytics-view', 'lifeplan-view', 'import-view', 'sale-view', 'views', 'main',
+  'analytics-view', 'lifeplan-view', 'import-view', 'sale-view', 'viewing-view', 'views', 'main',
 ];
 
 let bad = 0;
@@ -285,6 +285,9 @@ const screens = [
   ['返済負担比率（指値あり）', lp('burden')],
   ['グラフ（指値あり）', lp('graph')],
   ['売却（指値あり）', () => { lp('sale')(); room.offerPrice = null; }],
+  ['内見チェック', () => mods['viewing-view'].renderViewing(stubEl(), () => {}, 'check')],
+  ['内見の記録', () => mods['viewing-view'].renderViewing(stubEl(), () => {}, 'note')],
+  ['指値', () => mods['viewing-view'].renderViewing(stubEl(), () => {}, 'offer')],
 ];
 
 mods.views.bindRouter(() => {}, () => {});

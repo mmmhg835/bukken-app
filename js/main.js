@@ -8,6 +8,7 @@ import {
 import { initLightbox } from './gallery.js';
 import { renderAnalysis } from './analytics-view.js';
 import { renderLifeplan } from './lifeplan-view.js';
+import { renderViewing } from './viewing-view.js';
 import { renderImport } from './import-view.js';
 import { parsePairing } from './pairing.js';
 import { applyTheme, watchSystemTheme, themeButton } from './theme.js';
@@ -17,7 +18,7 @@ const main = $('#main');
 
 function parseHash() {
   const [view = 'list', id = null] = location.hash.replace(/^#\/?/, '').split('/');
-  const known = ['list', 'b', 'r', 'import', 'compare', 'analysis', 'plan', 'map', 'settings', 'setup'];
+  const known = ['list', 'b', 'r', 'import', 'compare', 'analysis', 'plan', 'viewing', 'map', 'settings', 'setup'];
   return { view: known.includes(view) ? view : 'list', id };
 }
 
@@ -46,6 +47,7 @@ function render() {
   else if (route.view === 'compare') renderCompare(main);
   else if (route.view === 'analysis') renderAnalysis(main, render);
   else if (route.view === 'plan') renderLifeplan(main, render, route.id || 'plan');
+  else if (route.view === 'viewing') renderViewing(main, render, route.id || 'check');
   else if (route.view === 'map') renderMap(main);
   else if (route.view === 'settings') renderSettings(main);
   else if (route.view === 'b' && route.id) renderBuilding(main, route.id);

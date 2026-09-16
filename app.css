@@ -616,3 +616,19 @@ table.cmp tr.is-current td.lab{background:var(--accent-soft)}
 .hblock-label{display:flex;align-items:baseline;gap:10px;margin:0 0 6px;font-size:13px;font-weight:800}
 .hblock-label .amt{font-weight:700;color:var(--text-2);font-size:12.5px}
 .hblock.is-offer .hblock-label{color:var(--accent)}
+
+/* ===== 内見 ===== */
+/* 現地では押す回数を減らしたいので、1つの札を押すたびに 未確認→○→△ と回す */
+.vchklist{display:flex;flex-wrap:wrap;gap:8px}
+.vchk{display:inline-flex;align-items:center;gap:7px;cursor:pointer;
+  background:var(--surface);border:1px solid var(--line-2);border-radius:999px;
+  padding:8px 14px;font-size:13.5px;font-weight:600;color:var(--text);text-align:left}
+.vchk:hover{background:var(--surface-2)}
+.vchk-mark{width:14px;text-align:center;font-weight:800;color:var(--text-3)}
+.vchk.is-ok{border-color:var(--good);color:var(--good)}
+.vchk.is-ok .vchk-mark{color:var(--good)}
+.vchk.is-bad{border-color:var(--warn);color:var(--warn)}
+.vchk.is-bad .vchk-mark{color:var(--warn)}
+/* 表の中の入力欄は、数字の列と同じ右寄せで並べる */
+.offertbl td.inputcell{padding:5px 8px}
+.offertbl td.inputcell input{width:92px;text-align:right}
