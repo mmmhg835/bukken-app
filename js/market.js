@@ -3,6 +3,7 @@
 // 手持ちの部屋（rooms）は検討中の物件そのもの、こちらは同じ建物で過去に売りに出た
 // 別の部屋。過去いくらで出ていたか・いくら値下げして・何か月で終わったかを見るための、
 // 建物側のデータとして持つ。
+import { walkMinutesOf } from './analysis.js';
 import { TSUBO_SQM } from './util.js';
 
 /** 「2026-08」を 2026.58 のような小数年にする。並べ替えと横軸に使う */
@@ -234,6 +235,25 @@ export const MARKET_GROUPS = {
     const y = ymToNum(x.listedYM);
     return y == null ? '不明' : `${Math.floor(y)}年`;
   } },
+  // 順序のある区分。並び順が決まっているので、色も濃さが順に変わるものを当てる
+  ageBand: {
+    label: '築年数', order: ['築5年以内', '築10年以内', '築20年以内', '築30年以内', '築30年超'],
+    get: (x, b) => {
+      const built = ymToNum(String(b?.builtYM || '').replace('/', '-'));
+      if (built == null) return '不明';
+      const age = new Date().getFullYear() + new Date().getMonth() / 12 - built;
+      return age <= 5 ? '築5年以内' : age <= 10 ? '築10年以内' : age <= 20 ? '築20年以内'
+        : age <= 30 ? '築30年以内' : '築30年超';
+    },
+  },
+  walkBand: {
+    label: '駅徒歩', order: ['5分以内', '10分以内', '15分以内', '15分超'],
+    get: (x, b) => {
+      const w = walkMinutesOf(b);
+      if (w == null) return '不明';
+      return w <= 5 ? '5分以内' : w <= 10 ? '10分以内' : w <= 15 ? '15分以内' : '15分超';
+    },
+  },
 };
 
 /**

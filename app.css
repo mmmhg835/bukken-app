@@ -4,6 +4,9 @@
   --text:#14181f; --text-2:#5b6472; --text-3:#8a93a2;
   --accent:#1d4ed8; --accent-soft:#e8edfd;
   --good:#0f766e; --warn:#b45309; --bad:#b91c1c;
+  /* 順序のある区分（築年数・駅徒歩）の色。明度が順に下がる並びにしてあるので、
+     色の見え方が違う人でも濃さで順番が読める */
+  --band-1:#e2982b; --band-2:#d4762a; --band-3:#b85220; --band-4:#93341f; --band-5:#6b2118;
   --shadow:0 1px 2px rgba(16,24,40,.06),0 4px 14px rgba(16,24,40,.06);
   --r:14px; --r-sm:9px;
   --safe-t:env(safe-area-inset-top,0px); --safe-b:env(safe-area-inset-bottom,0px);
@@ -15,6 +18,7 @@
     --text:#e6edf3; --text-2:#9aa6b4; --text-3:#6e7b8c;
     --accent:#6f9bff; --accent-soft:#182543;
     --good:#2dd4bf; --warn:#fbbf24; --bad:#f87171;
+    --band-1:#7a3d18; --band-2:#a35520; --band-3:#c7762a; --band-4:#e09a45; --band-5:#f5c47e;
     --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 18px rgba(0,0,0,.35);
   }
 }
@@ -24,6 +28,7 @@
     --text:#e6edf3; --text-2:#9aa6b4; --text-3:#6e7b8c;
     --accent:#6f9bff; --accent-soft:#182543;
     --good:#2dd4bf; --warn:#fbbf24; --bad:#f87171;
+    --band-1:#7a3d18; --band-2:#a35520; --band-3:#c7762a; --band-4:#e09a45; --band-5:#f5c47e;
     --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 18px rgba(0,0,0,.35);
 }
 *{box-sizing:border-box}
@@ -375,6 +380,11 @@ table.cmp tr:hover td.lab{background:var(--surface-2)}
 .chart .dot.is-dim{opacity:.12}
 /* 点そのものは小さくするので、押せる範囲は透明な円で別に確保する */
 .chart .dothit{cursor:pointer}
+/* 散布図の点の下に出す物件名。重なるものは出さないので、地の色で十分読める */
+.chart-name{font-size:9.5px;fill:var(--text-2);pointer-events:none}
+.chart-foot{display:flex;gap:16px;flex-wrap:wrap;align-items:baseline;
+  padding:8px 4px 0;font-size:12px;color:var(--text-2)}
+.chart-foot b{color:var(--text);font-weight:600}
 /* 相場の絞り込みにある文字入力。ドロップダウンと高さをそろえる */
 .ftext{min-width:132px}
 /* 「◯年 〜 ◯年」を1行に収める */

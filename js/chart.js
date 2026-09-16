@@ -8,6 +8,13 @@ export const SERIES_COLORS = ['#3186e9', '#cf7b26', '#00a089', '#ba3661', '#864e
 // 色が尽きた系列をまとめる中立色。個々の識別は点を押したときの吹き出しが担う
 export const SERIES_MUTED = '#7d7a72';
 
+/**
+ * 順序のある区分（築年数・駅徒歩）の色。
+ * 色相ではなく明度が順に変わるので、色の見え方が違う人でも濃さで順番が読める。
+ * 実際の色は app.css 側（ライト・ダークで向きを変えている）。
+ */
+export const BAND_COLORS = [1, 2, 3, 4, 5].map((i) => `var(--band-${i})`);
+
 function n(tag, attrs = {}, ...kids) {
   const e = document.createElementNS(NS, tag);
   for (const [k, v] of Object.entries(attrs)) {
@@ -156,7 +163,7 @@ export function chartLegend(series, chart = null) {
  * @returns {SVGElement} focusSeries(name) で系列を絞れる
  */
 export function scatterChart(series, opts = {}) {
-  const { xLabel = '', yLabel = '', fit = null, height = 320, xTick = null } = opts;
+  const { xLabel = '', yLabel = '', fit = null, height = 320, xTick = null, labels = false } = opts;
   const pts = series.flatMap((s) => s.points);
   if (!pts.length) return n('svg', { viewBox: '0 0 10 10' });
 
@@ -233,6 +240,29 @@ export function scatterChart(series, opts = {}) {
       dots.push({ el: c, name: s.name, x: X(p.x), y: Y(p.y), p, text: p.label || s.name });
     }
   });
+  // 点の下に物件名を出す。重なったものは出さない（読めない字を重ねても意味がない）。
+  // 自分自身とは当たり判定しないよう、置いた箱だけを相手にする。
+  if (labels) {
+    const placed = [];
+    const overlap = (a, b) =>
+      a.x0 < b.x1 && a.x1 > b.x0 && a.y0 < b.y1 && a.y1 > b.y0;
+    const layer = n('g', {});
+    // 上にあるものから置く。同じ場所を争ったら、値の大きい方を残す
+    for (const d of [...dots].sort((a, b) => a.y - b.y)) {
+      const text = d.text;
+      if (!text) continue;
+      const half = text.length * 4.6 / 2 + 2;         // 9.5px の日本語のおおよその幅
+      const box = { x0: d.x - half, x1: d.x + half, y0: d.y + R + 1, y1: d.y + R + 12 };
+      if (box.x0 < 2 || box.x1 > W - 2) continue;      // 枠からはみ出すものは出さない
+      if (placed.some((q) => overlap(box, q))) continue;
+      placed.push(box);
+      layer.append(n('text', {
+        x: d.x, y: d.y + R + 10, class: 'chart-name', 'text-anchor': 'middle',
+      }, text));
+    }
+    svg.append(layer);
+  }
+
   // 当たり判定は点より大きく取る。点の上に重ねるので、描画はすべて済ませてから
   const hitR = Math.max(R + 5, 10);
 

@@ -6,7 +6,7 @@
 import { store } from './store.js';
 import { el, mount, fmt, derive, STATUSES } from './util.js';
 import { select, segmented, toggle, controlRow } from './ui.js';
-import { scatterChart, chartLegend, histogramChart, SERIES_COLORS, SERIES_MUTED } from './chart.js';
+import { scatterChart, chartLegend, histogramChart, SERIES_COLORS, SERIES_MUTED, BAND_COLORS } from './chart.js';
 import { linearFit, areaOf } from './analysis.js';
 import {
   AGE_BANDS, WALK_BANDS, AREA_BANDS, FIRM_KEYS, FIRM_LABEL,
@@ -44,7 +44,7 @@ const ui = {
   brand: 'all', developer: 'all', builder: 'all', designer: 'all',
   // 売り出しの行の条件
   from: 'all', to: 'all', listing: 'all', layout: 'all', size: 'all',
-  metric: 'tsubo', attr: 'year', group: 'building', fit: true,
+  metric: 'tsubo', attr: 'year', group: 'building', fit: true, names: true,
 };
 export const marketUI = ui;
 
@@ -343,13 +343,21 @@ function axisControls(rerender, { attr = false, group = false, groupLabel = '色
         el('div', { style: 'display:flex;align-items:center;gap:18px;flex-wrap:wrap' },
           select(ui.group, Object.entries(MARKET_GROUPS).map(([k, v]) => [k, v.label]),
             (k) => { ui.group = k; rerender(); }, 'picksel'),
-          fit ? toggle('近似直線と相場の幅', ui.fit, (v) => { ui.fit = v; rerender(); }) : null)) : null,
+          fit ? toggle('近似直線と相場の幅', ui.fit, (v) => { ui.fit = v; rerender(); }) : null,
+          fit ? toggle('物件名を出す', ui.names, (v) => { ui.names = v; rerender(); }) : null)) : null,
     ));
 }
 
-/** 色は絞り込み前の全建物の並びで決める。絞っても残った系列の色が変わらないように */
-function colorOf(names) {
+/**
+ * 色は絞り込み前の全建物の並びで決める。絞っても残った系列の色が変わらないように。
+ * 築年数や駅徒歩のように順序のある区分は、並び順どおりに濃さが変わる色を当てる。
+ */
+function colorOf(names, group = null) {
   const map = new Map();
+  if (group?.order) {
+    group.order.forEach((k, i) => map.set(k, BAND_COLORS[Math.min(i, BAND_COLORS.length - 1)]));
+    return map;
+  }
   names.forEach((k, i) => map.set(k, i < SERIES_COLORS.length ? SERIES_COLORS[i] : null));
   return map;
 }
@@ -367,7 +375,7 @@ function scatterSection(rows, buildings) {
   if (!pts.length) return el('div', { class: 'empty' }, `${attr.label} と ${metric.label} が揃った行がありません`);
 
   const order = [...new Set(pts.map((p) => p.key))];
-  const colors = colorOf(order);
+  const colors = colorOf(order, group);
   const OTHER = 'その他';
   const byKey = new Map();
   for (const p of pts) {
@@ -384,14 +392,19 @@ function scatterSection(rows, buildings) {
       ].filter(Boolean),
     });
   }
+  const rank = (name) => {
+    if (name === OTHER) return 999;
+    const i = group.order ? group.order.indexOf(name) : -1;
+    return i < 0 ? 900 : i;
+  };
   const series = [...byKey.entries()]
-    .sort((a, b) => (a[0] === OTHER ? 1 : 0) - (b[0] === OTHER ? 1 : 0))
+    .sort((a, b) => rank(a[0]) - rank(b[0]))
     .map(([name, points]) => ({ name, points, color: name === OTHER ? SERIES_MUTED : colors.get(name) }));
 
   const fit = ui.fit ? linearFit(pts) : null;
   const chart = scatterChart(series, {
     xLabel: `${attr.label}（${attr.unit}）`, yLabel: `${metric.label}（${metric.unit}）`,
-    xTick: attr.tick, height: 340, fit,
+    xTick: attr.tick, height: 360, fit, labels: ui.names,
   });
   return el('div', { class: 'section' },
     el('div', { class: 'panel-chart-head' },
@@ -403,7 +416,28 @@ function scatterSection(rows, buildings) {
         el('span', {}, el('b', {}, `${fit.n.toLocaleString('ja-JP')}点`)),
       ) : null),
     el('div', { class: 'chartwrap' }, chart),
-    series.length > 1 ? chartLegend(series, chart) : null);
+    series.length > 1 ? chartLegend(series, chart) : null,
+    scatterFoot(pts));
+}
+
+/** グラフの下に出す要約。点の散らばりを字面でも押さえられるようにする */
+function scatterFoot(pts) {
+  const rows = pts.map((p) => p.row);
+  const range = (vals, f) => {
+    const v = vals.filter(Number.isFinite);
+    if (!v.length) return null;
+    const avg = v.reduce((s, x) => s + x, 0) / v.length;
+    return `${f(Math.min(...v))}〜${f(Math.max(...v))}（平均 ${f(avg)}）`;
+  };
+  const price = range(rows.map((r) => r.price), (x) => fmt.n(x, 0));
+  const area = range(rows.map((r) => r.area), (x) => fmt.n(x, 1));
+  const tsubo = range(rows.map((r) => tsuboOf(r)), (x) => fmt.n(x, 0));
+  return el('div', { class: 'chart-foot' },
+    el('span', {}, '表示中 ', el('b', {}, `${pts.length.toLocaleString('ja-JP')}件`)),
+    price ? el('span', {}, `価格 ${price} 万円`) : null,
+    area ? el('span', {}, `面積 ${area} ㎡`) : null,
+    tsubo ? el('span', {}, `坪単価 ${tsubo} 万円`) : null,
+  );
 }
 
 /* =========================================================
