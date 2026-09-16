@@ -785,6 +785,14 @@ table.cmp tfoot td.lab{text-align:left;font-weight:700}
   font-size:11px;font-weight:700;color:var(--accent)}
 
 
+.splitrow{display:flex;align-items:center;gap:10px;padding:6px 2px}
+.splitlab{font-size:12px;font-weight:700;color:var(--text-2);min-width:56px}
+/* 元金の割合を帯で出す。数字だけだと「返すほど元金に寄る」が伝わらない */
+.splitbar{flex:1;height:10px;border-radius:999px;background:var(--surface-2);overflow:hidden;min-width:80px}
+.splitbar i{display:block;height:100%;background:var(--accent);border-radius:999px}
+.splitval{font-size:12.5px;font-weight:700;white-space:nowrap}
+.splitval small{color:var(--text-3);font-weight:600}
+
 /* ===== 一括出力（レポート） =====
    画面に出しているものを縦に並べ、ブラウザの印刷からPDFにする。
    PDFを作る部品は入れない（外から読み込むものが増えると、圏外で開けなくなる）。 */

@@ -3,7 +3,7 @@ import { store } from './store.js';
 import { el, fmt, derive, toast, mount, preserveFocus, STATUSES, debounce, APP_VERSION } from './util.js';
 import { labeled, select, kv, field, ratingPicker, statusBadge, section, tagPicker, segmented, toggle } from './ui.js';
 import { gallerySection } from './gallery.js';
-import { calcLoan, METHODS, DEFAULT_TERMS } from './loan.js';
+import { calcLoan, scheduleAt, METHODS, DEFAULT_TERMS } from './loan.js';
 import { geocode, drawMap, distanceMeters, walkMinutes, googleMapsUrls } from './map.js';
 import { pairingUrl, renderQr } from './pairing.js';
 import { QUALITY_PRESETS } from './image.js';
@@ -843,19 +843,57 @@ function paintLoan(box, r, b, repaint) {
     field(editable, ['costFixed', '諸費用の定額分（万円）', 'number'], onEdit),
   );
 
-  const result = el('div', { class: 'calcgrid calcgrid-6' },
+  // 月々がローンだけなのか、管理費まで込みなのかが読めなかったので分けて出す
+  const d = derive(r, b, store.loanTerms);
+  const fees = [
+    r.kanrihi != null ? `管理${fmt.n(r.kanrihi, 2)}` : null,
+    r.shuzen != null ? `修繕${fmt.n(r.shuzen, 2)}` : null,
+    b?.parkingFee != null ? `駐車場${fmt.n(b.parkingFee, 2)}` : null,
+  ].filter(Boolean).join('＋');
+
+  const result = el('div', { class: 'calcgrid calcgrid-4' },
     kv('諸費用', fmt.man(Math.round(loan.fees)),
       `価格の${terms.costRate}%${terms.costFixed ? ` ＋ ${terms.costFixed}万` : ''}`),
     kv('購入時の現金', fmt.man(Math.round(loan.cash)),
-      terms.includeFees !== false ? '頭金のみ' : '頭金＋諸費用'),
+      terms.includeFees !== false ? '頭金のみ（諸費用は借入に含む）' : '頭金＋諸費用'),
     kv('借入額', fmt.man(Math.round(loan.principal)),
-      terms.includeFees !== false ? '諸費用を含む' : '物件価格のみ'),
-    kv('毎月返済', `${fmt.yen万(loan.monthly)}`,
-      terms.method === 'principal' ? `初回。最終回 ${fmt.yen万(loan.monthlyLast)}` : null),
-    kv('総返済額', fmt.man(Math.round(loan.totalPayment))),
-    kv('うち利息', fmt.man(Math.round(loan.totalInterest))),
-    kv('初回の内訳', `元金 ${fmt.yen万(loan.firstPrincipal)}`, `利息 ${fmt.yen万(loan.firstInterest)}`),
+      terms.includeFees !== false
+        ? `${fmt.n(r.price, 0)}（価格）＋${fmt.n(loan.fees, 0)}（諸費用）−${fmt.n(terms.downPayment || 0, 0)}（頭金）`
+        : '物件価格のみ'),
+    kv('返済期間', `${terms.years}年`, `年${terms.rate}%・${METHODS[terms.method] || ''}`),
+    kv('毎月返済（ローンだけ）', `${fmt.yen万(loan.monthly)}`,
+      terms.method === 'principal' ? `初回。最終回 ${fmt.yen万(loan.monthlyLast)}` : '管理費などは含まない'),
+    kv('毎月の支払い（込み）', d.monthly != null ? `${fmt.yen万(d.monthly)}` : '—',
+      fees ? `ローン${fmt.n(loan.monthly, 1)}＋${fees}` : '管理費・修繕が未入力'),
+    kv('総返済額', fmt.man(Math.round(loan.totalPayment)),
+      `${terms.years}年でこれだけ払う`),
+    kv('うち利息', fmt.man(Math.round(loan.totalInterest)),
+      loan.principal ? `借入の${fmt.n((loan.totalInterest / loan.principal) * 100, 0)}%` : null),
   );
+
+  // 元金と利息の割合は毎月変わる。初回だけ出すと「そんなはずはない」と見える
+  const split = (months, label) => {
+    const a = scheduleAt(r.price, terms, months);
+    const b2 = scheduleAt(r.price, terms, months + 1);
+    const interest = b2.paidInterest - a.paidInterest;
+    const principal = b2.paidPrincipal - a.paidPrincipal;
+    const total = interest + principal;
+    return el('div', { class: 'splitrow' },
+      el('span', { class: 'splitlab' }, label),
+      el('div', { class: 'splitbar' },
+        el('i', { style: `width:${total ? (principal / total) * 100 : 0}%` })),
+      el('span', { class: 'splitval' },
+        `元金 ${fmt.yen万(principal)}`, el('small', {}, ` / 利息 ${fmt.yen万(interest)}`)));
+  };
+  const half = Math.floor((loan.months || 0) / 2);
+  const breakdown = el('div', { class: 'section' },
+    el('h3', {}, '元金と利息の内わけ'),
+    el('p', { class: 'tiny muted' },
+      '毎月の返済額は同じでも、元金と利息の割合は返すほど元金に寄っていく。'
+      + `この条件（年${terms.rate}%・${terms.years}年）だと初回から元金の方が多い。`),
+    split(0, '初回'),
+    half ? split(half, `${Math.round(half / 12)}年後`) : null,
+    loan.months ? split(loan.months - 1, '最終回') : null);
 
   mount(box,
     el('div', { class: 'toolbar' },
@@ -873,6 +911,7 @@ function paintLoan(box, r, b, repaint) {
         usingOwn ? 'この部屋の条件' : '共通条件（設定タブで変更）'),
     ),
     result,
+    breakdown,
     usingOwn ? inputs : null,
   );
 }
