@@ -7,7 +7,7 @@
   /* サイドバーだけは面の色と別に持つ。濃い緑に白文字を置くため、
      本文側の --surface / --text をそのまま使うと成立しない。 */
   --nav-bg:#194a3a; --nav-text:#f2f7f4; --nav-text-2:#a9c6ba; --nav-active:#2a6a53;
-  --bg:#f6f5f1; --surface:#ffffff; --surface-2:#f1efe8; --line:#e4e1d8;
+  --bg:#f6f5f1; --surface:#ffffff; --surface-2:#f1efe8; --line:#e4e1d8; --line-2:#cbc5b4;
   --text:#1b1f1c; --text-2:#5b6360; --text-3:#8e948f;
   --accent:#1f5c47; --accent-soft:#e7efea;
   --good:#1f7a5c; --warn:#a96a12; --bad:#b2402f;
@@ -18,7 +18,7 @@
 @media (prefers-color-scheme:dark){
   :root[data-skin="v2"]:not([data-theme="light"]){
     --nav-bg:#13251d; --nav-text:#e4ede8; --nav-text-2:#8fab9f; --nav-active:#22483a;
-    --bg:#11140f; --surface:#191d18; --surface-2:#212621; --line:#2e332d;
+    --bg:#11140f; --surface:#191d18; --surface-2:#212621; --line:#2e332d; --line-2:#434c41;
     --text:#e9ece6; --text-2:#9aa39c; --text-3:#6f7871;
     --accent:#5fba97; --accent-soft:#1a2b24;
     --good:#5fba97; --warn:#e0a955; --bad:#e08472;
@@ -27,7 +27,7 @@
 }
 :root[data-skin="v2"][data-theme="dark"]{
   --nav-bg:#13251d; --nav-text:#e4ede8; --nav-text-2:#8fab9f; --nav-active:#22483a;
-  --bg:#11140f; --surface:#191d18; --surface-2:#212621; --line:#2e332d;
+  --bg:#11140f; --surface:#191d18; --surface-2:#212621; --line:#2e332d; --line-2:#434c41;
   --text:#e9ece6; --text-2:#9aa39c; --text-3:#6f7871;
   --accent:#5fba97; --accent-soft:#1a2b24;
   --good:#5fba97; --warn:#e0a955; --bad:#e08472;

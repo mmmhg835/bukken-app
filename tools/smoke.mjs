@@ -254,6 +254,10 @@ store.data = mods.migrate.migrate({
 });
 store.data.buildings[0].address = '東京都江東区東雲1-9-10';
 store.data.buildings[0].lat = 35.6; store.data.buildings[0].lng = 139.8;
+// 中身が空の部屋も1つ混ぜる。アプリで「部屋を追加」した直後がこの状態で、
+// 価格も面積も無いまま全画面が描かれる。坪単価などが null になる経路を通す。
+store.addRoom(store.data.buildings[0].id);
+
 const room = store.data.rooms[0];
 room.listedAt = '2026-01-10';
 room.priceHistory = [
