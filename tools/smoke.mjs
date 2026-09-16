@@ -439,7 +439,7 @@ const screens = [
       { building: '該当しないid' },
     ]) {
       Object.assign(u, saved, patch);
-      for (const tab of ['overview', 'sale', 'trend', 'supply', 'dist', 'group']) {
+      for (const tab of ['overview', 'sale', 'trend', 'supply', 'dist', 'group', 'report']) {
         v.renderMarket(stubEl(), () => {}, tab);
       }
     }

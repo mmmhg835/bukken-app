@@ -780,3 +780,34 @@ table.cmp tfoot td.lab{text-align:left;font-weight:700}
 /* 一覧の部屋チップに添える指値。検討がどこまで進んでいるかを開かずに示す */
 .roomchip-offer{margin-left:7px;padding-left:7px;border-left:1px solid var(--line-2);
   font-size:11px;font-weight:700;color:var(--accent)}
+
+
+/* ===== 一括出力（レポート） =====
+   画面に出しているものを縦に並べ、ブラウザの印刷からPDFにする。
+   PDFを作る部品は入れない（外から読み込むものが増えると、圏外で開けなくなる）。 */
+.report-head{display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+.report-head h2{margin:0;font-size:22px}
+.report-cond{display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  padding:10px 12px;border:1px solid var(--line);border-radius:var(--r-sm);margin-bottom:16px}
+.report-sec{margin-top:22px;padding-top:14px;border-top:2px solid var(--line)}
+/* レポートは見せるためのもの。操作する部品は画面でも出さない */
+.report .panel,.report .subtabs{display:none}
+.report-sectitle{margin:0 0 10px;font-size:17px}
+
+@media print{
+  /* 操作するためのものは紙に出さない */
+  .appbar,.tabs,.subtabs,.filterbar,.panel,.noprint,.btn,.selbar,.toast,.picker,
+  .fsearch,.dothit,.chart-tip{ display:none !important }
+  body{ background:#fff }
+  .main{ max-width:none; padding:0 }
+  .card,.section{ box-shadow:none }
+  /* タブ1つで1ページ。概況・売出・推移…と紙をめくって追えるようにする */
+  .report-sec{ break-before:page; page-break-before:always; margin-top:0; border-top:0; padding-top:0 }
+  .report-sec:first-of-type{ break-before:auto; page-break-before:avoid }
+  .section{ break-inside:avoid; page-break-inside:avoid }
+  .chartwrap{ break-inside:avoid; page-break-inside:avoid }
+  table{ break-inside:auto }
+  tr{ break-inside:avoid; page-break-inside:avoid }
+  thead{ display:table-header-group }        /* 表が続くページにも見出しを出す */
+  @page{ margin:12mm }
+}

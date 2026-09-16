@@ -71,7 +71,7 @@ run('一覧（部屋ごと・すべて）', () => {
 });
 run('比較', () => views.renderCompare(stubEl()));
 run('ライフプラン', () => lifeplan.renderLifeplan(stubEl(), () => {}));
-for (const tab of ['overview', 'sale', 'trend', 'dist', 'group', 'rent', 'new']) {
+for (const tab of ['overview', 'sale', 'trend', 'supply', 'dist', 'group', 'rent', 'new', 'report']) {
   run(`相場 ${tab}`, () => market.renderMarket(stubEl(), () => {}, tab));
 }
 run('相場（全建物・築年数で色分け）', () => {

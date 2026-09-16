@@ -86,7 +86,7 @@ export function renderMarket(root, rerender, view = 'overview') {
   // 読み終わった分については、実際に該当する部屋がある建物だけを数える
   const hitBuildings = loaded.filter((b) => saleRows([b]).length);
 
-  const head = el('div', {},
+  const head = view === 'report' ? null : el('div', {},
     subTabs(view),
     buildingFilter(targets, loaded, rows, rerender, hitBuildings),
   );
@@ -114,14 +114,15 @@ export function renderMarket(root, rerender, view = 'overview') {
     return;
   }
 
-  const body = view === 'rent' ? rentView(loaded)
-    : view === 'new' ? newView(loaded)
-      : view === 'trend' ? trendView(rows, rerender)
-        : view === 'supply' ? supplyView(rows, loaded, rerender)
-          : view === 'dist' ? distView(rows, rerender)
-            : view === 'group' ? groupView(rows, rerender)
-              : view === 'sale' ? saleView(rows, loaded, rerender)
-                : overview(rows, loaded);
+  const body = view === 'report' ? reportView(rows, loaded, rerender)
+    : view === 'rent' ? rentView(loaded)
+      : view === 'new' ? newView(loaded)
+        : view === 'trend' ? trendView(rows, rerender)
+          : view === 'supply' ? supplyView(rows, loaded, rerender)
+            : view === 'dist' ? distView(rows, rerender)
+              : view === 'group' ? groupView(rows, rerender)
+                : view === 'sale' ? saleView(rows, loaded, rerender)
+                  : overview(rows, loaded);
 
   mount(root, head, body);
 }
@@ -237,6 +238,11 @@ function buildingFilter(targets, loaded, rows, rerender, hitBuildings = null) {
         onclick: () => { ui.more = !open; rerender(); },
       }, `${open ? '条件を隠す' : '条件を増やす'}${extra ? `（${extra}）` : ''}`),
       searchButton(rerender),
+      el('button', {
+        class: 'btn btn-sm',
+        title: 'いまの条件のまま、すべての画面を1枚に並べます（印刷からPDFに保存できます）',
+        onclick: () => { location.hash = '#/market/report'; },
+      }, '一括出力'),
     ),
     el('div', { class: 'filterbar-row' },
       group('売り出し年', el('div', { class: 'frange' },
@@ -560,10 +566,16 @@ function trendView(rows, rerender) {
   if (!cells.size) return el('div', { class: 'empty' }, 'まとめられる行がありません');
 
   // 系列ごとの点。件数の少ない期間は中央値と呼べないので落とす
+  // 下限を満たす点が1つも無ければ、下限を下げて描く。
+  // 条件を絞り込むと「1件だけの月」ばかりになり、空のグラフが出ていた
+  let floor = ui.minCount;
+  const enough = (n) => [...cells.values()].some((c) => c.rows.length >= n);
+  while (floor > 1 && !enough(floor)) floor = floor === 10 ? 5 : floor === 5 ? 3 : 1;
+
   const byKey = new Map();
   for (const c of cells.values()) {
     const vals = c.rows.map((x) => metric.get(x, buildingOf(x.buildingId))).filter(Number.isFinite);
-    if (vals.length < ui.minCount) continue;
+    if (vals.length < floor) continue;
     if (!byKey.has(c.key)) byKey.set(c.key, []);
     byKey.get(c.key).push({
       x: c.period, y: median(vals), key: c.key,
@@ -581,7 +593,7 @@ function trendView(rows, rerender) {
     }));
   if (!series.length) {
     return el('div', {}, trendControls(rerender),
-      el('div', { class: 'empty' }, `${ui.minCount}件以上まとまる期間がありません`));
+      el('div', { class: 'empty' }, 'まとめられる期間がありません'));
   }
 
   const fit = ui.fit ? linearFit(series.flatMap((s) => s.points)) : null;
@@ -616,7 +628,11 @@ function trendView(rows, rerender) {
     el('div', { class: 'section' },
       el('div', { class: 'chartwrap' }, chart),
       series.length > 1 ? chartLegend(series, chart) : null,
-      el('p', { class: 'tiny muted' }, 'グラフの点を押すと、その期間の売り出しが下に並びます')),
+      el('p', { class: 'tiny muted' },
+        floor < ui.minCount
+          ? `${ui.minCount}件以上まとまる期間が無いため、${floor}件以上で描いています。`
+          : '',
+        'グラフの点を押すと、その期間の売り出しが下に並びます')),
     picked
       ? el('div', { class: 'section' },
         el('div', { class: 'pickhead' },
@@ -794,6 +810,110 @@ function supplyControls(rerender) {
               [['3', '直近3年'], ['5', '直近5年'], ['7', '直近7年'], ['10', '直近10年'], ['all', 'すべて']],
               (v) => { ui.span = v === 'all' ? 'all' : Number(v); ui.pick = null; rerender(); }, 'fsel')))),
     ));
+}
+
+/* =========================================================
+   一括出力（レポート）
+   ========================================================= */
+/**
+ * いま出している条件のまま、相場の各画面を1枚に並べる。
+ * ブラウザの印刷から「PDFとして保存」を選べばPDFになる。
+ *
+ * PDFを作る部品は入れていない。入れると外から読み込むものが増えて、
+ * 圏外でも開ける今の作りが崩れるため。印刷ならグラフも文字のまま出る。
+ */
+function reportView(rows, buildings, rerender) {
+  const when = new Date();
+  const stamp = `${when.getFullYear()}年${when.getMonth() + 1}月${when.getDate()}日`;
+  const cond = activeConditions();
+
+  const sections = [
+    ['概況', () => overview(rows, buildings)],
+    ['売出', () => saleView(rows, buildings, rerender)],
+    ['推移', () => trendView(rows, rerender)],
+    ['供給', () => supplyView(rows, buildings, rerender)],
+    ['分布', () => distView(rows, rerender)],
+    ['建物別', () => groupView(rows, rerender)],
+    ['賃貸', () => rentView(buildings)],
+    ['新築', () => newView(buildings)],
+  ];
+
+  return el('div', { class: 'report' },
+    el('div', { class: 'report-head' },
+      el('div', {},
+        el('h2', {}, '相場レポート'),
+        el('p', { class: 'tiny muted' },
+          `${stamp}　対象 ${buildings.length.toLocaleString('ja-JP')}棟`
+          + `　売り出し ${rows.length.toLocaleString('ja-JP')}件`)),
+      el('div', { class: 'spacer' }),
+      el('button', { class: 'btn btn-primary noprint', onclick: () => window.print() }, 'PDFにする'),
+      el('button', {
+        class: 'btn noprint',
+        onclick: () => { location.hash = '#/market'; },
+      }, '相場に戻る')),
+    el('div', { class: 'report-cond' },
+      el('b', {}, '条件'),
+      cond.length
+        ? cond.map(([k, v]) => el('span', { class: 'fchip' }, `${k}：${v}`))
+        : el('span', { class: 'tiny muted' }, '指定なし（すべて）')),
+    el('p', { class: 'tiny muted noprint' },
+      '「PDFにする」を押すと印刷の画面が出ます。送信先で「PDFに保存」を選んでください。'),
+    sections.map(([name, build]) => el('div', { class: 'report-sec' },
+      el('h3', { class: 'report-sectitle' }, name),
+      trimTables(build()))),
+  );
+}
+
+/**
+ * レポートの表は先頭だけ残す。
+ * 画面では400行まで出しているが、そのまま紙にすると60ページになる。
+ * タブ1つで1ページに収めたいので、グラフと一緒に載る分だけ残す。
+ * 元の件数は下に添えるので、全部見たいときは画面に戻ってもらう。
+ */
+function trimTables(node, max = 18) {
+  for (const body of node.querySelectorAll ? node.querySelectorAll('tbody') : []) {
+    const rows = [...body.children];
+    if (rows.length <= max) continue;
+    for (const tr of rows.slice(max)) tr.remove();
+    const cols = rows[0]?.children.length || 1;
+    const more = el('tr', {}, el('td', { class: 'tiny muted', colspan: String(cols) },
+      `ほか ${(rows.length - max).toLocaleString('ja-JP')}行（画面で見られます）`));
+    body.append(more);
+  }
+  return node;
+}
+
+/** いま効いている条件を、レポートの見出しに出す形で並べる */
+function activeConditions() {
+  const out = [];
+  const label = {
+    mine: '検討', building: '建物', area: 'エリア', town: '住所', age: '築年数', walk: '駅徒歩',
+    brand: 'ブランド', developer: '分譲', builder: '施工', designer: '設計',
+    layout: '間取り', listing: '募集状況',
+  };
+  for (const [k, name] of Object.entries(label)) {
+    const v = ui[k];
+    if (v == null || v === 'all') continue;
+    if (k === 'building') {
+      const b = buildingOf(v);
+      out.push([name, b?.name ?? v]);
+    } else if (k === 'age') {
+      out.push([name, (AGE_BANDS.find(([x]) => x === v) || [])[1] ?? v]);
+    } else if (k === 'walk') {
+      out.push([name, (WALK_BANDS.find(([x]) => x === v) || [])[1] ?? v]);
+    } else if (k === 'listing') {
+      out.push([name, v === 'open' ? '販売中' : '終了']);
+    } else {
+      out.push([name, v]);
+    }
+  }
+  if (ui.sizeMin != null || ui.sizeMax != null) {
+    out.push(['広さ', `${ui.sizeMin ?? ''}〜${ui.sizeMax ?? ''}㎡`]);
+  }
+  if (ui.from !== 'all' || ui.to !== 'all') {
+    out.push(['売り出し年', `${ui.from === 'all' ? '' : `${ui.from}年`}〜${ui.to === 'all' ? '' : `${ui.to}年`}`]);
+  }
+  return out;
 }
 
 /* =========================================================
