@@ -176,8 +176,12 @@ export function thin(list, max = MAX_POINTS) {
 }
 
 export function scatterChart(series, opts = {}) {
-  const { xLabel = '', yLabel = '', fit = null, height = 320, xTick = null, labels = false,
-    maxPoints = MAX_POINTS } = opts;
+  const {
+    xLabel = '', yLabel = '', fit = null, height = 320, xTick = null, labels = false,
+    maxPoints = MAX_POINTS,
+    line = false,        // 点を線でつなぐ（推移を追うとき）
+    onPick = null,       // 点を押したときに呼ぶ。押した点の中身を画面側で使う
+  } = opts;
   // 多すぎる系列は等間隔で間引く。近似直線は呼ぶ側が全件で出しているので影響しない
   const total = series.reduce((s, x) => s + x.points.length, 0);
   if (total > maxPoints) {
@@ -248,6 +252,19 @@ export function scatterChart(series, opts = {}) {
     n('text', { x: 14, y: pad.t + ih / 2, class: 'chart-lab', 'text-anchor': 'middle',
       transform: `rotate(-90 14 ${pad.t + ih / 2})` }, yLabel),
   );
+
+  // 推移を追う図では点を線でつなぐ。点だけだと、どれが同じ系列か分からない
+  if (line) {
+    for (const [si, s] of series.entries()) {
+      const sorted = [...s.points].sort((a, b) => a.x - b.x);
+      if (sorted.length < 2) continue;
+      svg.append(n('path', {
+        d: sorted.map((p, i) => `${i ? 'L' : 'M'} ${X(p.x)} ${Y(p.y)}`).join(' '),
+        fill: 'none', stroke: s.color || SERIES_COLORS[si % SERIES_COLORS.length],
+        'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round', opacity: '.9',
+      }));
+    }
+  }
 
   // 点。件数が増えるほど小さくする（20件で約4.5、50件を超えると3で止める）。
   // 小さい点は押しにくいので、当たり判定は透明な円を別に重ねて確保する。
@@ -356,6 +373,7 @@ export function scatterChart(series, opts = {}) {
       e.stopPropagation();
       pinned = pinned === d ? null : d;          // もう一度押すと閉じる
       if (pinned) showTip(d); else hideTip();
+      if (onPick) onPick(pinned ? d.p : null, pinned ? d.name : null);
     });
   }
   svg.addEventListener('pointerleave', () => { if (!pinned) hideTip(); });

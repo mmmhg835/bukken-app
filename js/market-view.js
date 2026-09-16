@@ -52,6 +52,8 @@ const ui = {
   // 売り出しの行の条件
   from: 'all', to: 'all', listing: 'all', layout: 'all', sizeMin: null, sizeMax: null,
   metric: 'tsubo', attr: 'year', group: 'building', fit: true, names: true, more: false,
+  // 推移の粒度と、点にまとめる下限の件数。押した点は pick に覚える
+  step: 'year', minCount: 3, pick: null,
   // 上限を超えていても読み込むか。押したときだけ立てる
   loadAll: false,
 };
@@ -524,57 +526,148 @@ function scatterFoot(pts, drawn = pts.length) {
 }
 
 /* =========================================================
-   推移（年ごと）
+   推移（分類ごと・点を押すと中身が出る）
    ========================================================= */
+/**
+ * 「上がっている・下がっている」だけでは判断できない。その値を作っている
+ * 部屋を見ないと、たまたま広い部屋が出ただけの月に引きずられる。
+ * 点を押したら、その期間の売り出しを下に並べる。
+ */
 function trendView(rows, rerender) {
   if (!rows.length) return el('div', { class: 'empty' }, '条件に合う売り出しがありません');
   const metric = MARKET_METRICS[ui.metric];
-  const { list, cagr } = yearly(rows, ui.metric);
-  if (!list.length) return el('div', { class: 'empty' }, '年ごとにまとめられる行がありません');
+  const group = MARKET_GROUPS[ui.group];
 
-  const pts = list.map((r) => ({
-    x: r.year, y: r.median,
-    label: `${r.year}年`,
-    info: [`中央 ${fmt.n(r.median, 1)}${metric.unit}　${r.count}件`,
-      `${fmt.n(r.min, 0)}〜${fmt.n(r.max, 0)}`,
-      r.diff != null ? `前年から ${r.diff > 0 ? '+' : ''}${fmt.n(r.diff, 1)}%` : ''].filter(Boolean),
-  }));
-  const fit = linearFit(pts);
-  const chart = scatterChart([{ name: '年ごとの中央値', points: pts, color: SERIES_COLORS[0] }], {
-    xLabel: '売り出した年', yLabel: `${metric.label}（${metric.unit}）`,
-    xTick: (v) => String(Math.round(v)), height: 320, fit,
+  // 期間ごと・分類ごとにまとめる
+  const cells = new Map();
+  for (const x of rows) {
+    const p = periodOf(x);
+    if (p == null) continue;
+    const key = group.get(x, buildingOf(x.buildingId)) ?? '不明';
+    const id = `${key}|${p}`;
+    if (!cells.has(id)) cells.set(id, { key, period: p, rows: [] });
+    cells.get(id).rows.push(x);
+  }
+  if (!cells.size) return el('div', { class: 'empty' }, 'まとめられる行がありません');
+
+  // 系列ごとの点。件数の少ない期間は中央値と呼べないので落とす
+  const byKey = new Map();
+  for (const c of cells.values()) {
+    const vals = c.rows.map((x) => metric.get(x, buildingOf(x.buildingId))).filter(Number.isFinite);
+    if (vals.length < ui.minCount) continue;
+    if (!byKey.has(c.key)) byKey.set(c.key, []);
+    byKey.get(c.key).push({
+      x: c.period, y: median(vals), key: c.key,
+      label: `${periodLabel(c.period)}　${c.key}`,
+      info: [`中央 ${fmt.n(median(vals), 1)}${metric.unit}　${vals.length}件`, '押すと下に一覧が出ます'],
+    });
+  }
+  const colors = colorOf([...byKey.keys()], group);
+  const series = [...byKey.entries()]
+    .sort((a, b) => b[1].length - a[1].length)
+    .slice(0, 8)                                   // 線が多すぎると読めない
+    .map(([name, points]) => ({
+      name, points: points.sort((a, b) => a.x - b.x),
+      color: colors.get(name) || SERIES_MUTED,
+    }));
+  if (!series.length) {
+    return el('div', {}, trendControls(rerender),
+      el('div', { class: 'empty' }, `${ui.minCount}件以上まとまる期間がありません`));
+  }
+
+  const fit = ui.fit ? linearFit(series.flatMap((s) => s.points)) : null;
+  const chart = scatterChart(series, {
+    xLabel: ui.step === 'month' ? '売り出した月' : '売り出した年',
+    yLabel: `${metric.label}（${metric.unit}）`,
+    xTick: (v) => periodLabel(v, true),
+    height: 340, fit, line: true,
+    onPick: (p) => { ui.pick = p ? { key: p.key, period: p.x } : null; rerender(); },
   });
 
-  const body = el('tbody', {}, [...list].reverse().map((r) => el('tr', {},
-    el('td', { class: 'lab' }, `${r.year}年`),
-    el('td', {}, r.count.toLocaleString('ja-JP')),
-    el('td', {}, fmt.n(r.median, 1)),
-    el('td', { class: r.diff == null ? null : r.diff >= 0 ? 'up' : 'down' },
-      r.diff == null ? '—' : `${r.diff > 0 ? '+' : ''}${fmt.n(r.diff, 1)}%`),
-    el('td', {}, fmt.n(r.avg, 1)),
-    el('td', {}, fmt.n(r.min, 0)),
-    el('td', {}, fmt.n(r.max, 0)))));
+  const picked = ui.pick
+    ? [...cells.values()].find((c) => c.key === ui.pick.key && c.period === ui.pick.period)
+    : null;
 
+  const { list, cagr } = yearly(rows, ui.metric);
   return el('div', {},
+    list.length
+      ? el('div', { class: 'section' },
+        el('div', { class: 'calcgrid calcgrid-4' },
+          cell('年平均の伸び', cagr != null ? `${cagr > 0 ? '+' : ''}${fmt.n(cagr, 2)}%` : '—',
+            `${list[0].year}年〜${list[list.length - 1].year}年`),
+          cell('最初の年', `${fmt.n(list[0].median, 0)}${metric.unit}`,
+            `${list[0].year}年　${list[0].count}件`),
+          cell('最後の年', `${fmt.n(list[list.length - 1].median, 0)}${metric.unit}`,
+            `${list[list.length - 1].year}年　${list[list.length - 1].count}件`),
+          cell('この間の倍率', list[0].median
+            ? `${fmt.n(list[list.length - 1].median / list[0].median, 2)}倍` : '—'),
+        ))
+      : null,
+    trendControls(rerender),
     el('div', { class: 'section' },
-      el('div', { class: 'calcgrid calcgrid-4' },
-        cell('年平均の伸び', cagr != null ? `${cagr > 0 ? '+' : ''}${fmt.n(cagr, 2)}%` : '—',
-          `${list[0].year}年〜${list[list.length - 1].year}年`),
-        cell('最初の年', `${fmt.n(list[0].median, 0)}${metric.unit}`, `${list[0].year}年　${list[0].count}件`),
-        cell('最後の年', `${fmt.n(list[list.length - 1].median, 0)}${metric.unit}`,
-          `${list[list.length - 1].year}年　${list[list.length - 1].count}件`),
-        cell('この間の倍率', list[0].median ? `${fmt.n(list[list.length - 1].median / list[0].median, 2)}倍` : '—'),
-      )),
-    axisControls(rerender),
+      el('div', { class: 'chartwrap' }, chart),
+      series.length > 1 ? chartLegend(series, chart) : null,
+      el('p', { class: 'tiny muted' }, 'グラフの点を押すと、その期間の売り出しが下に並びます')),
+    picked
+      ? el('div', { class: 'section' },
+        el('div', { class: 'pickhead' },
+          el('b', {}, `${periodLabel(picked.period)}　${picked.key}`),
+          el('span', { class: 'tiny muted' }, `${picked.rows.length}件`),
+          el('div', { class: 'spacer' }),
+          el('button', { class: 'btn btn-sm', onclick: () => { ui.pick = null; rerender(); } }, 'クリア')),
+        saleTable(sortRows(picked.rows).slice(0, 200), picked.rows.length, rerender))
+      : null,
     el('div', { class: 'section' },
-      el('div', { class: 'chartwrap' }, chart)),
-    el('div', { class: 'section' },
+      el('h3', {}, '年ごとの数字'),
       el('div', { class: 'tablewrap' },
         el('table', { class: 'cmp markettbl' },
           el('thead', {}, el('tr', {},
             ['年', '件数', `中央（${metric.unit}）`, '前年から', '平均', '最安', '最高']
               .map((c, i) => el('th', { class: i === 0 ? 'lab' : null }, c)))),
-          body))));
+          el('tbody', {}, [...list].reverse().map((r) => el('tr', {},
+            el('td', { class: 'lab' }, `${r.year}年`),
+            el('td', {}, r.count.toLocaleString('ja-JP')),
+            el('td', {}, fmt.n(r.median, 1)),
+            el('td', { class: r.diff == null ? null : r.diff >= 0 ? 'up' : 'down' },
+              r.diff == null ? '—' : `${r.diff > 0 ? '+' : ''}${fmt.n(r.diff, 1)}%`),
+            el('td', {}, fmt.n(r.avg, 1)),
+            el('td', {}, fmt.n(r.min, 0)),
+            el('td', {}, fmt.n(r.max, 0)))))))));
+}
+
+/** 売り出した月（または年）を小数年で返す */
+function periodOf(x) {
+  const y = ymToNum(x.listedYM);
+  if (y == null) return null;
+  return ui.step === 'month' ? Math.round(y * 12) / 12 : Math.floor(y);
+}
+
+function periodLabel(v, short = false) {
+  const y = Math.floor(v + 1e-6);
+  if (ui.step !== 'month') return `${y}年`;
+  const mo = Math.round((v - y) * 12) + 1;
+  return short ? `${y}/${String(mo).padStart(2, '0')}` : `${y}年${mo}月`;
+}
+
+/** 推移の操作。分類・粒度・点にまとめる下限・トレンドライン */
+function trendControls(rerender) {
+  return el('div', { class: 'panel' },
+    el('div', { class: 'panel-controls' },
+      controlRow('↕', '表示単位',
+        segmented(ui.metric, Object.entries(MARKET_METRICS).map(([k, v]) => [k, v.label]),
+          (k) => { ui.metric = k; rerender(); })),
+      controlRow('◍', '分類',
+        el('div', { style: 'display:flex;align-items:center;gap:18px;flex-wrap:wrap' },
+          select(ui.group, Object.entries(MARKET_GROUPS).map(([k, v]) => [k, v.label]),
+            (k) => { ui.group = k; ui.pick = null; rerender(); }, 'picksel'),
+          segmented(ui.step, [['year', '年ごと'], ['month', '月ごと']],
+            (k) => { ui.step = k; ui.pick = null; rerender(); }),
+          // 1〜2件の期間は中央値と呼べず、線が跳ねて読めなくなる
+          el('label', { class: 'tiny muted' }, '各点の下限　',
+            select(String(ui.minCount), [['1', '1件'], ['3', '3件'], ['5', '5件'], ['10', '10件']],
+              (v) => { ui.minCount = Number(v); rerender(); }, 'fsel')),
+          toggle('トレンドライン', ui.fit, (v) => { ui.fit = v; rerender(); }))),
+    ));
 }
 
 /* =========================================================

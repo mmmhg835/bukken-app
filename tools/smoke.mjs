@@ -365,6 +365,31 @@ const screens = [
   }],
   ...marketTabs('相場'),
   // 相場の絞り込み。条件を変えると通る経路が変わるので、代表的な組み合わせを通す
+  ['推移：分類ごとの線と、点を押して中身を見る', () => {
+    const v = mods['market-view'];
+    const u = v.marketUI;
+    const saved = { ...u };
+    try {
+      for (const group of ['layout', 'ageBand', 'building', 'none']) {
+        for (const step of ['year', 'month']) {
+          Object.assign(u, saved, { mine: 'all', group, step, minCount: 1, pick: null });
+          v.renderMarket(stubEl(), () => {}, 'trend');
+        }
+      }
+      // 点を押した状態でも描ける（押した期間の一覧が出る）
+      Object.assign(u, saved, { mine: 'all', group: 'layout', step: 'year', minCount: 1 });
+      u.pick = { key: '2LDK', period: 2026 };
+      v.renderMarket(stubEl(), () => {}, 'trend');
+      // 該当しない点を押したままでも落ちない
+      u.pick = { key: '存在しない', period: 1990 };
+      v.renderMarket(stubEl(), () => {}, 'trend');
+      // 下限を上げて点が無くなる場合
+      Object.assign(u, saved, { mine: 'all', minCount: 10000, pick: null });
+      v.renderMarket(stubEl(), () => {}, 'trend');
+    } finally {
+      Object.assign(u, saved);
+    }
+  }],
   ['相場（絞り込み）', () => {
     const v = mods['market-view'];
     const u = v.marketUI;

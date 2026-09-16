@@ -382,6 +382,8 @@ table.cmp tr:hover td.lab{background:var(--surface-2)}
 .chart .dothit{cursor:pointer}
 /* 散布図の点の下に出す物件名。重なるものは出さないので、地の色で十分読める */
 .chart-name{font-size:9.5px;fill:var(--text-2);pointer-events:none}
+.pickhead{display:flex;align-items:center;gap:10px;margin-bottom:8px;
+  padding:8px 12px;background:var(--accent-soft);border-radius:var(--r-sm)}
 .chart-foot{display:flex;gap:16px;flex-wrap:wrap;align-items:baseline;
   padding:8px 4px 0;font-size:12px;color:var(--text-2)}
 .chart-foot b{color:var(--text);font-weight:600}
