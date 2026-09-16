@@ -21,7 +21,7 @@ import {
   sortRows, summary, pricePoints, tsuboOf, sqmOf, monthsOf, cutOf, isOpen, ymLabel, ymToNum, median,
   sortRents, rentSummary, rentTsuboOf, rentSqmOf,
   sortNewPrices, newSummary, newTsuboOf, grossYield, vsNew, recent,
-  MARKET_METRICS, MARKET_ATTRS, MARKET_GROUPS, yearly, groupBy, bands,
+  MARKET_METRICS, MARKET_ATTRS, MARKET_GROUPS, yearly, groupBy, bands, nowYear,
 } from './market.js';
 
 const SUBTABS = [
@@ -53,7 +53,7 @@ const ui = {
   from: 'all', to: 'all', listing: 'all', layout: 'all', sizeMin: null, sizeMax: null,
   metric: 'tsubo', attr: 'year', group: 'building', fit: true, names: true, more: false,
   // 推移の粒度と、点にまとめる下限の件数。押した点は pick に覚える
-  step: 'year', minCount: 3, pick: null,
+  step: 'month', minCount: 3, pick: null, span: 7,
   // 上限を超えていても読み込むか。押したときだけ立てる
   loadAll: false,
 };
@@ -538,9 +538,17 @@ function trendView(rows, rerender) {
   const metric = MARKET_METRICS[ui.metric];
   const group = MARKET_GROUPS[ui.group];
 
+  // 見る期間。17年ぶんを1枚に描くと、いまの動きが潰れて読めない
+  const from = ui.span === 'all' ? -Infinity : nowYear() - Number(ui.span);
+  const target = rows.filter((x) => (ymToNum(x.listedYM) ?? -Infinity) >= from);
+  if (!target.length) {
+    return el('div', {}, trendControls(rerender),
+      el('div', { class: 'empty' }, 'この期間に売り出しがありません'));
+  }
+
   // 期間ごと・分類ごとにまとめる
   const cells = new Map();
-  for (const x of rows) {
+  for (const x of target) {
     const p = periodOf(x);
     if (p == null) continue;
     const key = group.get(x, buildingOf(x.buildingId)) ?? '不明';
@@ -588,7 +596,7 @@ function trendView(rows, rerender) {
     ? [...cells.values()].find((c) => c.key === ui.pick.key && c.period === ui.pick.period)
     : null;
 
-  const { list, cagr } = yearly(rows, ui.metric);
+  const { list, cagr } = yearly(target, ui.metric);
   return el('div', {},
     list.length
       ? el('div', { class: 'section' },
@@ -662,6 +670,11 @@ function trendControls(rerender) {
             (k) => { ui.group = k; ui.pick = null; rerender(); }, 'picksel'),
           segmented(ui.step, [['year', '年ごと'], ['month', '月ごと']],
             (k) => { ui.step = k; ui.pick = null; rerender(); }),
+          // 期間。既定は直近7年。それ以上は線が詰まって、いまの動きが読めない
+          el('label', { class: 'tiny muted' }, '期間　',
+            select(String(ui.span),
+              [['3', '直近3年'], ['5', '直近5年'], ['7', '直近7年'], ['10', '直近10年'], ['all', 'すべて']],
+              (v) => { ui.span = v === 'all' ? 'all' : Number(v); ui.pick = null; rerender(); }, 'fsel')),
           // 1〜2件の期間は中央値と呼べず、線が跳ねて読めなくなる
           el('label', { class: 'tiny muted' }, '各点の下限　',
             select(String(ui.minCount), [['1', '1件'], ['3', '3件'], ['5', '5件'], ['10', '10件']],
