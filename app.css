@@ -247,15 +247,19 @@ table.cmp tr:hover td.lab{background:var(--surface-2)}
 .picker-body{border-top:1px solid var(--line);padding:6px 14px 12px}
 .picker-summary{border-top:1px solid var(--line);padding:10px 14px;display:flex;flex-wrap:wrap;gap:5px}
 
-/* 建物の見出しは行の一部として薄く置く。棟が増えても縦の流れを切らない */
-.bgroup{margin-bottom:10px}
+/* 建物の見出しは面を変えた帯にする。罫線だけだと部屋の行と区別がつかず、
+   どこからどこまでが1棟なのか読み取れない。 */
+.bgroup{margin-bottom:18px}
 .bgroup:last-child{margin-bottom:0}
-.bgroup-head{display:flex;align-items:center;gap:9px;margin:10px 0 2px;flex-wrap:wrap;
-  padding-bottom:5px;border-bottom:1px solid var(--line-2)}
-.bgroup-name{font-weight:700;font-size:13.5px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bgroup-head{display:flex;align-items:center;gap:10px;margin:0 0 2px;flex-wrap:wrap;
+  padding:7px 11px;background:var(--surface-2);border-radius:var(--r-sm)}
+.bgroup-head .btn{padding:3px 9px;font-size:11.5px}
+.bgroup-name{font-weight:800;font-size:14px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
-/* 1行1部屋。列幅を固定して、価格・面積・坪単価が縦に揃って読めるようにする */
-.rtiles{display:grid;column-gap:22px;grid-template-columns:repeat(auto-fill,minmax(330px,1fr))}
+/* 1行1部屋。列幅を固定して、価格・面積・坪単価が縦に揃って読めるようにする。
+   帯の下に少し寄せて、どの棟にぶら下がっているかを字下げで示す */
+.rtiles{display:grid;column-gap:22px;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));
+  margin-left:11px;padding-left:10px;border-left:2px solid var(--surface-2)}
 .rtile{display:grid;align-items:center;gap:10px;width:100%;text-align:left;
   grid-template-columns:15px minmax(0,1fr) 78px 62px 58px;
   border:0;border-bottom:1px solid var(--line);background:none;border-radius:0;
@@ -272,7 +276,7 @@ table.cmp tr:hover td.lab{background:var(--surface-2)}
 .rtile-area,.rtile-tsubo{text-align:right;font-size:11.5px;color:var(--text-2)}
 
 @media(max-width:560px){
-  .rtiles{grid-template-columns:1fr}
+  .rtiles{grid-template-columns:1fr;margin-left:4px;padding-left:8px}
   .rtile{grid-template-columns:15px minmax(0,1fr) 70px 56px}
   .rtile-tsubo{display:none}
   .picker-head{gap:6px}

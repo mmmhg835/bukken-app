@@ -806,6 +806,9 @@ function compareSections() {
       ['当初価格', (x) => (x.a.initial != null ? fmt.man1(x.a.initial) + '万円' : '—')],
       ['値下げ額', (x) => (x.a.totalChange ? `${fmt.man1(Math.round(x.a.totalChange))}万円（${x.a.changeRate.toFixed(1)}%）` : '—'),
         (x) => x.a.totalChange, 'min'],
+      ['諸費用', (x) => fmt.man1(Math.round(x.c.loan?.fees ?? 0)) + '万円', (x) => x.c.loan?.fees, 'min'],
+      ['価格＋諸費用', (x) => fmt.man1(Math.round((x.r.price ?? 0) + (x.c.loan?.fees ?? 0))) + '万円',
+        (x) => (x.r.price != null ? x.r.price + (x.c.loan?.fees ?? 0) : null), 'min'],
       ['坪単価', (x) => fmt.n(x.c.tsuboPrice, 1) + '万円', (x) => x.c.tsuboPrice, 'min'],
       ['㎡単価', (x) => (x.r.price && x.r.area ? fmt.n(x.r.price / x.r.area, 2) + '万円' : '—'),
         (x) => (x.r.price && x.r.area ? x.r.price / x.r.area : null), 'min'],
@@ -841,7 +844,6 @@ function compareSections() {
     ['資金計画', false, [
       ['総返済額', (x) => fmt.man1(Math.round(x.c.loan?.totalPayment ?? 0)) + '万円', (x) => x.c.loan?.totalPayment, 'min'],
       ['うち利息', (x) => fmt.man1(Math.round(x.c.loan?.totalInterest ?? 0)) + '万円', (x) => x.c.loan?.totalInterest, 'min'],
-      ['諸費用', (x) => fmt.man1(Math.round(x.c.loan?.fees ?? 0)) + '万円', (x) => x.c.loan?.fees, 'min'],
       ['借入額', (x) => fmt.man1(Math.round(x.c.loan?.principal ?? 0)) + '万円', (x) => x.c.loan?.principal, 'min'],
       ['購入時の現金', (x) => fmt.man1(Math.round(x.c.loan?.cash ?? 0)) + '万円', (x) => x.c.loan?.cash, 'min'],
       ['ローン条件', (x) => {
