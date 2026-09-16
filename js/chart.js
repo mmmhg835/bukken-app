@@ -403,9 +403,11 @@ export function histogramChart(bins, opts = {}) {
   if (!bins.length) return n('svg', { viewBox: '0 0 10 10' });
 
   const W = 780, H = height;
-  const pad = { t: 14, r: 16, b: 52, l: 52 };
+  // 斜めの目盛りが入るぶん、下は広めに取る。詰めると文字が切れる
+  const pad = { t: 14, r: 16, b: 66, l: 52 };
   const iw = W - pad.l - pad.r, ih = H - pad.t - pad.b;
-  const maxN = Math.max(...bins.map((b) => b.a + b.b), 1);
+  let maxN = 1;
+  for (const b of bins) maxN = Math.max(maxN, b.a + b.b);
 
   const svg = n('svg', { viewBox: `0 0 ${W} ${H}`, class: 'chart', preserveAspectRatio: 'xMidYMid meet' });
   const Y = (v) => pad.t + ih - (v / maxN) * ih;
@@ -419,22 +421,24 @@ export function histogramChart(bins, opts = {}) {
   }
 
   const bw = iw / bins.length;
+  // 棒は細く。太いと数の差より色の面積が目に入って、推移が読めなくなる
+  const w = Math.max(2, Math.min(bw * 0.55, 10));
   const every = Math.ceil(bins.length / 10);
   bins.forEach((b, i) => {
-    const x = pad.l + i * bw + bw * 0.12;
-    const w = bw * 0.76;
+    const x = pad.l + i * bw + (bw - w) / 2;
     const hA = (b.a / maxN) * ih, hB = (b.b / maxN) * ih;
-    if (hB) svg.append(n('rect', { x, y: Y(b.a + b.b), width: w, height: hB, fill: 'var(--text-3)', opacity: '.75', rx: 2 }));
-    if (hA) svg.append(n('rect', { x, y: Y(b.a), width: w, height: hA, fill: SERIES_COLORS[0], rx: 2 }));
+    if (hB) svg.append(n('rect', { x, y: Y(b.a + b.b), width: w, height: hB, fill: 'var(--text-3)', opacity: '.5', rx: 1.5 }));
+    if (hA) svg.append(n('rect', { x, y: Y(b.a), width: w, height: hA, fill: SERIES_COLORS[0], opacity: '.85', rx: 1.5 }));
     const rect = n('rect', { x, y: pad.t, width: w, height: ih, fill: 'transparent',
       class: onPick ? 'dothit' : null });
     rect.append(n('title', {}, `${fmtX(b.from)} 〜 ${fmtX(b.to)}\n${legend[0]} ${b.a}件 / ${legend[1]} ${b.b}件`));
     if (onPick) rect.addEventListener('click', () => onPick(b));
     svg.append(rect);
     if (i % every === 0) {
+      const ly = H - 40;
       svg.append(n('text', {
-        x: x + w / 2, y: H - 26, class: 'chart-lab', 'text-anchor': 'end',
-        transform: `rotate(-40 ${x + w / 2} ${H - 26})`,
+        x: x + w / 2, y: ly, class: 'chart-lab', 'text-anchor': 'end',
+        transform: `rotate(-35 ${x + w / 2} ${ly})`,
       }, fmtX(b.from)));
     }
   });
