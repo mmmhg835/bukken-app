@@ -186,6 +186,19 @@ export function listingHint(r, b = null) {
   return { state: 'closed', ym };
 }
 
+/**
+ * この部屋そのものの売り出し履歴。建物・階・専有面積が一致する行を集める。
+ * 同じ部屋が過去にいくらで出て、いくら下げて、何か月で終わったかを見るためのもの。
+ * 建物の相場（market/<建物>.json）を読み込んでいないと空で返る。
+ */
+export function unitHistory(r, b = null) {
+  if (!r) return [];
+  const m = store.marketOf(r.buildingId);
+  if (!m) return [];
+  return (m.sale || []).filter((x) => sameUnit(r, x))
+    .sort((a, x) => String(x.listedYM || '').localeCompare(String(a.listedYM || '')));
+}
+
 /** マンレビと食い違っている部屋。まとめて直すときに使う */
 export function listingMismatches(rooms = store.rooms) {
   const out = [];

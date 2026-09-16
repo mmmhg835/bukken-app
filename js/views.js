@@ -12,9 +12,10 @@ import { SKINS, currentSkin, setSkin } from './skin.js';
 import { salesSection } from './sales.js';
 import { BUILDING_FORM, SPEC_GROUPS, RENOVATION } from './spec.js';
 import { areaOf } from './analysis.js';
-import { allUnits, promote, listingMismatches, unitUrl } from './units.js';
+import { allUnits, promote, listingMismatches, unitUrl, unitHistory } from './units.js';
 import { unitUI, unitMatches, unitFilterBar } from './unit-filter.js';
 import { analyze, LISTING_STATUS, CLOSED_STATUS, formatDate } from './price.js';
+import { ymLabel, tsuboOf, monthsOf } from './market.js';
 import { stepChart, chartLegend, SERIES_COLORS } from './chart.js';
 
 export const route = { view: 'list', id: null };
@@ -173,6 +174,50 @@ function buildingSorter(key) {
   };
   return by[key] || by.price;
 }
+
+/**
+ * この部屋の売り出し履歴。建物・階・専有面積が同じ行を並べる。
+ * 売買では部屋番号が出ないので、同じ部屋かどうかはこの3つで決める。
+ */
+function unitHistorySection(r, b) {
+  const rows = unitHistory(r, b);
+  if (!rows.length) {
+    return section('この部屋の売り出し履歴',
+      el('p', { class: 'tiny muted' },
+        store.marketOf(r.buildingId)
+          ? '同じ階・同じ専有面積の売り出しは記録にありません。'
+            + '（階数と専有面積が入っていないと突き合わせできません）'
+          : '読み込み中…'));
+  }
+  const prices = rows.map((x) => x.price).filter(Number.isFinite);
+  const last = rows.find((x) => !isOpenRow(x));
+  return section('この部屋の売り出し履歴',
+    el('div', { class: 'chart-foot' },
+      el('span', {}, '記録 ', el('b', {}, `${rows.length}件`)),
+      prices.length ? el('span', {}, `最高 ${fmt.man(Math.max(...prices))}`) : null,
+      prices.length ? el('span', {}, `最安 ${fmt.man(Math.min(...prices))}`) : null,
+      last && r.price != null
+        ? el('span', {}, `前回の掲載 ${fmt.man(last.price)} → 今回 `,
+          el('b', {}, `${r.price > last.price ? '+' : ''}${fmt.n(r.price - last.price, 0)}万円`))
+        : null),
+    el('div', { class: 'tablewrap' },
+      el('table', { class: 'cmp valuetable' },
+        el('thead', {}, el('tr', {},
+          el('th', { class: 'lab' }, '掲載'), el('th', {}, '価格'), el('th', {}, '坪単価'),
+          el('th', {}, '値動き'), el('th', {}, '期間'), el('th', {}, '状態'))),
+        el('tbody', {}, rows.map((x) => el('tr', {},
+          el('td', { class: 'lab' }, ymLabel(x.listedYM)),
+          el('td', {}, fmt.man(x.price)),
+          el('td', {}, `${fmt.n(tsuboOf(x), 0)}万`),
+          el('td', {}, (x.priceHistory || []).length
+            ? (x.priceHistory || []).map((h) => `${ymLabel(h.ym)} ${fmt.n(h.price, 0)}`).join(' → ')
+            : '—'),
+          el('td', {}, monthsOf(x) != null ? `${fmt.n(monthsOf(x), 0)}か月` : '—'),
+          el('td', {}, isOpenRow(x) ? '売出中' : `${ymLabel(x.closedYM)} 終了`),
+        ))))));
+}
+
+const isOpenRow = (x) => (x.open != null ? !!x.open : !x.closedYM);
 
 /* ===== カード ===== */
 /**
@@ -528,6 +573,8 @@ export function renderRoom(root, id) {
     return;
   }
   const b = store.building(r.buildingId);
+  // 同じ部屋の過去の売り出しを見るために、この建物の相場を読む
+  store.ensureMarket(r.buildingId);
 
   const calcBox = el('div', { class: 'calcgrid calcgrid-6' });
   const loanBox = el('div');
@@ -571,6 +618,7 @@ export function renderRoom(root, id) {
     buildingLink(b),
     section(null, calcBox),
     salesSection(r, () => { paint(); }),
+    unitHistorySection(r, b),
     section('資金計画', loanBox),
     section('リノベーション', renovationRow(r)),
     section('部屋情報', buildingPicker, form),

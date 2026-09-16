@@ -457,6 +457,21 @@ const screens = [
     const noUrl = u.allUnits().find((x) => x.listing?.id === 'os3');
     if (u.unitUrl(noUrl) !== store.building('b9').url) throw new Error('建物のページに落ちていない');
   }],
+  ['部屋ごとの売り出し履歴', () => {
+    const u = mods.units;
+    const b = store.data.buildings[0];
+    const room = store.addRoom(b.id, { label: '4階', floor: 4, area: 75.67 });
+    const hist = u.unitHistory(room);
+    if (!hist.length) throw new Error('同じ部屋の履歴が拾えていない');
+    if (!hist.every((x) => x.floor === 4)) throw new Error('別の階が混ざっている');
+    if (!hist.some((x) => (x.priceHistory || []).length)) throw new Error('値動きが残っていない');
+    // 階か面積が違えば別の部屋
+    const other = store.addRoom(b.id, { label: '9階', floor: 9, area: 75.67 });
+    if (u.unitHistory(other).some((x) => x.floor === 4)) throw new Error('別の部屋を混ぜている');
+    // 部屋ページが履歴つきで描けること
+    mods.views.renderRoom(stubEl(), room.id);
+    store.data.rooms = store.data.rooms.filter((x) => x.id !== room.id && x.id !== other.id);
+  }],
   ['募集状況をマンレビと突き合わせる', () => {
     const u = mods.units;
     const b = store.data.buildings[0];
