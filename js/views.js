@@ -12,7 +12,7 @@ import { SKINS, currentSkin, setSkin } from './skin.js';
 import { salesSection } from './sales.js';
 import { BUILDING_FORM, SPEC_GROUPS, RENOVATION } from './spec.js';
 import { areaOf } from './analysis.js';
-import { allUnits, promote } from './units.js';
+import { allUnits, promote, listingMismatches } from './units.js';
 import { unitUI, unitMatches, unitFilterBar } from './unit-filter.js';
 import { analyze, LISTING_STATUS, CLOSED_STATUS, formatDate } from './price.js';
 import { stepChart, chartLegend, SERIES_COLORS } from './chart.js';
@@ -43,6 +43,8 @@ const BUILDING_SORTS = [
 export function renderList(root) {
   // 一覧は売り出し中の物件が主役。自分が登録した部屋はその中に混ざる
   store.ensureOnsale();
+  // 登録した部屋の建物だけ相場も読む。募集が終わっていないかの突き合わせに使う
+  store.ensureMarkets([...new Set(store.rooms.map((r) => r.buildingId))]);
   const byRoom = listUI.mode === 'room';
   if (byRoom && !ROOM_SORTS.some(([k]) => k === listUI.sort)) listUI.sort = 'price';
   if (!byRoom && !BUILDING_SORTS.some(([k]) => k === listUI.sort)) listUI.sort = 'price';
@@ -52,6 +54,7 @@ export function renderList(root) {
 
   mount(root,
     pageHead(),
+    listingSyncBar(),
     filterBar(rooms, shown, byRoom),
     byRoom ? roomListing(shown) : buildingListing(shown),
     selectionBar(rooms),
@@ -68,6 +71,39 @@ function pageHead() {
 
 function allRooms() {
   return allUnits();
+}
+
+/**
+ * 取り込んだ相場と募集状況が食い違っている部屋を知らせる。
+ * 取り込みはその時点のスナップショットなので、直すかどうかは自分で決める。
+ */
+function listingSyncBar() {
+  const diff = listingMismatches();
+  if (!diff.length) return null;
+  const closed = diff.filter((d) => d.want === '募集終了');
+  const open = diff.filter((d) => d.want === '募集中');
+  return el('div', { class: 'card', style: 'padding:12px;margin-bottom:12px' },
+    el('div', { style: 'display:flex;gap:12px;align-items:center;flex-wrap:wrap' },
+      el('span', {},
+        closed.length ? `${closed.length}室がマンレビでは売り出しに見当たりません。` : '',
+        open.length ? `${open.length}室がマンレビでは売り出し中です。` : ''),
+      el('div', { class: 'spacer' }),
+      el('button', {
+        class: 'btn btn-sm btn-primary',
+        onclick: () => {
+          for (const { r, want } of diff) {
+            r.listingStatus = want;
+            if (CLOSED_STATUS.includes(want)) r.closedAt ||= new Date().toISOString().slice(0, 10);
+            else r.closedAt = null;
+          }
+          store.markDirty();
+          toast(`${diff.length}室の募集状況を直しました`);
+          rerender();
+        },
+      }, 'まとめて直す')),
+    el('p', { class: 'tiny muted', style: 'margin:6px 0 0' },
+      diff.map((d) => `${store.building(d.r.buildingId)?.name || ''} ${d.r.label}`).join('・')
+      + '　※取り込んだ時点の情報です。掲載のほうが新しいこともあります'));
 }
 
 /* ===== 絞り込み ===== */

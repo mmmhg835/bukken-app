@@ -3,6 +3,7 @@ import { store } from './store.js';
 import { el, fmt, toast, mount, preserveFocus } from './util.js';
 import { kv, select, numberInput } from './ui.js';
 import { analyze, syncPrice, formatDate, today, LISTING_STATUS, CLOSED_STATUS } from './price.js';
+import { listingHint } from './units.js';
 import { stepChart } from './chart.js';
 
 export function salesSection(room, onChange) {
@@ -28,6 +29,37 @@ export function salesSection(room, onChange) {
 }
 
 /* ===== 掲載状況 ===== */
+/**
+ * 取り込んだマンレビの相場と食い違っていたら知らせる。
+ * 勝手には直さない。取り込みはその時点のスナップショットなので、
+ * 自分が見ている掲載のほうが新しいこともある。
+ */
+function hintNote(room, repaint) {
+  const hint = listingHint(room);
+  if (hint.state === 'unknown') return null;
+  const want = hint.state === 'open' ? '募集中' : '募集終了';
+  if (room.listingStatus === want) {
+    return el('p', { class: 'tiny muted' },
+      hint.state === 'open' ? 'マンレビでも売り出し中です。' : 'マンレビでも売り出しが見当たりません。');
+  }
+  if (room.listingStatus === '商談中' || room.listingStatus === '成約') return null;
+  return el('p', { class: 'tiny' },
+    el('span', { style: 'color:var(--warn)' },
+      hint.state === 'closed'
+        ? `マンレビでは売り出しが見当たりません${hint.ym ? `（最後の掲載 ${hint.ym}）` : ''}。`
+        : 'マンレビでは売り出し中です。'),
+    ' ',
+    el('button', {
+      class: 'btn btn-sm',
+      onclick: () => {
+        room.listingStatus = want;
+        if (CLOSED_STATUS.includes(want)) room.closedAt ||= today();
+        else room.closedAt = null;
+        repaint();
+      },
+    }, `${want}にする`));
+}
+
 function statusRow(room, repaint) {
   const closed = CLOSED_STATUS.includes(room.listingStatus);
   return el('div', { class: 'card form' },
@@ -39,7 +71,8 @@ function statusRow(room, repaint) {
         if (CLOSED_STATUS.includes(v)) room.closedAt ||= today();
         else room.closedAt = null;
         repaint();
-      })),
+      }),
+      hintNote(room, repaint)),
     el('div', { class: 'field' },
       el('label', {}, '登録日（掲載開始）'),
       el('input', {

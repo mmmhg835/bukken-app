@@ -141,3 +141,54 @@ export function options(values, label = (v) => v) {
     .sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(b[0], 'ja'))
     .map(([v, n]) => [v, `${label(v)}（${n}）`]);
 }
+
+/* ===== 募集状況の突き合わせ ===== */
+
+// 面積の許容差。同じ部屋でも、掲載元によって 80.1 と 80.14 のようにぶれる
+const AREA_TOL = 0.6;
+const sameUnit = (a, b) =>
+  a.floor != null && a.floor === b.floor
+  && a.area != null && b.area != null && Math.abs(a.area - b.area) <= AREA_TOL;
+
+/**
+ * マンレビの取り込みから見て、その部屋がいま売り出し中かどうか。
+ * 自分で付けた listingStatus とは別に、証拠として出す。
+ *
+ *  open    … 売り出し中の行と一致した
+ *  closed  … 一致する売り出しが無く、同じ部屋が過去に売られた履歴はある
+ *  unknown … その建物の相場をまだ取り込んでいない（判定できない）
+ *
+ * 取り込んだ時点のスナップショットなので、最新かどうかは取り込みの新しさ次第。
+ */
+export function listingHint(r, b = null) {
+  if (!r || r.fromListing) return { state: 'open', ym: null };
+  const building = b || store.building(r.buildingId);
+  if (!building) return { state: 'unknown', ym: null };
+
+  const live = store.onsaleRows.filter((x) => x.buildingId === r.buildingId && sameUnit(r, x));
+  if (live.length) {
+    const ym = live.map((x) => x.listedYM).filter(Boolean).sort().pop() || null;
+    return { state: 'open', ym };
+  }
+  const market = store.marketOf(r.buildingId);
+  if (!market || !(market.sale || []).length) return { state: 'unknown', ym: null };
+
+  const past = market.sale.filter((x) => sameUnit(r, x));
+  if (!past.length) return { state: 'unknown', ym: null };      // 階も面積も一致しない＝別物
+  const ym = past.map((x) => x.closedYM).filter(Boolean).sort().pop() || null;
+  return { state: 'closed', ym };
+}
+
+/** マンレビと食い違っている部屋。まとめて直すときに使う */
+export function listingMismatches(rooms = store.rooms) {
+  const out = [];
+  for (const r of rooms) {
+    const hint = listingHint(r);
+    if (hint.state === 'unknown') continue;
+    const want = hint.state === 'open' ? '募集中' : '募集終了';
+    // 商談中・成約は自分で付けた細かい状態なので、勝手には戻さない
+    if (r.listingStatus === want || r.listingStatus === '商談中' || r.listingStatus === '成約') continue;
+    out.push({ r, want, ym: hint.ym });
+  }
+  return out;
+}

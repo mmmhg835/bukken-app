@@ -451,6 +451,34 @@ const screens = [
     if (made.price !== 9800 || made.floor !== 15) throw new Error('売り出しの中身が移っていない');
     if (u.promote({ r: made, listing: null }) !== made) throw new Error('二重に作っている');
   }],
+  ['募集状況をマンレビと突き合わせる', () => {
+    const u = mods.units;
+    const b = store.data.buildings[0];
+    const room = store.data.rooms[0];
+    const savedStatus = room.listingStatus;
+    room.floor = 20; room.area = 80;                  // os1（売り出し中）と同じ部屋
+    if (u.listingHint(room).state !== 'open') throw new Error('売り出し中を拾えていない');
+
+    // 売り出しに無く、同じ階・面積の終了した行だけがある部屋
+    const gone = store.addRoom(b.id, { label: '4階', floor: 4, area: 75.67 });
+    gone.listingStatus = '募集中';
+    const hint = u.listingHint(gone);
+    if (hint.state !== 'closed') throw new Error('募集終了を拾えていない');
+    if (hint.ym !== '2026-08') throw new Error('最後の掲載月が取れていない');
+    if (!u.listingMismatches().some((d) => d.r.id === gone.id && d.want === '募集終了')) {
+      throw new Error('食い違いとして出ていない');
+    }
+    // 自分で付けた「商談中」は勝手に戻さない
+    gone.listingStatus = '商談中';
+    if (u.listingMismatches().some((d) => d.r.id === gone.id)) throw new Error('商談中を上書きしようとしている');
+    // 相場を取り込んでいない建物は判定しない
+    const unknown = store.addRoom('b9', { label: '3階', floor: 3, area: 55 });
+    if (u.listingHint(unknown).state !== 'unknown') throw new Error('根拠なく判定している');
+
+    // 片付け。deleteRoom は保存まで走るので、ここでは配列から外すだけにする
+    store.data.rooms = store.data.rooms.filter((x) => x.id !== gone.id && x.id !== unknown.id);
+    room.listingStatus = savedStatus;
+  }],
   ['絞り込みが一覧・比較・ライフプランで揃う', () => {
     const v = mods.views;
     const f = mods['unit-filter'];
