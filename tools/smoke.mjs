@@ -348,6 +348,11 @@ const screens = [
       kanrihi: 1.184, shuzen: 1.984 });
     // 終了年月も販売中の印も無い行。マンレビの古い行がこの形
     store.addListing(b.id, { listedYM: '2009-01', floor: 26, area: 68.12, price: 4380 });
+    // 募集中の行。ここから「部屋にする」ボタンを描く経路を通す
+    store.addListing(b.id, { listedYM: '2026-08', open: true, floor: 9, layout: '2LDK',
+      direction: '南西', feature: '角部屋・リフォーム', area: 80.14, balcony: 9.63, price: 12480,
+      priceHistory: [{ ym: '2026-08', price: 12980 }, { ym: '2026-09', price: 12480 }],
+      kanrihi: 2.13, shuzen: 1.732 });
     store.addRent(b.id, { ym: '2026-05', floor: 13, layout: '1SLDK', direction: '北東',
       area: 67.23, rent: 280000, kanrihi: 20000, deposit: 560000, keyMoney: 280000, guarantee: 0 });
     store.addNewPrice(b.id, { floor: 4, direction: '南西', layout: '1LDK',

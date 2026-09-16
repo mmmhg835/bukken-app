@@ -11,6 +11,7 @@ import { lineChart, stackedBarChart, chartLegend, SERIES_COLORS } from './chart.
 import { saleView } from './sale-view.js';
 
 import { derive, TSUBO_SQM } from './util.js';
+import { CLOSED_STATUS } from './price.js';
 
 const ui = {
   afterLoans: false,
@@ -104,13 +105,26 @@ function planView(plan, room, building, res, mark, rerender, baseRes = null, bas
   );
 }
 
+/**
+ * 試算の対象にする部屋。募集が終わった部屋は買えないので外す。
+ * ただし選択中の部屋だけは、途中で募集終了になっても消えないよう残す。
+ */
+function planRooms(keepId = null) {
+  const out = [];
+  for (const b of store.buildings) {
+    for (const r of store.roomsOf(b.id)) {
+      if (CLOSED_STATUS.includes(r.listingStatus) && r.id !== keepId) continue;
+      out.push({ b, r });
+    }
+  }
+  return out;
+}
+
 /* ===== 物件の選択 ===== */
 function propertyPicker(plan, room, building, rerender, view = 'plan') {
   const options = [['', '現在の想定（手入力の住居費）']];
-  for (const b of store.buildings) {
-    for (const r of store.roomsOf(b.id)) {
-      options.push([r.id, `${b.name} ${r.label}　${fmt.man1(r.price)}万円`]);
-    }
+  for (const { b, r } of planRooms(plan.selectedRoomId)) {
+    options.push([r.id, `${b.name} ${r.label}　${fmt.man1(r.price)}万円`]);
   }
   return el('div', { class: 'section' },
     el('h3', {}, '試算する物件'),
@@ -946,11 +960,9 @@ function incomeSection(plan, mark) {
    ========================================================= */
 function scenarioSection(plan, currentRoom, currentBuilding) {
   const rows = [];
-  for (const b of store.buildings) {
-    for (const r of store.roomsOf(b.id)) {
-      const res = calcPlan(plan, r, b, planTerms(), { excludeTemporary: ui.afterLoans });
-      rows.push({ b, r, res, housing: housingCost(r, b, planTerms()) });
-    }
+  for (const { b, r } of planRooms(plan.selectedRoomId)) {
+    const res = calcPlan(plan, r, b, planTerms(), { excludeTemporary: ui.afterLoans });
+    rows.push({ b, r, res, housing: housingCost(r, b, planTerms()) });
   }
   if (!rows.length) return null;
   rows.sort((a, x) => x.res.balance - a.res.balance);

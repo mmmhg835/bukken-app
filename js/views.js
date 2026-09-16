@@ -28,6 +28,8 @@ const mark = () => touch();
    ========================================================= */
 const listUI = {
   mode: 'building', sort: 'price', status: 'all',
+  // 募集状況の既定は「募集中」。終わった部屋まで並べると、比較もライフプランも意味が薄れる
+  listing: 'open',
   area: 'all', price: 'all', layout: 'all', age: 'all', more: false, equip: [],
 };
 
@@ -81,6 +83,11 @@ function allRooms() {
 /* ===== 絞り込み ===== */
 function matchesFilters({ r, b }) {
   if (listUI.status !== 'all' && r.status !== listUI.status) return false;
+  if (listUI.listing !== 'all') {
+    const closed = CLOSED_STATUS.includes(r.listingStatus);
+    if (listUI.listing === 'open' && closed) return false;
+    if (listUI.listing === 'closed' && !closed) return false;
+  }
   if (listUI.area !== 'all' && areaOf(b).town !== listUI.area) return false;
   if (listUI.layout !== 'all' && r.layout !== listUI.layout) return false;
   if (listUI.equip.length) {
@@ -121,6 +128,8 @@ function filterBar(all, shown, byRoom) {
       el('div', { class: 'fgroup' }, el('label', {}, '間取り'),
         pick('layout', [['all', 'すべて'], ...layouts.map((l) => [l, l])])),
       el('div', { class: 'fgroup' }, el('label', {}, '築年数'), pick('age', AGE_BANDS)),
+      el('div', { class: 'fgroup' }, el('label', {}, '募集状況'),
+        pick('listing', [['open', '募集中'], ['closed', '募集終了'], ['all', 'すべて']])),
       el('div', { class: 'fgroup' }, el('label', {}, '検討状態'),
         pick('status', [['all', 'すべて'], ...STATUSES.map((x) => [x, x])])),
       equipOptions.length

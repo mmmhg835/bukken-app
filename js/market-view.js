@@ -4,12 +4,13 @@
 // 「過去そこがいくらだったか」を、売買・賃貸・新築の3方向から押さえるのが狙い。
 // 単位は売買が万円、賃貸が円。混ぜないこと（写し間違いの元になる）。
 import { store } from './store.js';
+import { RENOVATION } from './spec.js';
 import { el, mount, fmt, derive } from './util.js';
 import { select } from './ui.js';
 import { scatterChart, chartLegend, SERIES_COLORS, SERIES_MUTED } from './chart.js';
 import { linearFit } from './analysis.js';
 import {
-  sortRows, summary, pricePoints, tsuboOf, sqmOf, monthsOf, cutOf, isOpen, ymLabel,
+  sortRows, summary, pricePoints, tsuboOf, sqmOf, monthsOf, cutOf, isOpen, ymLabel, median,
   sortRents, rentSummary, rentTsuboOf, rentSqmOf, ymToNum,
   sortNewPrices, newSummary, newTsuboOf, grossYield, vsNew, recent,
 } from './market.js';
@@ -102,8 +103,32 @@ function overview(sale, rent, news, b) {
           mult != null && n.tsuboMed ? `新築 ${fmt.n(n.tsuboMed, 0)}万/坪` : '売出と新築の両方が要る'),
         cell('月の賃料 中央', r.rentMed != null ? `${fmt.n(r.rentMed, 0)}円` : '—'),
       )),
+    onSaleNow(sale, b),
     myRooms(b, s, r),
   );
+}
+
+/**
+ * いま出ている数。総戸数に対する割合が高いほど、売りたい人が多いということ。
+ * 掲載期間は募集中の行だけで見る（終わった行を混ぜると「売れるまでの早さ」になってしまう）。
+ */
+function onSaleNow(sale, b) {
+  const open = sale.filter(isOpen);
+  if (!open.length) return null;
+  const months = open.map(monthsOf).filter(Number.isFinite);
+  const units = b?.totalUnits || null;
+  const ratio = units ? (open.length / units) * 100 : null;
+  const longest = months.length ? Math.max(...months) : null;
+  return el('div', { class: 'section' },
+    el('h3', {}, 'いま出ている数'),
+    el('div', { class: 'calcgrid calcgrid-3' },
+      cell('募集中', `${open.length}件`,
+        units ? `総戸数 ${units}戸` : '総戸数が未入力'),
+      cell('総戸数に対して', ratio != null ? `${fmt.n(ratio, 1)}%` : '—',
+        ratio != null ? (ratio >= 5 ? '多め' : ratio >= 2 ? '並み' : '少なめ') : null),
+      cell('掲載期間 中央', months.length ? `${median(months)}か月` : '—',
+        longest != null ? `一番長い ${longest}か月` : null),
+    ));
 }
 
 /** 検討中の部屋を相場の中に置く。買おうとしている値がどのあたりか */
@@ -241,7 +266,16 @@ function saleTable(rows, rerender) {
       el('td', {}, sqmOf(x) != null ? fmt.n(sqmOf(x), 2) : '—'),
       el('td', {}, x.kanrihi != null ? fmt.n(x.kanrihi, 2) : '—'),
       el('td', {}, x.shuzen != null ? fmt.n(x.shuzen, 2) : '—'),
-      delCell(() => store.deleteListing(x.id), ymLabel(x.listedYM), rerender));
+      el('td', {},
+        isOpen(x) ? roomButton(x, rerender) : null,
+        el('button', {
+          class: 'btn btn-sm',
+          onclick: () => {
+            if (!confirm(`${ymLabel(x.listedYM)} の行を消しますか`)) return;
+            store.deleteListing(x.id);
+            rerender();
+          },
+        }, '削除')));
   }));
   return table(SALE_COLS, body, 6);
 }
@@ -359,6 +393,54 @@ function table(cols, body, labs) {
   return el('div', { class: 'section' },
     el('div', { class: 'tablewrap' },
       el('table', { class: 'cmp markettbl' }, el('thead', {}, head), body)));
+}
+
+/**
+ * 募集中の行から検討中の部屋を作る。
+ * 掲載サイトのスクショを撮り直さずに済ませるための入口で、写して入れる項目は
+ * すべてこの行に揃っている（足りないのは部屋番号と写真だけ）。
+ */
+function roomButton(x, rerender) {
+  const b = store.building(x.buildingId);
+  const dup = store.roomsOf(x.buildingId).find((r) =>
+    r.floor === x.floor && r.area === x.area && r.price === x.price);
+  if (dup) {
+    return el('a', {
+      href: '#', class: 'tiny',
+      onclick: (e) => { e.preventDefault(); location.hash = `#/r/${dup.id}`; },
+    }, '登録済み');
+  }
+  return el('button', {
+    class: 'btn btn-sm btn-primary',
+    onclick: () => {
+      const r = store.addRoom(x.buildingId, {
+        label: x.floor != null ? `${x.floor}階` : '新規の部屋',
+        price: x.price, area: x.area, layout: x.layout, floor: x.floor, balcony: x.balcony,
+        kanrihi: x.kanrihi, shuzen: x.shuzen,
+        listingStatus: '募集中',
+        listedAt: x.listedYM ? `${x.listedYM}-01` : null,
+        priceHistory: (x.priceHistory || []).map((h) => ({ date: `${h.ym}-01`, price: h.price })),
+        roomEquipmentTags: /角部屋/.test(x.feature || '') ? ['角部屋'] : [],
+        renovation: renovationOf(x.feature),
+        url: b?.url || '',
+        memo: x.feature ? `マンレビの特徴：${x.feature}` : '',
+      });
+      // 価格推移が空だと販売期間が出ないので、最低1点は入れておく
+      if (!r.priceHistory.length && x.price != null && x.listedYM) {
+        r.priceHistory = [{ date: `${x.listedYM}-01`, price: x.price }];
+      }
+      store.markDirty();
+      rerender();
+      location.hash = `#/r/${r.id}`;
+    },
+  }, '部屋にする');
+}
+
+/** 「リフォーム・リノベーション」からリノベ区分を決める */
+function renovationOf(feature = '') {
+  if (/リノベーション/.test(feature)) return RENOVATION[2];
+  if (/リフォーム/.test(feature)) return RENOVATION[1];
+  return RENOVATION[0];
 }
 
 function delCell(remove, name, rerender) {
