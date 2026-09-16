@@ -266,14 +266,17 @@ export const MARKET_GROUPS = {
   feature:   { label: '特徴', get: (x) => x.feature || 'なし' },
   status:    { label: '募集状況', get: (x) => (isOpen(x) ? '販売中' : x.closedYM ? '終了' : '記録なし') },
   // 順序のある区分。並び順が決まっているので、色も濃さが順に変わるものを当てる
+  // 5年刻み。10年刻みだと、値段がいちばん動く築10〜20年がひとまとめになってしまう。
+  // 線は8本までなので、35年を超えたぶんは1つにまとめる（そこは件数も差も小さい）
   ageBand: {
-    label: '築年数', order: ['築10年以内', '築20年以内', '築30年以内', '築30年超'],
+    label: '築年数',
+    order: [5, 10, 15, 20, 25, 30, 35].map((n) => `築${n}年以内`).concat('築35年超'),
     get: (x, b) => {
       const built = ymToNum(String(b?.builtYM || '').replace('/', '-'));
       if (built == null) return '不明';
       const age = nowYear() - built;
-      return age <= 10 ? '築10年以内' : age <= 20 ? '築20年以内'
-        : age <= 30 ? '築30年以内' : '築30年超';
+      if (age > 35) return '築35年超';
+      return `築${Math.max(5, Math.ceil(age / 5) * 5)}年以内`;
     },
   },
   walkBand: {

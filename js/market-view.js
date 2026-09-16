@@ -546,7 +546,10 @@ const group2Options = () => [['none', '掛け合わせなし'],
 function colorOf(names, group = null) {
   const map = new Map();
   if (group?.order) {
-    group.order.forEach((k, i) => map.set(k, BAND_COLORS[Math.min(i, BAND_COLORS.length - 1)]));
+    // 4段までなら濃さが順に変わる色を当てる。それより細かく刻むと、
+    // 濃さの差が小さすぎて線を見分けられないので、通常の系列色を順番どおりに当てる
+    const ramp = group.order.length <= BAND_COLORS.length ? BAND_COLORS : SERIES_COLORS;
+    group.order.forEach((k, i) => map.set(k, ramp[Math.min(i, ramp.length - 1)]));
     return map;
   }
   names.forEach((k, i) => map.set(k, i < SERIES_COLORS.length ? SERIES_COLORS[i] : null));
@@ -713,6 +716,14 @@ function trendView(rows, rerender) {
     .sort((a, b) => b[1].length - a[1].length)
     .slice(0, SERIES_COLORS.length);
   const colors = colorOf(drawnKeys.map(([name]) => name), group);
+  // 築年数のように順序のある区分は、凡例も新しい順に並べる（件数順だと読めない）
+  if (group.order) {
+    const rank = (name) => {
+      const i = group.order.indexOf(name);
+      return i < 0 ? 999 : i;
+    };
+    drawnKeys.sort((a, b) => rank(a[0]) - rank(b[0]));
+  }
   const all = drawnKeys.map(([name, points]) => ({
     name, points: points.sort((a, b) => a.x - b.x),
     color: colors.get(name) || SERIES_MUTED,
