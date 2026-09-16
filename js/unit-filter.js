@@ -150,6 +150,8 @@ export function unitFilterBar(all, shown, rerender, { lead = null, trail = null,
       lead,
       group('募集状況', band('listing',
         [['open', '募集中'], ['closed', '募集終了'], ['all', 'すべて']])),
+      // 自分が登録した部屋だけを見る使い方が多いので、これは畳まない
+      group('検討', band('own', OWN_OPTIONS)),
       group('エリア（最寄駅）', pick('area', options(buildings('area').flatMap(stationsOf)))),
       group('間取り', pick('layout', options(pool('layout').map((x) => x.r.layout)))),
       group('価格', range('priceMin', 'priceMax', '万円')),
@@ -162,7 +164,6 @@ export function unitFilterBar(all, shown, rerender, { lead = null, trail = null,
     ),
     open
       ? el('div', { class: 'filterbar-row is-more' },
-        group('検討', band('own', OWN_OPTIONS)),
         group('住所', pick('town', options(buildings('town').map((b) => areaOf(b).town)))),
         group('築年数', band('age', AGE_BANDS)),
         group('駅徒歩', band('walk', WALK_BANDS)),
@@ -194,7 +195,7 @@ export function unitFilterBar(all, shown, rerender, { lead = null, trail = null,
 
 /** 「条件を増やす」の中で、いくつ使われているか */
 function extraCount() {
-  const keys = ['own', 'town', 'age', 'walk', ...FIRM_KEYS];
+  const keys = ['town', 'age', 'walk', ...FIRM_KEYS];
   return keys.filter((k) => draft[k] !== 'all').length + (draft.equip.length ? 1 : 0);
 }
 
