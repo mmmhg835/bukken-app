@@ -15,7 +15,7 @@ import { areaOf } from './analysis.js';
 import {
   allUnits, promote, listingMismatches, unitUrl, unitHistory, onsaleCount,
 } from './units.js';
-import { unitUI, unitMatches, unitFilterBar } from './unit-filter.js';
+import { unitUI, unitMatches, unitFilterBar, filteredUnits } from './unit-filter.js';
 import { analyze, LISTING_STATUS, CLOSED_STATUS, formatDate } from './price.js';
 import { ymLabel, tsuboOf, monthsOf } from './market.js';
 import { stepChart, chartLegend, SERIES_COLORS } from './chart.js';
@@ -1241,9 +1241,15 @@ function compareTable(rows) {
    地図
    ========================================================= */
 export function renderMap(root) {
-  const located = store.buildings.filter((b) => b.lat != null);
-  const missing = store.buildings.filter((b) => b.lat == null);
+  // 絞り込みは他のタブと同じもの。条件に合う部屋がある建物だけを地図に出す
+  store.ensureOnsale();
+  const units = allUnits();
+  const hit = new Set(units.filter((x) => unitMatches(x)).map((x) => x.b.id));
+  const target = store.buildings.filter((b) => hit.has(b.id));
+  const located = target.filter((b) => b.lat != null);
+  const missing = target.filter((b) => b.lat == null);
 
+  const bar = unitFilterBar(units, units.filter((x) => unitMatches(x)), rerender, { unit: '部屋' });
   const mapBox = el('div', { class: 'bigmap' });
   if (located.length || store.places.length) {
     drawMap(mapBox,
@@ -1268,6 +1274,7 @@ export function renderMap(root) {
     )));
 
   mount(root,
+    bar,
     el('div', { class: 'toolbar' },
       el('div', { class: 'spacer' }),
       el('button', { class: 'btn btn-sm', onclick: () => go('settings') }, '参照地点を追加'),

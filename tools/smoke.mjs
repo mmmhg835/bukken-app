@@ -494,6 +494,25 @@ const screens = [
     store.data.rooms = store.data.rooms.filter((x) => x.id !== gone.id && x.id !== unknown.id);
     room.listingStatus = savedStatus;
   }],
+  ['絞り込みがどのタブにもある', () => {
+    const f = mods['unit-filter'];
+    const saved = { ...f.unitUI };
+    try {
+      // 条件を変えると、内見と地図の中身も一緒に絞られる
+      Object.assign(f.unitUI, saved, { listing: 'all', own: 'mine', area: '存在しない駅' });
+      f.resetDraft();
+      mods['viewing-view'].renderViewing(stubEl(), () => {}, 'check');
+      mods['viewing-view'].renderViewing(stubEl(), () => {}, 'offer');
+      mods.views.renderMap(stubEl());
+      Object.assign(f.unitUI, saved, { listing: 'all', own: 'all' });
+      f.resetDraft();
+      mods['viewing-view'].renderViewing(stubEl(), () => {}, 'offer');
+      mods.views.renderMap(stubEl());
+    } finally {
+      Object.assign(f.unitUI, saved);
+      f.resetDraft();
+    }
+  }],
   ['条件は検索を押して初めて効く', () => {
     const f = mods['unit-filter'];
     const v = mods.views;

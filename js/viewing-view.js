@@ -15,6 +15,8 @@ import { VIEWING_SECTIONS } from './spec.js';
 // 比較対象の選択は一覧・比較タブと同じものを使う。
 // ここだけ別に持つと、選び直しが要るうえ比較の中身も二重になる。
 import { isPicked, togglePick } from './views.js';
+// 絞り込みは一覧・比較・相場と同じもの。タブごとに別の絞り方があると探せない
+import { unitFilterBar, unitMatches } from './unit-filter.js';
 
 const SUBTABS = [['check', 'チェックポイント'], ['note', '内見の記録'], ['offer', '指値']];
 
@@ -36,7 +38,7 @@ const ui = {
 export const viewingUI = ui;
 
 export function renderViewing(root, rerender, view = 'check') {
-  const rooms = store.rooms;
+  const rooms = matching();
   if (!rooms.some((r) => r.id === ui.roomId)) ui.roomId = rooms[0]?.id ?? null;
   const room = ui.roomId ? store.room(ui.roomId) : null;
   const building = room ? store.building(room.buildingId) : null;
@@ -45,8 +47,9 @@ export function renderViewing(root, rerender, view = 'check') {
 
   mount(root,
     subTabs(view),
+    unitFilterBar(units(), rooms, rerender, { unit: '部屋' }),
     view === 'offer'
-      ? offerSection(mark, rerender)
+      ? offerSection(mark, rerender, rooms)
       : el('div', {},
         roomPicker(room, rerender),
         room
@@ -54,6 +57,13 @@ export function renderViewing(root, rerender, view = 'check') {
           : el('div', { class: 'empty' }, '部屋を登録すると内見の記録を残せます')),
   );
 }
+
+/**
+ * 内見で扱えるのは登録した部屋だけ（売り出しの行に内見の記録は持たせられない）。
+ * 絞り込みの条件は一覧と共通なので、条件に合う登録済みの部屋を返す。
+ */
+const units = () => store.rooms.map((r) => ({ r, b: store.building(r.buildingId) }));
+const matching = () => units().filter((x) => x.b && unitMatches(x)).map((x) => x.r);
 
 function subTabs(current) {
   return el('nav', { class: 'subtabs' }, SUBTABS.map(([key, label]) =>
@@ -64,8 +74,8 @@ function subTabs(current) {
 }
 
 function roomPicker(room, rerender) {
-  const options = store.buildings.flatMap((b) =>
-    store.roomsOf(b.id).map((r) => [r.id, `${b.name} ${r.label}`]));
+  const options = matching().map((r) =>
+    [r.id, `${store.building(r.buildingId)?.name ?? ''} ${r.label}`]);
   if (!options.length) return null;
   return el('div', { class: 'section' },
     el('h3', {}, '内見する部屋'),
@@ -168,9 +178,8 @@ function noteSection(room, building) {
  */
 const MARKET_SOURCES = [['marketIsoge', 'ISOGE'], ['marketMrev', 'マンレビ']];
 
-function offerSection(mark, rerender) {
+function offerSection(mark, rerender, all = store.rooms) {
   const terms = store.loanTerms;
-  const all = store.rooms;
   const shown = all.filter((r) =>
     (!ui.filter.status || r.status === ui.filter.status)
     && (!ui.filter.offerOnly || r.offerPrice != null));
