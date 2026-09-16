@@ -2,15 +2,11 @@
 // 価格は改定日に階段状に変わるため、線形補間ではなく段で描く。
 
 const NS = 'http://www.w3.org/2000/svg';
-// 系列の色。散布図では任意の2点が隣り合うため、全ペアを色覚シミュレーション付きで
-// 検証した6色に限る（この6色を超えたら色を増やさず「その他」にまとめる）。
-export const SERIES_COLORS = ['#006ade', '#cc7d1b', '#00ad8d', '#b60254', '#9a6ec9', '#397600'];
-// 色が尽きた系列をまとめる中立色。識別は名前ラベルとホバーが担う
+// 系列の色。散布図では任意の2点が隣り合うので、全ペアを色覚シミュレーション（P型・D型）
+// 込みで検証した6色に限る。この6色を超えたら色を増やさず「その他」にまとめる。
+export const SERIES_COLORS = ['#3186e9', '#cf7b26', '#00a089', '#ba3661', '#864ebc', '#577000'];
+// 色が尽きた系列をまとめる中立色。個々の識別は点を押したときの吹き出しが担う
 export const SERIES_MUTED = '#7d7a72';
-
-/** ラベルの幅の目安。全角1・半角0.55で数える（実測は描いてからでないと取れない） */
-const textWidth = (s, fs) =>
-  [...String(s)].reduce((w, ch) => w + (ch.charCodeAt(0) < 0x2e80 ? 0.55 : 1), 0) * fs;
 
 function n(tag, attrs = {}, ...kids) {
   const e = document.createElementNS(NS, tag);
@@ -153,15 +149,14 @@ export function chartLegend(series, chart = null) {
    ========================================================= */
 
 /**
- * @param {Array} series [{name, color, points:[{x,y,label,short}]}]
- *   label は吹き出しに出す名前、short は点の脇に出す短い名前
- * @param {object} opts { xLabel, yLabel, xUnit, yUnit, fit, height, xTick, labels }
+ * @param {Array} series [{name, color, points:[{x,y,label,info}]}]
+ *   label は吹き出しの見出し、info は吹き出しの本文（最大3行）
+ * @param {object} opts { xLabel, yLabel, xUnit, yUnit, fit, height, xTick }
  *   fit は linearFit() の結果。渡すと近似直線と±1σの帯を描く
- *   labels を true にすると点の脇に名前を出す
  * @returns {SVGElement} focusSeries(name) で系列を絞れる
  */
 export function scatterChart(series, opts = {}) {
-  const { xLabel = '', yLabel = '', fit = null, height = 320, xTick = null, labels = false } = opts;
+  const { xLabel = '', yLabel = '', fit = null, height = 320, xTick = null } = opts;
   const pts = series.flatMap((s) => s.points);
   if (!pts.length) return n('svg', { viewBox: '0 0 10 10' });
 
@@ -225,51 +220,21 @@ export function scatterChart(series, opts = {}) {
       transform: `rotate(-90 14 ${pad.t + ih / 2})` }, yLabel),
   );
 
-  // 点。凡例との連動とホバーのために、描いた円を控えておく
+  // 点。件数が増えるほど小さくする（20件で約4.5、50件を超えると3で止める）。
+  // 小さい点は押しにくいので、当たり判定は透明な円を別に重ねて確保する。
+  const R = Math.max(3, Math.min(5.5, 20 / Math.sqrt(pts.length)));
   const dots = [];
   series.forEach((s, si) => {
     const color = s.color || SERIES_COLORS[si % SERIES_COLORS.length];
     for (const p of s.points) {
-      const c = n('circle', { cx: X(p.x), cy: Y(p.y), r: 6.5, fill: color, opacity: '.9',
-        stroke: 'var(--surface)', 'stroke-width': 2, class: 'dot' });
+      const c = n('circle', { cx: X(p.x), cy: Y(p.y), r: R, fill: color, opacity: '.9',
+        stroke: 'var(--surface)', 'stroke-width': Math.min(2, R / 2.6), class: 'dot' });
       svg.append(c);
-      dots.push({ el: c, name: s.name, x: X(p.x), y: Y(p.y), p,
-        text: p.label || s.name, short: p.short || p.label || s.name });
+      dots.push({ el: c, name: s.name, x: X(p.x), y: Y(p.y), p, text: p.label || s.name });
     }
   });
-
-  // 点の脇に名前を出す。重なる分は出さない（ホバーで読める）
-  const marks = [];
-  if (labels) {
-    const FS = 10.5;
-    // 自分の点は避ける対象から外す（すぐ脇に置くので必ず接する）
-    const boxes = dots.map((d) => ({ x1: d.x - 8, x2: d.x + 8, y1: d.y - 8, y2: d.y + 8, own: d }));
-    const hits = (b, self) => boxes.some((t) =>
-      t.own !== self && !(b.x2 <= t.x1 || b.x1 >= t.x2 || b.y2 <= t.y1 || b.y1 >= t.y2));
-    for (const d of dots) {
-      const w = textWidth(d.short, FS);
-      // 右→左→上→下→斜めの順に置ける場所を探す。
-      // 近くが埋まっている点は一段離した位置も試す（20点あると素直な位置は取り合いになる）
-      const spots = [
-        [10, 3.5, 'start'], [-10, 3.5, 'end'], [0, -11, 'middle'], [0, 15, 'middle'],
-        [9, -8, 'start'], [-9, -8, 'end'], [9, 15, 'start'], [-9, 15, 'end'],
-        [0, -24, 'middle'], [0, 28, 'middle'], [22, -20, 'start'], [-22, -20, 'end'],
-        [22, 27, 'start'], [-22, 27, 'end'],
-      ];
-      for (const [dx, dy, anchor] of spots) {
-        const tx = d.x + dx, ty = d.y + dy;
-        const x1 = anchor === 'start' ? tx : anchor === 'end' ? tx - w : tx - w / 2;
-        const box = { x1: x1 - 2, x2: x1 + w + 2, y1: ty - FS, y2: ty + 3 };
-        if (box.x1 < 2 || box.x2 > W - 2 || box.y1 < pad.t - 4 || box.y2 > pad.t + ih + 4) continue;
-        if (hits(box, d)) continue;
-        boxes.push(box);
-        const t = n('text', { x: tx, y: ty, class: 'ptlab', 'text-anchor': anchor }, d.short);
-        svg.append(t);
-        marks.push({ el: t, name: d.name });
-        break;
-      }
-    }
-  }
+  // 当たり判定は点より大きく取る。点の上に重ねるので、描画はすべて済ませてから
+  const hitR = Math.max(R + 5, 10);
 
   // 点にさわると出る吹き出し。既定の title は出るまで遅く、指では出ない。
   // クリックすると留まるので、名前が重なって出せなかった点もここで読める。
@@ -295,8 +260,10 @@ export function scatterChart(series, opts = {}) {
     const th = 13 + LH * shown.length + PY * 2;
     let bx = d.x + 13, by = d.y - th - 10;
     if (bx + tw > W - 3) bx = d.x - 13 - tw;     // 右端では左に開く
-    if (bx < 3) bx = 3;
     if (by < 3) by = d.y + 14;                   // 上端では下に開く
+    // それでも収まらない場合は枠の中へ押し込む。はみ出すと外側で切られて読めなくなる
+    bx = Math.max(3, Math.min(bx, W - tw - 3));
+    by = Math.max(3, Math.min(by, H - th - 3));
     tipBg.setAttribute('x', bx); tipBg.setAttribute('y', by);
     tipBg.setAttribute('width', tw); tipBg.setAttribute('height', th);
     tipName.setAttribute('x', bx + PX);
@@ -305,16 +272,21 @@ export function scatterChart(series, opts = {}) {
       t.setAttribute('x', bx + PX);
       t.setAttribute('y', by + PY + 13 + LH * (i + 1));
     });
-    for (const q of dots) q.el.classList.toggle('is-hot', q === d);
+    for (const q of dots) {
+      q.el.classList.toggle('is-hot', q === d);
+      q.el.setAttribute('r', q === d ? R + 2.5 : R);   // 押した点だけ少し大きくする
+    }
     tip.setAttribute('visibility', 'visible');
   };
   const hideTip = () => {
-    for (const d of dots) d.el.classList.remove('is-hot');
+    for (const d of dots) { d.el.classList.remove('is-hot'); d.el.setAttribute('r', R); }
     tip.setAttribute('visibility', 'hidden');
   };
   for (const d of dots) {
-    d.el.addEventListener('pointerenter', () => { if (!pinned) showTip(d); });
-    d.el.addEventListener('click', (e) => {
+    const hit = n('circle', { cx: d.x, cy: d.y, r: hitR, fill: 'transparent', class: 'dothit' });
+    svg.insertBefore(hit, tip);
+    hit.addEventListener('pointerenter', () => { if (!pinned) showTip(d); });
+    hit.addEventListener('click', (e) => {
       e.stopPropagation();
       pinned = pinned === d ? null : d;          // もう一度押すと閉じる
       if (pinned) showTip(d); else hideTip();
@@ -325,9 +297,7 @@ export function scatterChart(series, opts = {}) {
 
   /** 凡例から呼ぶ。指定した系列だけ残して他を薄くする（null で解除） */
   svg.focusSeries = (name) => {
-    for (const m of [...dots, ...marks]) {
-      m.el.classList.toggle('is-dim', name != null && m.name !== name);
-    }
+    for (const d of dots) d.el.classList.toggle('is-dim', name != null && d.name !== name);
   };
 
   return svg;

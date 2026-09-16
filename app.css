@@ -369,14 +369,12 @@ table.cmp tr:hover td.lab{background:var(--surface-2)}
 .fitbadge b{color:var(--text);font-weight:700}
 
 .chartwrap{background:none;border:0;padding:0;overflow-x:auto;max-width:100%}
-.chart .dot{cursor:pointer;transition:opacity .12s}
-.chart .dot:hover{opacity:1}
-.chart .dot.is-hot{r:9;opacity:1}
+.chart .dot{transition:opacity .12s,r .12s}
+.chart .dot.is-hot{opacity:1}
 /* 凡例でさわった系列だけを残すときに、他を薄くする */
-.chart .dot.is-dim,.chart .ptlab.is-dim{opacity:.12}
-/* 点の脇の名前。帯や罫線の上でも読めるよう、地の色で縁取る */
-.chart .ptlab{fill:var(--text-2);font-size:10.5px;font-family:inherit;pointer-events:none;
-  paint-order:stroke;stroke:var(--surface);stroke-width:3px;stroke-linejoin:round;transition:opacity .12s}
+.chart .dot.is-dim{opacity:.12}
+/* 点そのものは小さくするので、押せる範囲は透明な円で別に確保する */
+.chart .dothit{cursor:pointer}
 .chart-tip{pointer-events:none;filter:drop-shadow(0 2px 7px rgba(0,0,0,.20))}
 .chart-tip-bg{fill:var(--surface);stroke:var(--line-2);stroke-width:1}
 .chart-tip-n{fill:var(--text);font-size:12px;font-weight:700;font-family:inherit}

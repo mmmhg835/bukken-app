@@ -4,13 +4,13 @@ import { el, fmt, mount } from './util.js';
 import { section, segmented, controlRow, toggle, select } from './ui.js';
 import {
   METRICS, ATTRS, GROUPINGS, buildRows, linearFit, residuals,
-  groupStats, histogram, monthlyTrend, areaOf, shortName,
+  groupStats, histogram, monthlyTrend, areaOf,
   EQUIPMENT_FILTERS, filterByEquipment, hasEquipment,
 } from './analysis.js';
 import { scatterChart, histogramChart, stepChart, chartLegend, SERIES_COLORS, SERIES_MUTED } from './chart.js';
 import { CLOSED_STATUS } from './price.js';
 
-const ui = { metric: 'tsubo', attr: 'area', group: 'building', fit: true, labels: true, histMetric: 'tsubo', equip: [] };
+const ui = { metric: 'tsubo', attr: 'area', group: 'building', fit: true, histMetric: 'tsubo', equip: [] };
 
 export function renderAnalysis(root, rerender) {
   const all = buildRows(store);
@@ -108,7 +108,6 @@ function scatterSection(all, rows, rerender) {
     byGroup.get(k).push({
       x: attr.get(x), y: metric.get(x),
       label: `${x.b.name} ${x.r.label}`,
-      short: `${shortName(x.b.name)} ${x.r.label}`,
       info: pointInfo(x),
     });
   }
@@ -129,7 +128,6 @@ function scatterSection(all, rows, rerender) {
       el('div', { style: 'display:flex;align-items:center;gap:18px;flex-wrap:wrap' },
         select(ui.group, Object.entries(GROUPINGS).map(([k, v]) => [k, v.label]),
           (k) => { ui.group = k; rerender(); }, 'picksel'),
-        toggle('点に名前', ui.labels, (v) => { ui.labels = v; rerender(); }),
         toggle('近似直線と相場の幅', ui.fit, (v) => { ui.fit = v; rerender(); }),
       )),
   );
@@ -137,7 +135,7 @@ function scatterSection(all, rows, rerender) {
   const chart = scatterChart(series, {
     xLabel: `${attr.label}（${attr.unit}）`,
     yLabel: `${metric.label}（${metric.unit}）`,
-    fit, xTick: attr.tick, height: 340, labels: ui.labels,
+    fit, xTick: attr.tick, height: 340,
   });
 
   const body = valid.length

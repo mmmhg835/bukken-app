@@ -97,21 +97,6 @@ export function builtYearOf(building) {
   return Number(m[1]) + (Number(m[2] || 1) - 1) / 12;
 }
 
-/**
- * 散布図の点の脇に出す短い名前。全角1・半角0.5で数えて頭から切る。
- * 「W Comfort Towers WEST」と「Wコンフォートタワーズ イースト」が同じ幅で並ぶようにする。
- */
-export function shortName(name, max = 7) {
-  const s = String(name || '').trim();
-  let w = 0, out = '';
-  for (const ch of s) {
-    w += ch.charCodeAt(0) < 0x2e80 ? 0.5 : 1;
-    if (w > max) return `${out}…`;
-    out += ch;
-  }
-  return out;
-}
-
 /** 住所を 都道府県 / 市区町村 / 町名 に分ける。エリア別の相場を出すために使う */
 export function areaOf(building) {
   const a = String(building?.address || '').trim();
