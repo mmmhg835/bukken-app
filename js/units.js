@@ -278,32 +278,23 @@ export function listingHint(r, b = null) {
 }
 
 /**
- * 同じ階・同じ専有面積の売り出し履歴を、向きごとに分けて返す。
+ * 同じ広さの売り出し履歴。同じ建物の中で、専有面積が近い行を集める。
  *
- * 階と面積だけでは同じ部屋と言い切れない。タワーは同じ階に同じ広さの部屋が
- * 複数あり（左右対称の間取りなど）、混ぜると「途中で値上げした」ように見えてしまう。
- * 向きが分かる行はそこで分ける。向きが無い行は分けようがないので別にまとめる。
+ * まったく同じ部屋（同じ階・同じ広さ）が売りに出ることは滅多にないので、
+ * 同じ広さの部屋の事例をまとめて見る。同じ階のものには印を付ける。
+ * 間取りが食い違う行は別の部屋なので入れない。
  *
  * 建物の相場（market/<建物>.json）を読み込んでいないと空で返る。
  */
-export function unitHistory(r) {
-  if (!r) return [];
+export function unitHistory(r, tol = 1.0) {
+  if (!r || r.area == null) return [];
   const m = store.marketOf(r.buildingId);
   if (!m) return [];
-  let rows = (m.sale || []).filter((x) => sameUnit(r, x));
-  // 間取りが分かっているなら、違う間取りは別の部屋。混ぜない
-  rows = rows.filter((x) => layoutOk(r.layout, x.layout));
-  const groups = new Map();
-  for (const x of rows) {
-    const key = (x.direction || '').trim() || '向き不明';
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(x);
-  }
-  const byYM = (a, x) => String(x.listedYM || '').localeCompare(String(a.listedYM || ''));
-  return [...groups.entries()]
-    .map(([direction, list]) => ({ direction, rows: list.sort(byYM) }))
-    // 件数の多い向きから。同数なら新しい方を先に
-    .sort((a, x) => x.rows.length - a.rows.length || byYM(a.rows[0], x.rows[0]));
+  return (m.sale || [])
+    .filter((x) => near(x.area, r.area, tol) && layoutOk(r.layout, x.layout))
+    // 同じ階なら同じ部屋の可能性が高い。印を付けて見分けられるようにする
+    .map((x) => ({ ...x, sameFloor: r.floor != null && x.floor === r.floor }))
+    .sort((a, x) => String(x.listedYM || '').localeCompare(String(a.listedYM || '')));
 }
 
 /** マンレビと食い違っている部屋。まとめて直すときに使う */

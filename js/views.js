@@ -17,7 +17,7 @@ import {
 } from './units.js';
 import { unitUI, unitMatches, unitFilterBar, filteredUnits } from './unit-filter.js';
 import { analyze, LISTING_STATUS, CLOSED_STATUS, formatDate } from './price.js';
-import { ymLabel, ymToNum, tsuboOf, monthsOf, nowYear } from './market.js';
+import { ymLabel, ymToNum, tsuboOf, monthsOf, nowYear, median } from './market.js';
 import { stepChart, chartLegend, SERIES_COLORS } from './chart.js';
 
 export const route = { view: 'list', id: null };
@@ -189,68 +189,67 @@ function buildingSorter(key) {
 }
 
 /**
- * この部屋の売り出し履歴。建物・階・専有面積が同じ行を、向きごとに分けて並べる。
+ * この部屋の売り出し履歴。同じ建物の中で、専有面積が近い行を集める。
  *
- * 売買では部屋番号が出ないので、同じ部屋かどうかは階と専有面積で見るしかない。
- * ただしタワーは同じ階に同じ広さの部屋が複数あるので、それだけだと別の部屋が
- * 混ざり、「途中で値上げした」ように見えてしまう。向きで分けて、どれが自分の
- * 部屋かは向き・間取り・特徴を見て判断してもらう。
+ * まったく同じ部屋（同じ階・同じ広さ）が売りに出ることは滅多にない。
+ * 同じ広さの部屋なら値段の付き方はほぼ同じなので、階の違いを見ながら
+ * まとめて見る。同じ階の行には印を付ける。
  */
 function unitHistorySection(r, b) {
-  const groups = unitHistory(r);
-  if (!groups.length) {
-    return section('この部屋の売り出し履歴',
+  const rows = unitHistory(r);
+  if (!rows.length) {
+    return section('同じ広さの売り出し履歴',
       el('p', { class: 'tiny muted' },
         store.marketOf(r.buildingId)
-          ? `同じ階・同じ専有面積（${r.floor ?? '—'}階・${fmt.sqm(r.area)}）の売り出しは記録にありません。`
-            + '階数と専有面積が入っていないと突き合わせできません。'
+          ? `${fmt.sqm(r.area)} 前後の売り出しは記録にありません。`
+            + '専有面積が入っていないと突き合わせできません。'
           : '読み込み中…'));
   }
-  const many = groups.length > 1;
-  return section('この部屋の売り出し履歴',
-    el('p', { class: 'tiny muted' },
-      `${r.floor ?? '—'}階・${fmt.sqm(r.area)} の売り出しを集めています。`,
-      many
-        ? '同じ階に同じ広さの部屋が複数あるため、向きで分けています。'
-          + 'どれが自分の部屋かは、向き・間取り・特徴で確かめてください。'
-        : ''),
-    groups.map(({ direction, rows }) => unitHistoryTable(direction, rows, r, many)));
-}
-
-function unitHistoryTable(direction, rows, r, showHead) {
   const prices = rows.map((x) => x.price).filter(Number.isFinite);
+  const tsubos = rows.map((x) => tsuboOf(x)).filter(Number.isFinite);
   const last = rows.find((x) => !isOpenRow(x));
-  return el('div', { style: 'margin-top:10px' },
-    showHead
-      ? el('div', { class: 'bgroup-head' },
-        el('span', { class: 'bgroup-name' }, `${direction}向き`),
-        el('span', { class: 'tiny muted' }, `${rows.length}件`))
-      : null,
+  const same = rows.filter((x) => x.sameFloor);
+  // 大きい建物だと100件を超える。新しい順に60件まで出す（数字は全件で出す）
+  const shown = rows.slice(0, 60);
+
+  return section('同じ広さの売り出し履歴',
+    el('p', { class: 'tiny muted' },
+      `${b?.name ?? ''} の ${fmt.sqm(r.area)}前後（±1㎡）・${r.layout || '間取り不問'} を集めています。`
+      + 'まったく同じ部屋が出ることは滅多にないので、同じ広さの事例で見ます。'
+      + (same.length ? `同じ${r.floor}階の記録には ● を付けています。` : '')),
     el('div', { class: 'chart-foot' },
       el('span', {}, '記録 ', el('b', {}, `${rows.length}件`)),
+      same.length ? el('span', {}, `同じ階 ${same.length}件`) : null,
       prices.length ? el('span', {}, `最高 ${fmt.man(Math.max(...prices))}`) : null,
       prices.length ? el('span', {}, `最安 ${fmt.man(Math.min(...prices))}`) : null,
-      // 何年前の掲載と比べているのかを出す。8年前と比べた差を今の値動きと
-      // 読まれると、判断を誤らせる
+      tsubos.length ? el('span', {}, `坪単価 中央 ${fmt.n(median(tsubos), 0)}万`) : null,
       last && r.price != null
         ? el('span', {}, `前回の掲載 ${ymLabel(last.listedYM)}（${fmt.man(last.price)}）→ 今回 `,
           el('b', {}, `${r.price > last.price ? '+' : ''}${fmt.n(r.price - last.price, 0)}万円`),
           agoText(last.listedYM))
         : null),
+    rows.length > shown.length
+      ? el('p', { class: 'tiny muted' },
+        `${rows.length}件のうち新しい ${shown.length} 件`)
+      : null,
     el('div', { class: 'tablewrap' },
       el('table', { class: 'cmp valuetable' },
         el('thead', {}, el('tr', {},
-          el('th', { class: 'lab' }, '掲載'), el('th', {}, '価格'), el('th', {}, '坪単価'),
-          el('th', {}, '値動き'), el('th', {}, '間取り'), el('th', {}, '特徴'),
+          el('th', { class: 'lab' }, '掲載'), el('th', {}, '階'), el('th', {}, '価格'),
+          el('th', {}, '坪単価'), el('th', {}, '値動き'), el('th', {}, '専有'),
+          el('th', {}, '間取り'), el('th', {}, '向き'), el('th', {}, '特徴'),
           el('th', {}, '期間'), el('th', {}, '状態'))),
-        el('tbody', {}, rows.map((x) => el('tr', {},
-          el('td', { class: 'lab' }, ymLabel(x.listedYM)),
+        el('tbody', {}, shown.map((x) => el('tr', { class: x.sameFloor ? 'is-current' : null },
+          el('td', { class: 'lab' }, x.sameFloor ? '● ' : '', ymLabel(x.listedYM)),
+          el('td', {}, x.floor != null ? `${x.floor}階` : '—'),
           el('td', {}, fmt.man(x.price)),
           el('td', {}, `${fmt.n(tsuboOf(x), 0)}万`),
           el('td', {}, (x.priceHistory || []).length
             ? (x.priceHistory || []).map((h) => `${ymLabel(h.ym)} ${fmt.n(h.price, 0)}`).join(' → ')
             : '—'),
+          el('td', {}, x.area != null ? fmt.n(x.area, 2) : '—'),
           el('td', {}, x.layout || '—'),
+          el('td', {}, x.direction || '—'),
           el('td', {}, x.feature || '—'),
           el('td', {}, monthsOf(x) != null ? `${fmt.n(monthsOf(x), 0)}か月` : '—'),
           el('td', {}, isOpenRow(x) ? '売出中' : `${ymLabel(x.closedYM)} 終了`),
