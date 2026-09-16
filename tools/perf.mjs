@@ -89,3 +89,6 @@ const rentRows = store.allBuildings.flatMap((b) => store.rentsOf(b.id));
 t('rentSummary', () => mk.rentSummary(rentRows), 3);
 t('yearly(全件)', () => mk.yearly(allRows), 3);
 t('pricePoints(全件)', () => mk.pricePoints(allRows), 3);
+// 絞り込みバーの選択肢づくり。1回の描画で何度も全行をなめていないかを見る
+t('targetBuildings(全件)', () => market.targetBuildings(), 5);
+t('saleRows(全件)', () => market.saleRows(store.allBuildings), 3);

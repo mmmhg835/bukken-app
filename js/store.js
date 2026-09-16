@@ -124,6 +124,9 @@ class Store extends EventTarget {
 
   markDirty() { this.dirty = true; this.emit(); this.#cache(); }
 
+  /** 衝突したときに控えたリモートの内容。無ければ null */
+  async conflictBackup() { return idb.get('kv', 'conflict').catch(() => null); }
+
   async save(message = 'update: 物件データを更新') {
     if (!this.configured) throw new Error('GitHub 接続が未設定です（設定タブ）');
     this.syncState = 'syncing'; this.emit();
@@ -136,9 +139,20 @@ class Store extends EventTarget {
       await this.#cache();
     } catch (e) {
       if (e.status === 409 || e.status === 422) {
+        // ぶつかった相手（リモートの中身）を控えに取ってから上書きできるようにする。
+        // 取り込みの最中にアプリから保存すると、数万行の相場が消えることがあったため。
         const got = await this.repo.getJson(DATA_PATH).catch(() => null);
-        if (got) this.sha = got.sha;
-        this.lastError = '他の端末の変更と衝突しました。もう一度「保存」を押すと上書きします。';
+        if (got) {
+          this.sha = got.sha;
+          await idb.set('kv', 'conflict', {
+            at: new Date().toISOString(), sha: got.sha, data: got.data,
+          }).catch(() => {});
+        }
+        const mine = this.data?.rooms?.length ?? 0;
+        const theirs = got?.data?.rooms?.length ?? '?';
+        this.lastError = `他の端末の変更とぶつかりました（手元 ${mine}室 / リモート ${theirs}室）。`
+          + 'リモートの内容は控えに取りました（設定タブから書き出せます）。'
+          + 'もう一度「保存」を押すと手元の内容で上書きします。';
       } else {
         this.lastError = e.message;
       }

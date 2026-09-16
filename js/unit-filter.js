@@ -209,47 +209,64 @@ function extraCount() {
   return keys.filter((k) => draft[k] !== 'all').length + (draft.equip.length ? 1 : 0);
 }
 
-/** いま効いている条件。押すとその条件だけ外れる */
-function activeChips(rerender) {
+/**
+ * いま効いている条件を並べる。絞り込みバーのチップにも、一括出力の見出しにも使う。
+ * keys はその条件を外すときに戻すキー、clear は戻す値。
+ */
+export function activeUnitConditions() {
   const label = {
     name: '建物名', listing: '募集状況', own: '検討', area: 'エリア', town: '住所', age: '築年数',
     walk: '駅徒歩', layout: '間取り', brand: 'ブランド', developer: '分譲',
     builder: '施工', designer: '設計',
   };
-  const chips = [];
-  const off = (keys, value) => () => {
-    for (const k of keys) draft[k] = value;
-    applyDraft();
-    rerender();
-  };
+  const out = [];
   for (const [k, name] of Object.entries(label)) {
     if (unitUI[k] === 'all' || unitUI[k] == null || unitUI[k] === '') continue;
     if (k === 'listing' && unitUI.listing === 'open') continue;   // 既定なので出さない
     const shown = k === 'age' || k === 'walk'
       ? (AGE_BANDS.concat(WALK_BANDS).find(([v]) => v === unitUI[k]) || [])[1] || unitUI[k]
-      : unitUI[k];
-    chips.push([`${name}：${shown}`, off([k], k === 'name' ? '' : 'all')]);
+      : k === 'own'
+        ? (OWN_OPTIONS.find(([v]) => v === unitUI[k]) || [])[1] || unitUI[k]
+        : unitUI[k];
+    out.push({ name, value: String(shown), keys: [k], clear: k === 'name' ? '' : 'all' });
   }
   const money = (v) => Number(v).toLocaleString('ja-JP');
   if (unitUI.priceMin != null || unitUI.priceMax != null) {
-    chips.push([`価格：${unitUI.priceMin != null ? money(unitUI.priceMin) : ''}〜`
-      + `${unitUI.priceMax != null ? money(unitUI.priceMax) : ''}万円`,
-    off(['priceMin', 'priceMax'], null)]);
+    out.push({
+      name: '価格',
+      value: `${unitUI.priceMin != null ? money(unitUI.priceMin) : ''}〜`
+        + `${unitUI.priceMax != null ? money(unitUI.priceMax) : ''}万円`,
+      keys: ['priceMin', 'priceMax'],
+      clear: null,
+    });
   }
   if (unitUI.areaMin != null || unitUI.areaMax != null) {
-    chips.push([`広さ：${unitUI.areaMin ?? ''}〜${unitUI.areaMax ?? ''}㎡`,
-      off(['areaMin', 'areaMax'], null)]);
+    out.push({
+      name: '広さ',
+      value: `${unitUI.areaMin ?? ''}〜${unitUI.areaMax ?? ''}㎡`,
+      keys: ['areaMin', 'areaMax'],
+      clear: null,
+    });
   }
   for (const e of unitUI.equip) {
-    chips.push([`設備：${e}`, () => {
-      draft.equip = draft.equip.filter((x) => x !== e);
-      applyDraft();
-      rerender();
-    }]);
+    out.push({ name: '設備', value: e, keys: ['equip'], clear: e });
   }
-  if (!chips.length) return null;
+  return out;
+}
+
+/** いま効いている条件。押すとその条件だけ外れる */
+function activeChips(rerender) {
+  const list = activeUnitConditions();
+  if (!list.length) return null;
+  const off = (c) => () => {
+    if (c.keys[0] === 'equip') draft.equip = draft.equip.filter((x) => x !== c.clear);
+    else for (const k of c.keys) draft[k] = c.clear;
+    applyDraft();
+    rerender();
+  };
   return el('div', { class: 'fchips' },
-    chips.map(([text, fn]) => el('button', { class: 'fchip', onclick: fn }, text, el('i', {}, '×'))));
+    list.map((c) => el('button', { class: 'fchip', onclick: off(c) },
+      `${c.name}：${c.value}`, el('i', {}, '×'))));
 }
 
 /**

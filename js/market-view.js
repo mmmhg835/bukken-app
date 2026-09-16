@@ -13,7 +13,7 @@ import {
 import { linearFit, areaOf } from './analysis.js';
 import {
   unitUI, draft as unitDraft, applyDraft, resetDraft, clearDraft, draftDirty,
-  OWN_OPTIONS, inRange,
+  OWN_OPTIONS, inRange, activeUnitConditions,
 } from './unit-filter.js';
 import {
   AGE_BANDS, WALK_BANDS, FIRM_KEYS, FIRM_LABEL,
@@ -172,7 +172,7 @@ function subTabs(current) {
  * @param {object} f  相場だけの条件
  * @param {object} u  共有の条件
  */
-function targetBuildings(except = null, f = ui, u = unitUI) {
+export function targetBuildings(except = null, f = ui, u = unitUI) {
   const on = (key) => key !== except;
   return store.allBuildings.filter((b) => {
     if (on('own') && u.own !== 'all') {
@@ -197,7 +197,7 @@ function targetBuildings(except = null, f = ui, u = unitUI) {
  * 売り出しの行。期間・募集状況・間取り・広さで絞る。except は選択肢を作るとき用。
  * 並べ替えはしない（数万件を選択肢の数だけ並べ直すのは無駄なので、必要な画面で行う）。
  */
-function saleRows(buildings, except = null, f = ui, u = unitUI) {
+export function saleRows(buildings, except = null, f = ui, u = unitUI) {
   const on = (key) => key !== except;
   const from = f.from === 'all' ? null : Number(f.from);
   const to = f.to === 'all' ? null : Number(f.to);
@@ -312,6 +312,8 @@ function buildingFilter(targets, loaded, rows, rerender, hitBuildings = null) {
 function applyAll() {
   applyDraft();
   copy(ui, marketDraft);
+  // 条件が変われば、押していた点や棒の中身も変わる。選びっぱなしにしない
+  ui.pick = null;
 }
 
 /** 検索ボタン。条件を選んだ時点ではグラフを変えず、これを押して初めて効かせる */
@@ -330,6 +332,7 @@ function searchButton(rerender) {
         else {
           copy(marketDraft, MARKET_DEFAULTS); copy(ui, MARKET_DEFAULTS);
           clearDraft();
+          ui.pick = null;
         }
         rerender();
       },
@@ -942,35 +945,19 @@ function trimTables(node, max = 10) {
 }
 
 /** いま効いている条件を、レポートの見出しに出す形で並べる */
-function activeConditions() {
-  const out = [];
-  const label = {
-    name: '建物名', mine: '検討', building: '建物', area: 'エリア', town: '住所',
-    age: '築年数', walk: '駅徒歩',
-    brand: 'ブランド', developer: '分譲', builder: '施工', designer: '設計',
-    layout: '間取り', listing: '募集状況',
-  };
-  for (const [k, name] of Object.entries(label)) {
-    const v = ui[k];
-    if (v == null || v === 'all' || v === '') continue;
-    if (k === 'building') {
-      const b = buildingOf(v);
-      out.push([name, b?.name ?? v]);
-    } else if (k === 'age') {
-      out.push([name, (AGE_BANDS.find(([x]) => x === v) || [])[1] ?? v]);
-    } else if (k === 'walk') {
-      out.push([name, (WALK_BANDS.find(([x]) => x === v) || [])[1] ?? v]);
-    } else if (k === 'listing') {
-      out.push([name, v === 'open' ? '販売中' : '終了']);
-    } else {
-      out.push([name, v]);
-    }
+export function activeConditions() {
+  // 建物名・エリア・間取りなどは共通の絞り込みが持っている。取りこぼすと
+  // 「何で絞ったレポートか」が紙の上で分からなくなる
+  const out = activeUnitConditions().map((c) => [c.name, c.value]);
+  if (ui.building !== 'all') {
+    out.unshift(['建物', buildingOf(ui.building)?.name ?? ui.building]);
   }
-  if (ui.sizeMin != null || ui.sizeMax != null) {
-    out.push(['広さ', `${ui.sizeMin ?? ''}〜${ui.sizeMax ?? ''}㎡`]);
+  if (ui.listing !== 'all') {
+    out.push(['募集状況', ui.listing === 'open' ? '販売中' : '終了']);
   }
   if (ui.from !== 'all' || ui.to !== 'all') {
-    out.push(['売り出し年', `${ui.from === 'all' ? '' : `${ui.from}年`}〜${ui.to === 'all' ? '' : `${ui.to}年`}`]);
+    out.push(['売り出し年',
+      `${ui.from === 'all' ? '' : `${ui.from}年`}〜${ui.to === 'all' ? '' : `${ui.to}年`}`]);
   }
   return out;
 }

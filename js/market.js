@@ -306,14 +306,17 @@ export function yearly(rows, metricKey = 'tsubo') {
       buckets.get(y).push(v);
     }
   }
-  const list = [...buckets.entries()].sort((a, b) => a[0] - b[0]).map(([year, vals]) => ({
-    year,
-    count: vals.length,
-    median: median(vals),
-    avg: vals.reduce((s, v) => s + v, 0) / vals.length,
-    min: Math.min(...vals),
-    max: Math.max(...vals),
-  }));
+  const list = [...buckets.entries()].sort((a, b) => a[0] - b[0]).map(([year, vals]) => {
+    const [min, max] = minMax(vals);
+    return {
+      year,
+      count: vals.length,
+      median: median(vals),
+      avg: vals.reduce((s, v) => s + v, 0) / vals.length,
+      min,
+      max,
+    };
+  });
   // 前の年からの変化。上昇が続いているかを見るための列
   list.forEach((r, i) => {
     const prev = list[i - 1];
@@ -341,15 +344,18 @@ export function groupBy(rows, buildingOf, groupKey, metricKey = 'tsubo') {
     map.get(k).push(v);
   }
   const total = [...map.values()].reduce((s, v) => s + v.length, 0);
-  return [...map.entries()].map(([name, vals]) => ({
-    name,
-    count: vals.length,
-    ratio: total ? (vals.length / total) * 100 : 0,
-    median: median(vals),
-    avg: vals.reduce((s, v) => s + v, 0) / vals.length,
-    min: Math.min(...vals),
-    max: Math.max(...vals),
-  })).sort((a, b) => b.median - a.median);
+  return [...map.entries()].map(([name, vals]) => {
+    const [min, max] = minMax(vals);
+    return {
+      name,
+      count: vals.length,
+      ratio: total ? (vals.length / total) * 100 : 0,
+      median: median(vals),
+      avg: vals.reduce((s, v) => s + v, 0) / vals.length,
+      min,
+      max,
+    };
+  }).sort((a, b) => b.median - a.median);
 }
 
 /** 度数分布。価格帯がどこに寄っているか */
@@ -357,7 +363,7 @@ export function bands(rows, metricKey = 'tsubo', binSize = null) {
   const metric = MARKET_METRICS[metricKey];
   const vals = rows.map((x) => metric.get(x)).filter(Number.isFinite);
   if (!vals.length) return { bins: [], binSize: 0 };
-  const lo = Math.min(...vals), hi = Math.max(...vals);
+  const [lo, hi] = minMax(vals);
   const size = binSize || niceBin((hi - lo) || Math.abs(hi) || 1);
   const start = Math.floor(lo / size) * size;
   const count = Math.max(1, Math.ceil(((hi - start) || size) / size));

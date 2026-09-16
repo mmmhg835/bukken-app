@@ -219,20 +219,28 @@ const checks = [
     if (Math.abs(y - 2.80) > 0.01) throw new Error('表面利回りが合わない');
     if (Math.abs(m.vsNew(590, 168) - 3.51) > 0.02) throw new Error('新築比が合わない');
   }],
-  ['analysis', () => {
-    const { METRICS, ATTRS, GROUPINGS } = mods.analysis;
+  ['相場の軸の定義', () => {
     const m = mods.market;
-    for (const [name, set] of [['METRICS', METRICS], ['ATTRS', ATTRS], ['GROUPINGS', GROUPINGS],
-      ['MARKET_METRICS', m.MARKET_METRICS], ['MARKET_ATTRS', m.MARKET_ATTRS], ['MARKET_GROUPS', m.MARKET_GROUPS]]) {
+    for (const [name, set] of [['MARKET_METRICS', m.MARKET_METRICS],
+      ['MARKET_ATTRS', m.MARKET_ATTRS], ['MARKET_GROUPS', m.MARKET_GROUPS]]) {
       for (const [k, def] of Object.entries(set)) {
         if (typeof def.get !== 'function' || !def.label) throw new Error(`${name}.${k} の定義が不正`);
       }
     }
   }],
+  ['住所・駅徒歩・築年の読み取り', () => {
+    const a = mods.analysis;
+    const town = a.areaOf({ address: '神奈川県川崎市中原区小杉町3丁目1-1' });
+    if (town.pref !== '神奈川県' || !town.town.includes('小杉町')) throw new Error('住所を分けられていない');
+    if (a.areaOf({ address: '京都府京都市中京区' }).pref !== '京都府') throw new Error('京都府を切り違えている');
+    if (a.walkMinutesOf({ walk: '辰巳7分・東雲12分' }) !== 7) throw new Error('最短の徒歩分が取れない');
+    if (Math.abs(a.builtYearOf({ builtYM: '2007/02' }) - 2007.083) > 0.01) throw new Error('築年月が小数年になっていない');
+  }],
 ];
 
+// 非同期の検査もあるので await する。await しないと落ちても素通りする
 for (const [name, fn] of checks) {
-  try { fn(); console.log(`✅ ${name}`); }
+  try { await fn(); console.log(`✅ ${name}`); }
   catch (e) { bad++; console.log(`❌ ${name} : ${e.message}`); }
 }
 
@@ -367,6 +375,37 @@ const screens = [
   }],
   ...marketTabs('相場'),
   // 相場の絞り込み。条件を変えると通る経路が変わるので、代表的な組み合わせを通す
+  ['衝突したらリモートの控えを取る', async () => {
+    // 取り込みの最中にアプリから保存すると、数万行が消えることがあった。
+    // 上書きする前に、ぶつかった相手を控えに残しているかを見る
+    const saved = { sha: store.sha, dirty: store.dirty };
+    let stashed = null;
+    store.sha = 'old';
+    store.dirty = true;
+    // repo は設定から毎回作られるので、その場だけ差し替える
+    const fake = {
+      configured: true,
+      putJson: () => { const e = new Error('conflict'); e.status = 409; throw e; },
+      getJson: async () => ({ sha: 'new', data: { rooms: [1, 2, 3], buildings: [] } }),
+    };
+    const desc = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(store), 'repo');
+    Object.defineProperty(store, 'repo', { get: () => fake, configurable: true });
+    const idb = mods.idb.idb;   // 名前空間ではなく中身の入れ物
+    const origSet = idb.set;
+    idb.set = async (st, key, val) => { if (key === 'conflict') stashed = val; };
+    try {
+      await store.save('test').catch(() => {});
+      if (!stashed) throw new Error('控えを取っていない');
+      if (stashed.sha !== 'new' || stashed.data.rooms.length !== 3) throw new Error('控えの中身が違う');
+      if (!store.lastError.includes('控え')) throw new Error('控えたことを伝えていない');
+    } finally {
+      idb.set = origSet;
+      delete store.repo;
+      if (desc) Object.defineProperty(Object.getPrototypeOf(store), 'repo', desc);
+      Object.assign(store, saved);
+      store.lastError = '';
+    }
+  }],
   ['相場：条件を押したぶんだけ対象が減る', () => {
     const v = mods['market-view'];
     const u = v.marketUI;
@@ -406,17 +445,28 @@ const screens = [
   ['一括出力：条件のままレポートを組み立てる', () => {
     const v = mods['market-view'];
     const u = v.marketUI;
+    const f = mods['unit-filter'];
     const saved = { ...u };
+    const shared = { ...f.unitUI };
     try {
       // 一括出力から来たとき（描き終わってから印刷を呼ぶ）
-      Object.assign(u, saved, { mine: 'all', autoPrint: true });
+      Object.assign(u, saved, { autoPrint: true });
       v.renderMarket(stubEl(), () => {}, 'report');
       if (u.autoPrint) throw new Error('印刷の予約が消えていない（何度も出てしまう）');
-      // 条件を付けた状態でも組み立てられる
-      Object.assign(u, saved, { mine: 'all', layout: '3LDK', age: '-20', sizeMin: 60, sizeMax: 90 });
+      // 条件を付けた状態でも組み立てられる。共通の絞り込みの分も見出しに出る
+      Object.assign(f.unitUI, shared,
+        { own: 'all', layout: '3LDK', age: '-20', areaMin: 60, areaMax: 90 });
+      f.resetDraft();
+      Object.assign(u, saved, { listing: 'all' });
       v.renderMarket(stubEl(), () => {}, 'report');
+      const cond = v.activeConditions().map(([k, val]) => `${k}：${val}`).join(' / ');
+      for (const want of ['間取り：3LDK', '築年数：築20年以内', '広さ：60〜90㎡']) {
+        if (!cond.includes(want)) throw new Error(`レポートの条件に ${want} が出ていない（${cond}）`);
+      }
     } finally {
       Object.assign(u, saved);
+      Object.assign(f.unitUI, shared);
+      f.resetDraft();
     }
   }],
   ['供給：棒を押してその期間の売り出しを見る', () => {
@@ -747,7 +797,7 @@ const screens = [
 
 mods.views.bindRouter(() => {}, () => {});
 for (const [name, fn] of screens) {
-  try { fn(); console.log(`✅ 描画 ${name}`); }
+  try { await fn(); console.log(`✅ 描画 ${name}`); }
   catch (e) { bad++; console.log(`❌ 描画 ${name} : ${e.message}`); }
 }
 

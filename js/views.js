@@ -31,7 +31,21 @@ const mark = () => touch();
 /* =========================================================
    一覧（建物カード）
    ========================================================= */
-export const listUI = { mode: 'building', sort: 'price' };
+export const listUI = {
+  mode: 'building', sort: 'price',
+  // 一度に描く枚数。1,500枚を一気に作ると、それだけで0.5秒かかるうえ読めない
+  limit: 120,
+};
+
+/** 「さらに表示」。押すたびに増やす */
+function moreButton(total, shown, rerender) {
+  if (shown >= total) return null;
+  return el('div', { class: 'toolbar', style: 'justify-content:center;margin-top:14px' },
+    el('button', {
+      class: 'btn',
+      onclick: () => { listUI.limit += 120; rerender(); },
+    }, `さらに表示（${(total - shown).toLocaleString('ja-JP')}件）`));
+}
 
 const ROOM_SORTS = [
   ['price', '価格が安い順'], ['price-', '価格が高い順'],
@@ -117,10 +131,10 @@ function listingSyncBar() {
 /* ===== 絞り込み ===== */
 // 条件そのものは unit-filter.js。比較・ライフプランと同じものを使う
 function filterBar(all, shown, byRoom) {
-  return unitFilterBar(all, shown, rerender, {
+  return unitFilterBar(all, shown, () => { listUI.limit = 120; rerender(); }, {
     unit: byRoom ? '部屋' : '物件',
     lead: segmented(listUI.mode, [['building', '建物ごと'], ['room', '部屋ごと']],
-      (v) => { listUI.mode = v; rerender(); }),
+      (v) => { listUI.mode = v; listUI.limit = 120; rerender(); }),
     trail: [
       el('div', { class: 'fgroup' },
         select(listUI.sort, byRoom ? ROOM_SORTS : BUILDING_SORTS,
@@ -137,7 +151,10 @@ function filterBar(all, shown, byRoom) {
 function roomListing(shown) {
   const rooms = [...shown].sort(roomSorter(listUI.sort));
   if (!rooms.length) return el('div', { class: 'empty' }, '条件に合う部屋がありません');
-  return el('div', { class: 'grid' }, rooms.map((x) => propertyCard(x)));
+  const page = rooms.slice(0, listUI.limit);
+  return el('div', {},
+    el('div', { class: 'grid' }, page.map((x) => propertyCard(x))),
+    moreButton(rooms.length, page.length, rerender));
 }
 
 function roomSorter(key) {
@@ -172,7 +189,10 @@ function buildingListing(shown) {
   }
   const items = [...byBuilding.values()].sort(buildingSorter(listUI.sort));
   if (!items.length) return el('div', { class: 'empty' }, '条件に合う物件がありません');
-  return el('div', { class: 'grid' }, items.map(({ b, rooms }) => buildingCard(b, rooms)));
+  const page = items.slice(0, listUI.limit);
+  return el('div', {},
+    el('div', { class: 'grid' }, page.map(({ b, rooms }) => buildingCard(b, rooms))),
+    moreButton(items.length, page.length, rerender));
 }
 
 function buildingSorter(key) {
@@ -1380,6 +1400,20 @@ export function renderSettings(root) {
           document.body.append(a); a.click(); a.remove();
         },
       }, 'JSONを書き出し'),
+      // 衝突したときに控えたリモートの中身。取り込みとぶつかった場合の逃げ道
+      el('button', {
+        class: 'btn', onclick: async () => {
+          const c = await store.conflictBackup();
+          if (!c) { toast('控えはありません'); return; }
+          const blob = new Blob([JSON.stringify(c.data, null, 2)], { type: 'application/json' });
+          const a = el('a', {
+            href: URL.createObjectURL(blob),
+            download: `properties-リモート控え-${c.at.slice(0, 10)}.json`,
+          });
+          document.body.append(a); a.click(); a.remove();
+          toast(`${c.at.slice(0, 16).replace('T', ' ')} の控えを書き出しました`);
+        },
+      }, 'ぶつかった相手の控えを書き出し'),
     ),
   );
 
