@@ -14,7 +14,7 @@ import { linearFit, areaOf } from './analysis.js';
 import { inRange } from './unit-filter.js';
 import {
   AGE_BANDS, WALK_BANDS, FIRM_KEYS, FIRM_LABEL,
-  stationsOf, ageOf, walkOf, inBand, options, layoutLabel,
+  stationsOf, ageOf, walkOf, inBand, options, layoutLabel, nameHit,
 } from './units.js';
 import { RENOVATION } from './spec.js';
 import {
@@ -45,6 +45,8 @@ const ui = {
   // 検討。mine は部屋を登録した建物、STATUSES はそのうちの状態で絞る。
   // 「自分の物件」という区分は持たない。売り出し中かどうかは募集状況で見る
   mine: 'mine',
+  // 建物名・住所・駅名の文字でも絞れるようにする
+  name: '',
   // 建物の条件。area は最寄駅、town は町名
   building: 'all', area: 'all', town: 'all', age: 'all', walk: 'all',
   // 事業者。ブランドと会社は別物なので混ぜない
@@ -66,7 +68,7 @@ export const marketUI = ui;
  * 選ぶそばから結果が入れ替わると、何を変えたのか分からなくなるため。
  * 表示の仕方（表示単位・色分けの軸・物件名を出すか）は即座に効かせる。
  */
-const SEARCH_KEYS = ['mine', 'building', 'area', 'town', 'age', 'walk',
+const SEARCH_KEYS = ['name', 'mine', 'building', 'area', 'town', 'age', 'walk',
   'brand', 'developer', 'builder', 'designer', 'from', 'to', 'listing', 'layout',
   'sizeMin', 'sizeMax'];
 export const marketDraft = {};
@@ -162,6 +164,7 @@ function targetBuildings(except = null, f = ui) {
       if (!rooms.length) return false;
       if (f.mine !== 'mine' && !rooms.some((r) => r.status === f.mine)) return false;
     }
+    if (on('name') && f.name && !nameHit(b, f.name)) return false;
     if (on('building') && f.building !== 'all' && b.id !== f.building) return false;
     if (on('area') && f.area !== 'all' && !stationsOf(b).includes(f.area)) return false;
     if (on('town') && f.town !== 'all' && areaOf(b).town !== f.town) return false;
@@ -237,6 +240,12 @@ function buildingFilter(targets, loaded, rows, rerender, hitBuildings = null) {
   const extra = ['town', 'walk', ...FIRM_KEYS].filter((k) => marketDraft[k] !== 'all').length;
   return el('div', { class: 'filterbar' },
     el('div', { class: 'filterbar-row' },
+      group('建物名', el('input', {
+        class: 'ftext', type: 'search', placeholder: '建物名・住所・駅',
+        value: d.name, 'data-fkey': 'market-name',
+        oninput: (e) => { d.name = e.target.value; },
+        onkeydown: (e) => { if (e.key === 'Enter') { copy(ui, d); rerender(); } },
+      })),
       group('検討', band('mine', MINE_OPTIONS)),
       group('エリア（最寄駅）', pick('area', areaOptions)),
       group('建物', pick('building', buildingOptions)),
@@ -901,13 +910,14 @@ function trimTables(node, max = 10) {
 function activeConditions() {
   const out = [];
   const label = {
-    mine: '検討', building: '建物', area: 'エリア', town: '住所', age: '築年数', walk: '駅徒歩',
+    name: '建物名', mine: '検討', building: '建物', area: 'エリア', town: '住所',
+    age: '築年数', walk: '駅徒歩',
     brand: 'ブランド', developer: '分譲', builder: '施工', designer: '設計',
     layout: '間取り', listing: '募集状況',
   };
   for (const [k, name] of Object.entries(label)) {
     const v = ui[k];
-    if (v == null || v === 'all') continue;
+    if (v == null || v === 'all' || v === '') continue;
     if (k === 'building') {
       const b = buildingOf(v);
       out.push([name, b?.name ?? v]);

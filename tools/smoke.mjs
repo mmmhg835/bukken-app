@@ -577,6 +577,34 @@ const screens = [
       f.resetDraft();
     }
   }],
+  ['建物名でも絞れる', () => {
+    const f = mods['unit-filter'];
+    const u = mods.units;
+    const saved = { ...f.unitUI };
+    try {
+      const all = u.allUnits();
+      Object.assign(f.unitUI, saved, { listing: 'all', name: '相場タワー' });
+      const hit = all.filter((x) => f.unitMatches(x));
+      if (!hit.length || !hit.every((x) => x.b.name.includes('相場'))) throw new Error('建物名で絞れていない');
+      // 空白や大文字小文字、全角半角の違いは無視する
+      Object.assign(f.unitUI, saved, { listing: 'all', name: '相場 タワー' });
+      if (f.unitMatches(hit[0]) !== true) throw new Error('空白入りで当たらない');
+      // 住所や駅名でも当たる
+      Object.assign(f.unitUI, saved, { listing: 'all', name: '東雲' });
+      if (!all.some((x) => f.unitMatches(x))) throw new Error('住所・駅名で当たらない');
+      Object.assign(f.unitUI, saved, { listing: 'all', name: '存在しない建物' });
+      if (all.some((x) => f.unitMatches(x))) throw new Error('当たらないはずの名前で出ている');
+      // 相場タブでも同じように効く
+      const v = mods['market-view'];
+      const ms = { ...v.marketUI };
+      Object.assign(v.marketUI, ms, { mine: 'all', name: '相場' });
+      v.renderMarket(stubEl(), () => {}, 'overview');
+      Object.assign(v.marketUI, ms);
+    } finally {
+      Object.assign(f.unitUI, saved);
+      f.resetDraft();
+    }
+  }],
   ['条件は検索を押して初めて効く', () => {
     const f = mods['unit-filter'];
     const v = mods.views;

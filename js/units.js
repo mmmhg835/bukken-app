@@ -129,6 +129,26 @@ export function inBand(band, v) {
   return true;
 }
 
+/**
+ * 名前の突き合わせ用に均す。
+ * 「プラウド 武蔵小杉」「ぷらうど武蔵小杉」のように打っても当たるよう、
+ * 大文字小文字・全角半角・空白・中黒の違いは無視する。
+ */
+export const searchKey = (v) => String(v || '')
+  .normalize('NFKC').toLowerCase()
+  // ひらがなで打っても当たるようにカタカナに寄せる（ぷらうど → プラウド）
+  .replace(/[\u3041-\u3096]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 0x60))
+  .replace(/[\s\u3000・ー–—-]/g, '');
+
+/** 建物名か住所に、打った文字が含まれるか */
+export function nameHit(b, q) {
+  const k = searchKey(q);
+  if (!k) return true;
+  if (!b) return false;
+  return searchKey(b.name).includes(k) || searchKey(b.address).includes(k)
+    || searchKey(b.stations).includes(k);
+}
+
 /** 件数の多い順に並べた選択肢。何を選べばいいか分かるように件数を添える */
 export function options(values, label = (v) => v) {
   const count = new Map();

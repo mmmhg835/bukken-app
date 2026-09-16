@@ -7,7 +7,7 @@ import { areaOf } from './analysis.js';
 import { CLOSED_STATUS } from './price.js';
 import {
   AGE_BANDS, WALK_BANDS, FIRM_KEYS, FIRM_LABEL,
-  stationsOf, ageOf, walkOf, inBand, options, layoutLabel,
+  stationsOf, ageOf, walkOf, inBand, options, layoutLabel, nameHit,
 } from './units.js';
 
 // 検討の軸。「自分の物件」という区分は持たない。
@@ -26,6 +26,8 @@ export const unitUI = {
   // 募集状況の既定は「募集中」。終わった部屋まで並べると、比較もライフプランも意味が薄れる
   listing: 'open',
   own: 'all',
+  // 建物名・住所・駅名の文字でも絞れるようにする。件数が増えると選択肢から探せない
+  name: '',
   // 建物の条件。area は最寄駅、town は町名
   area: 'all', town: 'all', age: 'all', walk: 'all',
   brand: 'all', developer: 'all', builder: 'all', designer: 'all',
@@ -87,6 +89,7 @@ export function unitMatches({ r, b }, except = null, f = unitUI) {
     if (f.listing === 'open' && closed) return false;
     if (f.listing === 'closed' && !closed) return false;
   }
+  if (on('name') && f.name && !nameHit(b, f.name)) return false;
   if (on('area') && f.area !== 'all' && !stationsOf(b).includes(f.area)) return false;
   if (on('town') && f.town !== 'all' && areaOf(b).town !== f.town) return false;
   for (const k of FIRM_KEYS) {
@@ -148,6 +151,12 @@ export function unitFilterBar(all, shown, rerender, { lead = null, trail = null,
   return el('div', { class: 'filterbar' },
     el('div', { class: 'filterbar-row' },
       lead,
+      group('建物名', el('input', {
+        class: 'ftext', type: 'search', placeholder: '建物名・住所・駅',
+        value: draft.name, 'data-fkey': 'unit-name',
+        oninput: (e) => { draft.name = e.target.value; },
+        onkeydown: (e) => { if (e.key === 'Enter') { applyDraft(); rerender(); } },
+      })),
       group('募集状況', band('listing',
         [['open', '募集中'], ['closed', '募集終了'], ['all', 'すべて']])),
       // 自分が登録した部屋だけを見る使い方が多いので、これは畳まない
@@ -202,7 +211,7 @@ function extraCount() {
 /** いま効いている条件。押すとその条件だけ外れる */
 function activeChips(rerender) {
   const label = {
-    listing: '募集状況', own: '検討', area: 'エリア', town: '住所', age: '築年数',
+    name: '建物名', listing: '募集状況', own: '検討', area: 'エリア', town: '住所', age: '築年数',
     walk: '駅徒歩', layout: '間取り', brand: 'ブランド', developer: '分譲',
     builder: '施工', designer: '設計',
   };
@@ -213,12 +222,12 @@ function activeChips(rerender) {
     rerender();
   };
   for (const [k, name] of Object.entries(label)) {
-    if (unitUI[k] === 'all' || unitUI[k] == null) continue;
+    if (unitUI[k] === 'all' || unitUI[k] == null || unitUI[k] === '') continue;
     if (k === 'listing' && unitUI.listing === 'open') continue;   // 既定なので出さない
     const shown = k === 'age' || k === 'walk'
       ? (AGE_BANDS.concat(WALK_BANDS).find(([v]) => v === unitUI[k]) || [])[1] || unitUI[k]
       : unitUI[k];
-    chips.push([`${name}：${shown}`, off([k], 'all')]);
+    chips.push([`${name}：${shown}`, off([k], k === 'name' ? '' : 'all')]);
   }
   const money = (v) => Number(v).toLocaleString('ja-JP');
   if (unitUI.priceMin != null || unitUI.priceMax != null) {
