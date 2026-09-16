@@ -6,7 +6,7 @@ import { buildingDefaults, SPEC_GROUPS, BUILDING_EQUIPMENT } from './spec.js';
 import { defaultLifeplan, categoryOf } from './lifeplan.js';
 import { DEFAULT_SALE } from './sale.js';
 
-export const CURRENT_SCHEMA = 24;
+export const CURRENT_SCHEMA = 25;
 
 export function migrate(data) {
   let d = structuredClone(data);
@@ -33,6 +33,7 @@ export function migrate(data) {
   if (d.schemaVersion < 22) d = v21ToV22(d);
   if (d.schemaVersion < 23) d = v22ToV23(d);
   if (d.schemaVersion < 24) d = v23ToV24(d);
+  if (d.schemaVersion < 25) d = v24ToV25(d);
   d.settings ||= {};
   d.settings.loan = { ...DEFAULT_TERMS, ...(d.settings.loan || {}) };
   d.settings.places ||= [];   // 職場・駅など、地図上の参照地点
@@ -372,6 +373,15 @@ function v23ToV24(d) {
     if (r.status === '申込検討') r.status = '本命';
   }
   d.schemaVersion = 24;
+  return d;
+}
+
+/** 「申し込みあり」を「申込有」に短くする。カードのバッジに収まらなかった */
+function v24ToV25(d) {
+  for (const r of d.rooms || []) {
+    if (r.status === '申し込みあり') r.status = '申込有';
+  }
+  d.schemaVersion = 25;
   return d;
 }
 
