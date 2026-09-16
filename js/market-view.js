@@ -290,7 +290,7 @@ function buildingFilter(targets, loaded, rows, rerender, hitBuildings = null) {
   const dirty = marketDirty();
   // よく使う条件だけ出し、残りは「条件を増やす」の中へ。並べすぎると探す画面になる
   const open = ui.more;
-  const extra = ['town', 'walk', ...FIRM_KEYS].filter((k) => unitDraft[k] !== 'all').length;
+  const extra = ['town', ...FIRM_KEYS].filter((k) => unitDraft[k] !== 'all').length;
   return el('div', { class: 'filterbar' + (dirty ? ' is-dirty' : '') },
     el('div', { class: 'filterbar-row' },
       group('建物名', el('input', {
@@ -301,6 +301,8 @@ function buildingFilter(targets, loaded, rows, rerender, hitBuildings = null) {
       })),
       group('検討', uBand('own', OWN_OPTIONS)),
       group('エリア（最寄駅）', uPick('area', areaOptions)),
+      // 駅徒歩は駅と同じくらい最初に決める条件なので、一覧と同じく畳まない
+      group('駅徒歩', uBand('walk', WALK_BANDS)),
       group('建物', pick('building', buildingOptions)),
       group('築年数', uBand('age', AGE_BANDS)),
       group('間取り', uPick('layout', layoutOptions)),
@@ -331,7 +333,6 @@ function buildingFilter(targets, loaded, rows, rerender, hitBuildings = null) {
     open
       ? el('div', { class: 'filterbar-row is-more' },
         group('住所', uPick('town', townOptions)),
-        group('駅徒歩', uBand('walk', WALK_BANDS)),
         FIRM_KEYS.map((k) => group(FIRM_LABEL[k], uPick(k, firmOptions(k)))),
       )
       : null);

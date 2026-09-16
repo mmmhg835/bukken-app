@@ -169,6 +169,9 @@ export function unitFilterBar(all, shown, rerender, { lead = null, trail = null,
       // 自分が登録した部屋だけを見る使い方が多いので、これは畳まない
       group('検討', band('own', OWN_OPTIONS)),
       group('エリア（最寄駅）', pick('area', options(buildings('area').flatMap(stationsOf)))),
+      // 駅徒歩と築年数は、駅や間取りと同じくらい最初に決める条件。畳まない
+      group('駅徒歩', band('walk', WALK_BANDS)),
+      group('築年数', band('age', AGE_BANDS)),
       group('間取り', pick('layout', options(pool('layout').map((x) => layoutLabel(x.r.layout))))),
       group('価格', range('priceMin', 'priceMax', '万円')),
       group('広さ', range('areaMin', 'areaMax', '㎡')),
@@ -181,8 +184,6 @@ export function unitFilterBar(all, shown, rerender, { lead = null, trail = null,
     open
       ? el('div', { class: 'filterbar-row is-more' },
         group('住所', pick('town', options(buildings('town').map((b) => areaOf(b).town)))),
-        group('築年数', band('age', AGE_BANDS)),
-        group('駅徒歩', band('walk', WALK_BANDS)),
         FIRM_KEYS.map((k) => group(FIRM_LABEL[k],
           pick(k, options(buildings(k).map((b) => (b[k] || '').trim()))))),
       )
@@ -211,7 +212,7 @@ export function unitFilterBar(all, shown, rerender, { lead = null, trail = null,
 
 /** 「条件を増やす」の中で、いくつ使われているか */
 function extraCount() {
-  const keys = ['town', 'age', 'walk', ...FIRM_KEYS];
+  const keys = ['town', ...FIRM_KEYS];
   return keys.filter((k) => draft[k] !== 'all').length + (draft.equip.length ? 1 : 0);
 }
 
