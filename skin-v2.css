@@ -173,3 +173,21 @@
 :root[data-skin="v2"] table.cmp tr.is-current td:first-child{
   box-shadow:inset 2px 0 0 var(--accent);
 }
+
+
+/* ===== カードの面も淡い緑に寄せる =====
+   白いカードが白い枠線で並ぶと、どこまでが1件か分かりにくい。
+   見出し（建物名）と数字の面を淡い緑にして、1件の固まりを見えるようにする。 */
+:root[data-skin="v2"] .ucard{ background:var(--accent-soft); border-color:transparent }
+:root[data-skin="v2"] .ucard .ucard-price,
+:root[data-skin="v2"] .ucard .ucard-kv{
+  background:var(--surface); border-radius:var(--r-sm); padding:8px 10px;
+}
+:root[data-skin="v2"] .ucard .ucard-price{ border-top:0 }
+:root[data-skin="v2"] .ucard:hover{ box-shadow:0 0 0 2px var(--accent) inset }
+:root[data-skin="v2"] .ucard .ucard-foot{ border-top-color:var(--line-2) }
+
+/* 相場の数値カードも同じ面に揃える */
+:root[data-skin="v2"] .calcgrid > div{ background:var(--accent-soft) }
+:root[data-skin="v2"] .chart-foot{ background:var(--accent-soft);
+  border-radius:var(--r-sm); padding:8px 10px }
