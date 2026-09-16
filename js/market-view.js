@@ -194,12 +194,15 @@ function saleChart(rows, b) {
     series.length > 1 ? chartLegend(series, chart) : null);
 }
 
-/** 傾きと件数の見出し。分析タブと同じ形にそろえる */
-function chartHead(y, x, fit, unit) {
+/**
+ * 傾きと件数の見出し。分析タブと同じ形にそろえる。
+ * step は横軸1つぶんの呼び方。新築は横軸が階なので「1年で」では意味が変わる。
+ */
+function chartHead(y, x, fit, unit, step = '1年で') {
   return el('div', { class: 'panel-chart-head' },
     el('span', { class: 'panel-chart-title' }, y, el('small', {}, '×'), x),
     fit ? el('div', { class: 'fitbadge' },
-      el('span', {}, '1年で ', el('b', {}, `${fit.slope > 0 ? '+' : ''}${fmt.n(fit.slope, 1)}${unit}`)),
+      el('span', {}, `${step} `, el('b', {}, `${fit.slope > 0 ? '+' : ''}${fmt.n(fit.slope, 1)}${unit}`)),
       el('span', {}, '相場の幅 ', el('b', {}, `±${fmt.n(fit.sd, 1)}`)),
       el('span', {}, el('b', {}, `${fit.n}点`)),
     ) : null);
@@ -339,7 +342,7 @@ function newView(rows, b, rerender) {
         cell('最高', n.tsuboMax != null ? `${fmt.n(n.tsuboMax, 0)}万/坪` : '—'),
       )),
     el('div', { class: 'section' },
-      chartHead('坪単価', '所在階', fit, '万円/坪'),
+      chartHead('坪単価', '所在階', fit, '万円/坪', '1階上がると'),
       el('div', { class: 'chartwrap' }, chart)),
     table(cols, body, 3));
 }
