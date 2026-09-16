@@ -375,6 +375,12 @@ table.cmp tr:hover td.lab{background:var(--surface-2)}
 .chart .dot.is-dim{opacity:.12}
 /* 点そのものは小さくするので、押せる範囲は透明な円で別に確保する */
 .chart .dothit{cursor:pointer}
+/* 相場の絞り込みにある文字入力。ドロップダウンと高さをそろえる */
+.ftext{min-width:132px}
+/* 「◯年 〜 ◯年」を1行に収める */
+.frange{display:flex;align-items:center;gap:6px}
+.frange .fsel{min-width:92px}
+.frange span{color:var(--text-3);font-size:12px}
 /* 影は SVG の矩形で描く。CSS の filter を <g> に掛けると Chrome で
    フィルタ領域が更新されず、枠が切れたり前の描画が残ったりする */
 .chart-tip{pointer-events:none}
@@ -392,6 +398,9 @@ table.cmp tr:hover td.lab{background:var(--surface-2)}
 .markettbl td,.markettbl th{padding:7px 10px}
 .openmark{color:var(--warn)}
 .cutmark{color:var(--good);font-weight:700}
+/* 相場の前年比。値下げ（cutmark）とは意味が違うので別に持つ */
+.markettbl td.up{color:var(--bad);font-weight:700}
+.markettbl td.down{color:var(--good);font-weight:700}
 
 .valuetable td,.valuetable th{text-align:right}
 .valuetable td.lab,.valuetable th.lab{text-align:left;min-width:160px}

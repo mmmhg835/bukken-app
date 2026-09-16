@@ -35,7 +35,7 @@ Object.defineProperty(globalThis, 'location', {
 const FILES = [
   'util', 'loan', 'spec', 'price', 'chart', 'idb', 'image', 'github', 'migrate', 'store',
   'ui', 'gallery', 'map', 'pairing', 'theme', 'analysis', 'lifeplan', 'sales', 'parse', 'sale', 'market',
-  'analytics-view', 'lifeplan-view', 'import-view', 'sale-view', 'viewing-view', 'market-view', 'views', 'main',
+  'lifeplan-view', 'import-view', 'sale-view', 'viewing-view', 'market-view', 'views', 'main',
 ];
 
 let bad = 0;
@@ -253,7 +253,9 @@ const checks = [
   }],
   ['analysis', () => {
     const { METRICS, ATTRS, GROUPINGS } = mods.analysis;
-    for (const [name, set] of [['METRICS', METRICS], ['ATTRS', ATTRS], ['GROUPINGS', GROUPINGS]]) {
+    const m = mods.market;
+    for (const [name, set] of [['METRICS', METRICS], ['ATTRS', ATTRS], ['GROUPINGS', GROUPINGS],
+      ['MARKET_METRICS', m.MARKET_METRICS], ['MARKET_ATTRS', m.MARKET_ATTRS], ['MARKET_GROUPS', m.MARKET_GROUPS]]) {
       for (const [k, def] of Object.entries(set)) {
         if (typeof def.get !== 'function' || !def.label) throw new Error(`${name}.${k} の定義が不正`);
       }
@@ -300,7 +302,7 @@ store.data.settings.lifeplan.selectedRoomId = room.id;
 
 const lifeplanTabs = ['plan', 'burden', 'graph', 'sale'];
 // 相場タブは4つのサブタブすべてを通す
-const marketTabs = (prefix) => ['overview', 'sale', 'rent', 'new'].map((tab) =>
+const marketTabs = (prefix) => ['overview', 'sale', 'trend', 'dist', 'group', 'rent', 'new'].map((tab) =>
   [`${prefix}/${tab}`, () => mods['market-view'].renderMarket(stubEl(), () => {}, tab)]);
 const lp = (tab) => () => mods['lifeplan-view'].renderLifeplan(stubEl(), () => {}, tab);
 
@@ -312,7 +314,6 @@ const screens = [
   ['設定', () => mods.views.renderSettings(stubEl())],
   ['取り込み', () => mods['import-view'].renderImport(stubEl())],
   ['地図', () => mods.views.renderMap(stubEl())],
-  ['分析', () => mods['analytics-view'].renderAnalysis(stubEl(), () => {})],
   ['ライフプラン', lp('plan')],
   ['返済負担比率', lp('burden')],
   ['金利と価格', lp('matrix')],
@@ -365,6 +366,36 @@ const screens = [
     store.addNewPrice(b.id, {});
   }],
   ...marketTabs('相場'),
+  // 相場の絞り込み。条件を変えると通る経路が変わるので、代表的な組み合わせを通す
+  ['相場（絞り込み）', () => {
+    const v = mods['market-view'];
+    const u = v.marketUI;
+    const saved = { ...u };
+    for (const patch of [
+      { mine: false },
+      { q: 'テスト' },
+      { dev: '長谷工' },
+      { town: '東京都江東区東雲' },
+      { built: '2000-2009' },
+      { walk: '-10' },
+      { from: '2026', to: '2026' },
+      { listing: 'open' },
+      { listing: 'closed' },
+      { roomStatus: '検討中' },
+      { roomStatus: '本命' },
+      { mine: false, roomStatus: '内見済' },
+      { metric: 'price', attr: 'age', group: 'layout' },
+      { metric: 'months', attr: 'floor', group: 'status' },
+      { metric: 'sqm', attr: 'area', group: 'none', fit: false },
+      { q: '該当しない名前' },
+    ]) {
+      Object.assign(u, saved, patch);
+      for (const tab of ['overview', 'sale', 'trend', 'dist', 'group']) {
+        v.renderMarket(stubEl(), () => {}, tab);
+      }
+    }
+    Object.assign(u, saved);
+  }],
   ['指値（絞り込み）', () => {
     const v = mods['viewing-view'];
     v.viewingUI.filter = { status: '検討中', offerOnly: true };

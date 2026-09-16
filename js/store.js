@@ -195,6 +195,36 @@ class Store extends EventTarget {
     })();
   }
 
+  /**
+   * 複数の建物の相場をまとめて読む。1棟ずつ ensureMarket を呼ぶと
+   * 読めるたびに描き直しが走るので、全部そろってから1回だけ知らせる。
+   */
+  ensureMarkets(buildingIds) {
+    const todo = buildingIds.filter((id) =>
+      id && !this.#market.has(id) && !this.#marketLoading.has(id));
+    if (!todo.length) return;
+    for (const id of todo) this.#marketLoading.add(id);
+    (async () => {
+      await Promise.all(todo.map(async (id) => {
+        const key = `market:${id}`;
+        let m = await idb.get('kv', key).catch(() => null);
+        if (this.configured) {
+          try {
+            const got = await this.repo.getJson(marketPath(id));
+            m = got ? { ...emptyMarket(), ...got.data, sha: got.sha } : { ...emptyMarket(), sha: null };
+            await idb.set('kv', key, m);
+          } catch { /* 取れなければキャッシュのまま */ }
+        }
+        this.#market.set(id, m || { ...emptyMarket(), sha: null });
+        this.#marketLoading.delete(id);
+      }));
+      this.emit();
+    })();
+  }
+
+  /** いま読み込み中の建物の数。画面に進み具合を出すため */
+  get marketLoadingCount() { return this.#marketLoading.size; }
+
   /** 読み込み済みとして相場を差し込む。まとめ取り込みと smoke から使う */
   setMarket(buildingId, data = {}) {
     this.#market.set(buildingId, { ...emptyMarket(), ...data, sha: data.sha ?? null });

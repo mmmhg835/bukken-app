@@ -6,7 +6,6 @@ import {
   renderCompare, renderMap, renderSettings,
 } from './views.js';
 import { initLightbox } from './gallery.js';
-import { renderAnalysis } from './analytics-view.js';
 import { renderLifeplan } from './lifeplan-view.js';
 import { renderViewing } from './viewing-view.js';
 import { renderMarket } from './market-view.js';
@@ -19,7 +18,9 @@ const main = $('#main');
 
 function parseHash() {
   const [view = 'list', id = null] = location.hash.replace(/^#\/?/, '').split('/');
-  const known = ['list', 'b', 'r', 'import', 'compare', 'analysis', 'plan', 'viewing', 'market', 'map', 'settings', 'setup'];
+  // 分析タブは相場に統合した。古いリンクを踏んでも迷子にならないようにする
+  if (view === 'analysis') return { view: 'market', id: null };
+  const known = ['list', 'b', 'r', 'import', 'compare', 'plan', 'viewing', 'market', 'map', 'settings', 'setup'];
   return { view: known.includes(view) ? view : 'list', id };
 }
 
@@ -46,7 +47,6 @@ function render() {
   }
   if (route.view === 'import') renderImport(main);
   else if (route.view === 'compare') renderCompare(main);
-  else if (route.view === 'analysis') renderAnalysis(main, render);
   else if (route.view === 'plan') renderLifeplan(main, render, route.id || 'plan');
   else if (route.view === 'viewing') renderViewing(main, render, route.id || 'check');
   else if (route.view === 'market') renderMarket(main, render, route.id || 'overview');
