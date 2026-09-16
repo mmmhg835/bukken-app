@@ -161,6 +161,16 @@ class Store extends EventTarget {
   get onsaleReady() { return this.#onsaleState === 'ready'; }
   get onsaleRows() { return this.#onsale?.rows ?? []; }
 
+  /**
+   * その建物の直近の坪単価（万円/坪）と、その元になった件数。
+   * 取り込みのときに建物ごとに出してある（直近24か月の中央値）。
+   * 登録済みの建物にも参考の建物にも同じように効かせたいので、ここで引く。
+   */
+  tsuboMed(buildingId) {
+    const b = this.#onsale?.buildings?.[buildingId];
+    return b?.tsuboMed ? { med: b.tsuboMed, n: b.tsuboN || 0 } : null;
+  }
+
   /** onsale.json を読む。一覧を開いたときに呼ぶ */
   ensureOnsale() {
     if (this.#onsaleState !== 'idle') return;

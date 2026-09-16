@@ -70,6 +70,7 @@ export const BUILDING_FORM = [
     ['floorAreaRatio', '容積率', 'text'],
     ['buildingArea', '建築面積（㎡）', 'number'],
     ['parkingCount', '駐車場数', 'number'],
+    ['parkingFee', '駐車場代（月額・万円）', 'number'],
   ]],
   ['住戸の幅', [
     ['areaRange', '専有面積（例 58.87〜135.75㎡）', 'text'],

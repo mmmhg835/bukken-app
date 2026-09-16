@@ -306,96 +306,169 @@ function featureTag(icon, text) {
 }
 
 /** 部屋1室のカード。参考画面と同じ並びにしている */
+/**
+ * 部屋1室のカード。
+ *
+ * 写真は載せない。手元に写真がある部屋はごく一部で、枠だけが並んで
+ * 1画面に3件しか入らなかったため。そのぶん数字を詰めて、開かなくても
+ * 比べられるようにしている。
+ */
 function propertyCard(r, b, url = null, ambiguous = null) {
   const c = derive(r, b, store.loanTerms);
-  const t = { ...store.loanTerms, ...(r.loan || {}) };
+  const gap = vsBuildingMarket(r, b, c);
+  const sale = saleAge(r);
+  const cut = priceCut(r);
+  const park = b.parkingFee ?? null;
 
-  return el('article', { class: 'card pcard', onclick: () => go('r', r.id) },
-    el('div', { class: 'pcard-top' },
+  return el('article', { class: 'card ucard', onclick: () => go('r', r.id) },
+    el('div', { class: 'ucard-top' },
       pickBox([r.id]),
+      el('div', { class: 'spacer' }),
       // 同じ階・同じ広さの売り出しが複数あって1件に絞れないときは、
       // どれかに決めつけず、その旨を出す
       ambiguous
-        ? el('span', { class: 'badge badge-warn', title:
-          ambiguous.map((x) => `${fmt.man(x.price)} ${x.layout || ''} ${x.direction || ''}`).join(' / ') },
-        `売り出し${ambiguous.length}件と一致`)
+        ? el('span', {
+          class: 'badge badge-warn',
+          title: ambiguous.map((x) => `${fmt.man(x.price)} ${x.layout || ''} ${x.direction || ''}`).join(' / '),
+        }, `売り出し${ambiguous.length}件と一致`)
         : null,
-      statusBadge(r.status),
+      gap ? el('span', { class: `badge ${gap.cls}`, title: gap.title }, gap.text) : null,
+      CLOSED_STATUS.includes(r.listingStatus)
+        ? el('span', { class: 'badge' }, r.listingStatus) : null,
+      r.fromListing ? null : statusBadge(r.status),
     ),
-    el('div', { class: 'pcard-img' },
-      coverImage(r, r.label, '間取り', url || b.url),
-      r.images?.length ? el('span', { class: 'imgcount' }, `${r.images.length}枚`) : null,
+    el('div', { class: 'ucard-head' },
+      el('div', { class: 'ucard-name' }, b.name),
+      el('div', { class: 'ucard-spec' },
+        `${r.floor ?? '—'}階・${r.layout || '—'}・${fmt.sqm(r.area)}`,
+        el('small', {}, `（${fmt.n(c.tsubo, 1)}坪）`)),
+      el('div', { class: 'ucard-addr' },
+        [areaOf(b).town || b.address, b.walk].filter(Boolean).join('　')),
     ),
-    el('div', { class: 'pcard-body' },
-      el('div', { class: 'pcard-name' }, b.name),
-      el('div', { class: 'pcard-addr' }, b.address || b.stations || ''),
-      el('div', { class: 'pcard-spec' },
-        el('span', {}, `${r.floor ?? '—'}階・${r.layout || '—'}`),
-        el('i', {}, '|'),
-        el('span', {}, `${fmt.sqm(r.area)}（${fmt.n(c.tsubo, 2)}坪）`),
-      ),
-      el('div', { class: 'pcard-pricerow' },
-        el('div', { class: 'pcard-price' }, fmt.man1(r.price), el('small', {}, '万円')),
-        r.rating ? el('div', { class: 'pcard-rate' }, el('span', { class: 'stars' }, '★'), r.rating.toFixed(1)) : null,
-      ),
-      el('dl', { class: 'pcard-kv' },
-        el('dt', {}, '坪単価'), el('dd', {}, `約${fmt.n(c.tsuboPrice, 0)}万円/坪`),
-        el('dt', {}, '月々の支払い'),
-        el('dd', {}, `約${fmt.n(c.monthly, 1)}万円`,
-          el('small', {}, `（年${t.rate}%・${t.years}年）`)),
-      ),
-      el('div', { class: 'ftags' },
-        b.walk ? featureTag('train', b.walk) : null,
-        c.ageYears != null ? featureTag('cal', `築${c.ageYears}年`) : null,
-        r.renovation && r.renovation !== 'なし' ? featureTag('leaf', r.renovation) : null,
-      ),
+    el('div', { class: 'ucard-price' },
+      el('b', {}, fmt.man1(r.price)), el('small', {}, '万円'),
+      el('span', { class: 'ucard-tsubo' }, `＠${fmt.n(c.tsuboPrice, 0)}万/坪`),
+      r.offerPrice != null && r.offerPrice !== r.price
+        ? el('span', { class: 'ucard-offer' }, `指値 ${fmt.man1(r.offerPrice)}`) : null,
     ),
+    // 数字は4つに絞る。説明はマウスを載せたときに出す
+    el('dl', { class: 'ucard-kv' },
+      kvRow('月々', c.monthly != null ? `${fmt.n(c.monthly, 1)}万` : '—',
+        c.loanMonthly != null
+          ? `ローン${fmt.n(c.loanMonthly, 1)}万＋管理等${fmt.n((c.kanriShuzen || 0) + (park || 0), 1)}万`
+          : null),
+      kvRow('管理・修繕', c.kanriShuzen != null ? `${fmt.n(c.kanriShuzen, 1)}万` : '—',
+        [r.kanrihi != null ? `管理${fmt.n(r.kanrihi, 1)}万` : null,
+          r.shuzen != null ? `修繕${fmt.n(r.shuzen, 1)}万` : null].filter(Boolean).join('・') || null),
+      kvRow('駐車場', park != null ? `${fmt.n(park, 1)}万`
+        : (b.parkingCount ? `${b.parkingCount}台` : '—'),
+      b.parkingCount ? `敷地内${b.parkingCount}台` : null),
+      kvRow('諸費用', c.loan ? `${fmt.n(c.loan.fees, 0)}万` : '—',
+        c.loan ? `物件＋諸費用で ${fmt.n((r.price || 0) + c.loan.fees, 0)}万` : null),
+    ),
+    el('div', { class: 'ucard-foot' },
+      el('span', {}, [c.ageYears != null ? `築${c.ageYears}年` : b.builtYM,
+        b.totalUnits ? `${b.totalUnits}戸` : null,
+        b.totalFloors ? `${b.totalFloors}階建` : null].filter(Boolean).join('・')),
+      sale ? el('span', {}, sale) : null,
+      cut ? el('span', { class: 'is-cut' }, cut) : null,
+      r.renovation && r.renovation !== 'なし' ? el('span', {}, r.renovation) : null),
+    url ? el('a', {
+      class: 'ucard-link', href: url, target: '_blank', rel: 'noreferrer',
+      onclick: (e) => e.stopPropagation(),
+    }, 'マンレビで見る') : null,
   );
 }
 
-/** 建物のカード。配下の部屋をまとめて表す */
+const kvRow = (k, v, sub = null) =>
+  el('div', { class: 'ucard-kvrow', title: sub ? `${k}：${v}（${sub}）` : `${k}：${v}` },
+    el('dt', {}, k),
+    el('dd', {}, v));
+
+/**
+ * その建物の直近の相場と比べて何％か。
+ * 相場は取り込みのときに建物ごとに出してある（直近24か月の坪単価の中央値）。
+ */
+function vsBuildingMarket(r, b, c) {
+  const m = store.tsuboMed(b.id);
+  if (!m || c.tsuboPrice == null) return null;
+  const pct = ((c.tsuboPrice - m.med) / m.med) * 100;
+  if (Math.abs(pct) < 3) return null;      // 誤差の範囲は出さない
+  const title = `この建物の直近の坪単価 ${fmt.n(m.med, 0)}万（${m.n}件）との差`;
+  return pct < 0
+    ? { text: `相場より${fmt.n(-pct, 0)}%安い`, cls: 'badge-ok', title }
+    : { text: `相場より${fmt.n(pct, 0)}%高い`, cls: 'badge-warn', title };
+}
+
+/** 売り出してから何か月たっているか。長いほど値段の相談はしやすい */
+function saleAge(r) {
+  const from = r.listedAt || (r.listedYM ? `${r.listedYM}-01` : null);
+  if (!from) return null;
+  const d = new Date(from);
+  if (isNaN(d.getTime())) return null;
+  const months = Math.max(0, Math.round((Date.now() - d.getTime()) / (30.4 * 864e5)));
+  return months >= 1 ? `掲載${months}か月` : '掲載したて';
+}
+
+/** 売り出してからいくら下げたか */
+function priceCut(r) {
+  const h = (r.priceHistory || []).filter((x) => Number.isFinite(x.price));
+  if (h.length < 2 || r.price == null) return null;
+  const diff = r.price - h[0].price;
+  return diff < 0 ? `値下げ ${fmt.n(diff, 0)}万` : null;
+}
+
+/** 建物のカード。配下の部屋をまとめて表す。写真は載せず、数字を詰める */
 function buildingCard(b, rooms) {
   const prices = rooms.map((r) => r.price).filter((v) => v != null);
+  const tsubos = rooms.map((r) => derive(r, b).tsuboPrice).filter(Number.isFinite);
   const c = derive(rooms[0] || {}, b, store.loanTerms);
-  const imageCount = (b.images?.length || 0) + rooms.reduce((n, r) => n + (r.images?.length || 0), 0);
+  const fees = rooms.map((r) => (r.kanrihi ?? 0) + (r.shuzen ?? 0)).filter((v) => v > 0);
+  const avg = (a) => a.reduce((s, v) => s + v, 0) / a.length;
+  const range = (a, f) => (a.length === 1 ? f(a[0]) : `${f(Math.min(...a))}〜${f(Math.max(...a))}`);
 
-  return el('article', { class: 'card pcard', onclick: () => go('b', b.id) },
-    el('div', { class: 'pcard-top' },
+  return el('article', { class: 'card ucard', onclick: () => go('b', b.id) },
+    el('div', { class: 'ucard-top' },
       pickBox(rooms.map((r) => r.id)),
+      el('div', { class: 'spacer' }),
       el('span', { class: 'badge badge-ok' }, `${rooms.length}部屋`),
     ),
-    el('div', { class: 'pcard-img' },
-      coverImage(coverPick(b, '概要') ? b : (rooms.find((r) => coverPick(r)) || b), b.name, '概要', b.url),
-      imageCount ? el('span', { class: 'imgcount' }, `${imageCount}枚`) : null,
+    el('div', { class: 'ucard-head' },
+      el('div', { class: 'ucard-name' }, b.name || '(名称未設定)'),
+      el('div', { class: 'ucard-spec' },
+        [b.totalFloors ? `${b.totalFloors}階建` : null,
+          b.totalUnits ? `${b.totalUnits}戸` : null,
+          c.ageYears != null ? `築${c.ageYears}年` : b.builtYM].filter(Boolean).join('・')),
+      el('div', { class: 'ucard-addr' },
+        [areaOf(b).town || b.address, b.walk].filter(Boolean).join('　')),
     ),
-    el('div', { class: 'pcard-body' },
-      el('div', { class: 'pcard-name' }, b.name || '(名称未設定)'),
-      el('div', { class: 'pcard-addr' }, b.address || b.stations || ''),
-      el('div', { class: 'pcard-spec' },
-        el('span', {}, `${b.totalFloors ?? '—'}階建`),
-        el('i', {}, '|'),
-        el('span', {}, b.builtYM || '築年月未設定'),
-      ),
-      prices.length
-        ? el('div', { class: 'pcard-pricerow' },
-          el('div', { class: 'pcard-price' }, fmt.man1(Math.min(...prices)),
-            prices.length > 1
-              ? el('small', {}, `〜 ${fmt.man1(Math.max(...prices))} 万円`)
-              : el('small', {}, '万円')))
-        : el('div', { class: 'muted tiny' }, '価格未入力'),
-      el('div', { class: 'roomchips' }, rooms.map((r) =>
-        // 指値を入れてある部屋は一覧の段階で分かるようにする。
-        // どこまで検討が進んでいるかが、開かないと分からなかったため。
-        el('span', { class: 'roomchip' + (r.status === '本命' ? ' is-top' : '') },
-          `${r.label}・${fmt.man1(r.price)}万`,
-          r.offerPrice != null && r.offerPrice !== r.price
-            ? el('span', { class: 'roomchip-offer' }, `指値 ${fmt.man1(r.offerPrice)}`)
-            : null))),
-      el('div', { class: 'ftags' },
-        b.walk ? featureTag('train', b.walk) : null,
-        c.ageYears != null ? featureTag('cal', `築${c.ageYears}年`) : null,
-      ),
+    prices.length
+      ? el('div', { class: 'ucard-price' },
+        el('b', {}, fmt.man1(Math.min(...prices))), el('small', {}, '万円'),
+        prices.length > 1 ? el('small', {}, `〜${fmt.man1(Math.max(...prices))}`) : null,
+        tsubos.length
+          ? el('span', { class: 'ucard-tsubo' }, `＠${range(tsubos, (x) => fmt.n(x, 0))}万/坪`)
+          : null)
+      : el('div', { class: 'muted tiny' }, '価格未入力'),
+    el('dl', { class: 'ucard-kv' },
+      kvRow('管理・修繕', fees.length ? `${fmt.n(avg(fees), 1)}万` : '—',
+        fees.length > 1 ? '部屋の平均' : null),
+      kvRow('駐車場', b.parkingFee != null ? `${fmt.n(b.parkingFee, 1)}万`
+        : (b.parkingCount ? `${b.parkingCount}台` : '—'),
+      b.parkingFee != null ? '月額' : null),
+      kvRow('相場', store.tsuboMed(b.id) ? `＠${fmt.n(store.tsuboMed(b.id).med, 0)}万/坪` : '—',
+        store.tsuboMed(b.id) ? `直近24か月・${store.tsuboMed(b.id).n}件の中央値` : null),
+      kvRow('事業者', b.brand || b.developer || '—',
+        b.brand && b.developer ? b.developer : null),
     ),
+    el('div', { class: 'roomchips' }, rooms.map((r) =>
+      // 指値を入れてある部屋は一覧の段階で分かるようにする。
+      // どこまで検討が進んでいるかが、開かないと分からなかったため。
+      el('span', { class: 'roomchip' + (r.status === '本命' ? ' is-top' : '') },
+        `${r.label}・${fmt.man1(r.price)}万`,
+        r.offerPrice != null && r.offerPrice !== r.price
+          ? el('span', { class: 'roomchip-offer' }, `指値 ${fmt.man1(r.offerPrice)}`)
+          : null))),
   );
 }
 

@@ -587,6 +587,37 @@ table.cmp tr.is-current td{background:var(--accent-soft)}
 .btn-add{white-space:nowrap}
 
 .pcard{display:flex;flex-direction:column}
+
+/* 写真を載せないカード。1画面に入る件数を増やすため、数字を詰めて並べる */
+.ucard{display:flex;flex-direction:column;gap:8px;padding:12px 14px 14px;cursor:pointer}
+.ucard:hover{border-color:var(--accent)}
+.ucard-top{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-height:22px}
+.ucard-name{font-size:15px;font-weight:700;line-height:1.35}
+.ucard-spec{font-size:12.5px;color:var(--text-2);font-weight:600;margin-top:2px}
+.ucard-spec small{color:var(--text-3);font-weight:600;margin-left:2px}
+.ucard-addr{font-size:11.5px;color:var(--text-3);margin-top:2px}
+.ucard-price{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;
+  padding-top:2px;border-top:1px solid var(--line)}
+.ucard-price b{font-size:22px;font-weight:800;letter-spacing:-.01em}
+.ucard-price small{font-size:11.5px;color:var(--text-2);font-weight:700}
+.ucard-tsubo{margin-left:auto;font-size:12px;color:var(--text-2);font-weight:700;white-space:nowrap}
+.ucard-offer{font-size:11.5px;font-weight:700;color:var(--accent);
+  background:var(--accent-soft);border-radius:999px;padding:2px 8px}
+/* 数字は2列。項目名と値を対にして、目が横に流れないようにする */
+.ucard-kv{display:grid;grid-template-columns:1fr 1fr;gap:5px 18px;margin:0}
+.ucard-kvrow{display:flex;align-items:baseline;gap:6px;min-width:0}
+.ucard-kvrow dt{font-size:11px;color:var(--text-3);font-weight:700;white-space:nowrap}
+.ucard-kvrow dd{margin:0 0 0 auto;font-size:13px;font-weight:700;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+/* 内訳はマウスを載せたときだけ出す。並べると読む場所が増えて、かえって見にくい */
+.ucard-kvrow dd small{display:none}
+.ucard-foot{display:flex;gap:8px;flex-wrap:wrap;font-size:11.5px;color:var(--text-3);
+  font-weight:600;border-top:1px solid var(--line);padding-top:7px}
+.ucard-foot .is-cut{color:var(--bad)}
+.ucard-link{font-size:11.5px;color:var(--text-2);text-decoration:underline}
+@media (max-width:640px){
+  .ucard-kv{grid-template-columns:1fr}
+}
 .pcard .pcard-top{display:flex;align-items:center;gap:8px;padding:11px 13px 9px}
 .pickbox{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:700;
   color:var(--text-2);cursor:pointer;user-select:none}
