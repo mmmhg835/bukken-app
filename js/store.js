@@ -166,9 +166,20 @@ class Store extends EventTarget {
    * 取り込みのときに建物ごとに出してある（直近24か月の中央値）。
    * 登録済みの建物にも参考の建物にも同じように効かせたいので、ここで引く。
    */
-  tsuboMed(buildingId) {
+  /**
+   * @param {string} buildingId
+   * @param {number} [area] 専有面積。渡すと、その広さに近い部屋だけの相場を返す
+   */
+  tsuboMed(buildingId, area = null) {
     const b = this.#onsale?.buildings?.[buildingId];
-    return b?.tsuboMed ? { med: b.tsuboMed, n: b.tsuboN || 0 } : null;
+    if (!b) return null;
+    // 同じ建物でも広い部屋ほど坪単価は下がるので、近い広さで比べる
+    if (area != null && b.tsuboBands) {
+      const key = String(Math.floor(area / 10) * 10);
+      const hit = b.tsuboBands[key];
+      if (hit) return { med: hit[0], n: hit[1], band: `${key}〜${Number(key) + 10}㎡` };
+    }
+    return b.tsuboMed ? { med: b.tsuboMed, n: b.tsuboN || 0, band: null } : null;
   }
 
   /**

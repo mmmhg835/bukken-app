@@ -405,11 +405,13 @@ const kvRow = (k, v, sub = null) =>
  * 相場は取り込みのときに建物ごとに出してある（直近24か月の坪単価の中央値）。
  */
 function vsBuildingMarket(r, b, c) {
-  const m = store.tsuboMed(b.id);
+  // 同じ建物の、同じくらいの広さの部屋と比べる（広さが違うと坪単価も変わるため）
+  const m = store.tsuboMed(b.id, r.area);
   if (!m || c.tsuboPrice == null) return null;
   const pct = ((c.tsuboPrice - m.med) / m.med) * 100;
   if (Math.abs(pct) < 3) return null;      // 誤差の範囲は出さない
-  const title = `この建物の直近の坪単価 ${fmt.n(m.med, 0)}万（${m.n}件）との差`;
+  const title = `この建物の${m.band ? `${m.band}の` : ''}直近の坪単価`
+    + ` ${fmt.n(m.med, 0)}万（${m.n}件）との差`;
   return pct < 0
     ? { text: `相場より${fmt.n(-pct, 0)}%安い`, cls: 'badge-ok', title }
     : { text: `相場より${fmt.n(pct, 0)}%高い`, cls: 'badge-warn', title };
@@ -483,7 +485,7 @@ function buildingCard(b, rooms) {
       b.parkingFee != null ? '月額'
         : (b.parkingCount ? `敷地内${b.parkingCount}台・月額は未登録` : null)),
       kvRow('相場', store.tsuboMed(b.id) ? `＠${fmt.n(store.tsuboMed(b.id).med, 0)}万/坪` : '—',
-        store.tsuboMed(b.id) ? `直近24か月・${store.tsuboMed(b.id).n}件の中央値` : null),
+        store.tsuboMed(b.id) ? `建物全体・直近24か月・${store.tsuboMed(b.id).n}件の中央値` : null),
       kvRow('新築時', store.newTsuboMed(b.id) ? `＠${fmt.n(store.newTsuboMed(b.id).med, 0)}万/坪` : '—',
         store.newTsuboMed(b.id) && store.tsuboMed(b.id)
           ? `いまは ${fmt.n(store.tsuboMed(b.id).med / store.newTsuboMed(b.id).med, 2)}倍`
