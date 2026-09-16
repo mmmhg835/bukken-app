@@ -678,3 +678,6 @@ table.cmp th.is-sorted{color:var(--accent)}
 /* 指値の表の行を選ぶチェック。物件名と同じセルに置いて、横スクロールしても残す */
 .pickcell{display:flex;align-items:center;gap:9px;cursor:pointer}
 .pickcell input{width:15px;height:15px;flex:none;accent-color:var(--accent)}
+/* 表の脚に置く「残りが0になる価格」。本体の行と混ざらないよう区切る */
+table.cmp tfoot td{border-top:2px solid var(--line-2);background:var(--surface-2);padding-top:10px}
+table.cmp tfoot td.lab{text-align:left;font-weight:700}

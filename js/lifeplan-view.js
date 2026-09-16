@@ -602,6 +602,26 @@ function thSub(title, sub) {
   return el('div', { class: 'thsub' }, el('b', {}, title), el('span', {}, sub));
 }
 
+/** 買える価格の上限まわり。諸費用を含む額と含まない額を混ぜない */
+function affordCards(afford) {
+  const t = store.loanTerms;
+  const price = Math.round(afford.price);
+  const fees = (price * (Number(t.costRate) || 0)) / 100 + (Number(t.costFixed) || 0);
+  const down = Number(t.downPayment) || 0;
+  const principal = price + (t.includeFees ? fees : 0) - down;
+  const cash = down + (t.includeFees ? 0 : fees);
+  const man = (v) => `${fmt.man1(Math.round(v))}万円`;
+
+  return el('div', { class: 'calcgrid calcgrid-3', style: 'margin-top:14px' },
+    kv('住居費に回せる上限', `${fmt.n(afford.budget, 1)}万円`, '毎月の残りが0になる水準'),
+    kv('うちローンに回せる額', `${fmt.n(afford.loanBudget, 1)}万円`, '管理費・修繕を差し引いた額'),
+    kv('買える価格の上限', man(price), `物件価格のみ・${t.rate}% ${t.years}年`),
+    kv('諸費用', man(fees), `価格の${t.costRate}%${t.costFixed ? ` ＋ ${t.costFixed}万円` : ''}`),
+    kv('借入額', man(principal), t.includeFees ? '物件価格＋諸費用−頭金' : '物件価格−頭金'),
+    kv('購入時の現金', man(cash), t.includeFees ? '頭金のみ' : '頭金＋諸費用'),
+  );
+}
+
 /* ===== 金利と価格のマトリクス ===== */
 
 /**
@@ -640,7 +660,9 @@ function matrixView(plan, room, building, mark) {
 
   const body = el('tbody', {}, anchors.map((a) => {
     const price = Math.round(a.price);
-    const principal = housingCost({ ...room, price }, building, terms).loan.principal;
+    const loan = housingCost({ ...room, price }, building, terms).loan;
+    const principal = loan.principal;
+    const fees = loan.fees;
     const isOffer = a.editable;
     return el('tr', { class: isOffer ? 'is-current' : null },
       el('td', { class: 'lab' },
@@ -656,7 +678,11 @@ function matrixView(plan, room, building, mark) {
               onclick: () => { room.offerPrice = price; mark(); },
             }, '指値にする'))),
       el('td', { class: 'muted' }, tsubo ? `${fmt.man1(Math.round(price / tsubo))}万/坪` : '—'),
-      el('td', { class: 'muted' }, `${fmt.man1(Math.round(principal))}万円`),
+      el('td', {},
+        el('div', { class: 'mxline' }, el('span', { class: 'dk' }, '諸費用'),
+          el('span', {}, `${fmt.man1(Math.round(fees))}万`)),
+        el('div', { class: 'mxline' }, el('span', { class: 'dk' }, '借入'),
+          el('span', {}, `${fmt.man1(Math.round(principal))}万`))),
       ...rates.map((rate) => {
         const c = at(price, rate);
         const ok = c.balance >= 0;
@@ -669,11 +695,22 @@ function matrixView(plan, room, building, mark) {
       }));
   }));
 
-  // 毎月の残りがちょうど0になる価格。いくらまでなら出せるかの上限になる
-  const zeroRow = rates.map((rate) => {
-    const { price } = affordablePrice(plan, room, building, { ...terms, rate });
-    return { rate, price, tsuboPrice: tsubo ? price / tsubo : null };
-  });
+  // 毎月の残りがちょうど0になる価格。いくらまでなら出せるかの上限になる。
+  // 別の指標グリッドに出すと列数が金利の本数に左右されて空きマスが出るので、
+  // 表の脚に畳んで金利の列の真下に置く。
+  const zeroFoot = el('tfoot', {}, el('tr', { class: 'mxfoot' },
+    el('td', { class: 'lab', colspan: '3' }, '毎月の残りが0になる価格'),
+    ...rates.map((rate) => {
+      const { price } = affordablePrice(plan, room, building, { ...terms, rate });
+      const fees = (price * (Number(t.costRate) || 0)) / 100 + (Number(t.costFixed) || 0);
+      return el('td', {},
+        el('div', { class: 'mxline' }, el('span', { class: 'dk' }, '物件'),
+          el('b', {}, `${fmt.man1(Math.round(price))}万`)),
+        el('div', { class: 'mxline' }, el('span', { class: 'dk' }, '諸費用'),
+          el('span', {}, `${fmt.man1(Math.round(fees))}万`)),
+        el('div', { class: 'mxline' }, el('span', { class: 'dk' }, '坪'),
+          el('span', {}, tsubo ? `${fmt.man1(Math.round(price / tsubo))}万` : '—')));
+    })));
 
   const ratePicker = el('div', { class: 'pillrow' }, OFFSETS.map((o) => el('button', {
     class: 'pill' + (ui.rateSteps.includes(o) ? ' is-on' : ''),
@@ -694,16 +731,11 @@ function matrixView(plan, room, building, mark) {
           el('thead', {}, el('tr', {},
             el('th', { class: 'lab' }, '物件価格'),
             el('th', {}, thSub('坪単価', '価格 ÷ 坪数')),
-            el('th', {}, thSub('借入額', t.includeFees ? '諸費用を含む' : '諸費用は現金')),
+            el('th', {}, thSub('諸費用と借入', `諸費用は価格の${t.costRate}%`)),
             ...rates.map((r, i) => el('th', {},
               thSub(`金利 ${r}%`, picked[i] ? `いまより +${picked[i]}%` : 'いまの設定'))),
           )),
-          body))),
-    el('div', { class: 'section' },
-      el('h3', {}, '毎月の残りが0になる価格'),
-      el('div', { class: 'calcgrid calcgrid-4' },
-        ...zeroRow.map((z) => kv(`金利 ${z.rate}%`, `${fmt.man1(Math.round(z.price))}万円`,
-          z.tsuboPrice ? `${fmt.man1(Math.round(z.tsuboPrice))}万/坪` : null)))),
+          body, zeroFoot))),
   );
 }
 
@@ -893,11 +925,8 @@ function scenarioSection(plan, currentRoom, currentBuilding) {
           el('td', {}, `${fmt.n(res.totalLeft, 1)}万`),
         ))),
       )),
-    el('div', { class: 'calcgrid calcgrid-3', style: 'margin-top:14px' },
-      kv('住居費に回せる上限', `${fmt.n(afford.budget, 1)}万円`, '毎月の残りが0になる水準'),
-      kv('うちローンに回せる額', `${fmt.n(afford.loanBudget, 1)}万円`, '管理費・修繕を差し引いた額'),
-      kv('買える価格の上限', `${fmt.man1(Math.round(afford.price))}万円`,
-        `残りが0になる価格・${store.loanTerms.rate}% ${store.loanTerms.years}年`),
-    ),
+    // 上限が物件価格なのか諸費用込みなのかが分からないと使えないので、
+    // 価格・諸費用・借入額・購入時の現金まで分けて出す
+    affordCards(afford),
   );
 }
