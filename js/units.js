@@ -177,19 +177,21 @@ const norm = (v) => String(v || '').replace(/[\s\u3000]/g, '').toUpperCase();
  * 部屋数か型が違えば別の部屋とみなす。
  */
 export function canonLayout(v) {
-  const t = norm(v).replace(/[＋+]/g, '').replace(/S(?=LDK|DK|K)/, '');
-  const m = t.match(/(\d+)\s*(LDK|DK|K|R)/);
-  return m ? `${m[1]}${m[2]}` : null;
+  return layoutLabel(v) || null;
 }
 
 /**
  * 選択肢に出す間取りの形。
- * 納戸が2つ3つある部屋は 2SSLDK・2SSSLDK のように書かれるが、
- * 選択肢に並べても選びようがないので S はひとつにまとめる（2SLDK に含める）。
+ *
+ * 納戸（S）の書き方は 2SLDK・2SSLDK・3LDK+S・3LDKS（納戸）とばらばらで、
+ * 分けて並べても選びようがない。S は落として 2LDK・3LDK にまとめる。
+ * データそのものは掲載元の記録のまま残してある。
  */
 export function layoutLabel(v) {
   const t = norm(v).replace(/[＋+]/g, '');
-  return t ? t.replace(/S{2,}/, 'S') : '';
+  if (!t) return '';
+  const m = t.match(/(\d+)\s*S*\s*(LDK|DK|LK|K)/);
+  return m ? `${m[1]}${m[2]}` : t;
 }
 
 /** 間取りが食い違っていないか。どちらかが分からないときは判断しない */
