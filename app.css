@@ -567,6 +567,8 @@ table.cmp tr.is-current td{background:var(--accent-soft)}
 
 .filterbar{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
   padding:12px 14px;margin-bottom:18px;box-shadow:var(--shadow)}
+/* 条件を変えたが、まだ押していない状態。文字だけだと気づかれないので枠ごと変える */
+.filterbar.is-dirty{border-color:var(--warn);box-shadow:0 0 0 2px color-mix(in srgb,var(--warn) 22%,transparent)}
 .filterbar-row{display:flex;align-items:flex-end;gap:10px 14px;flex-wrap:wrap}
 /* 追加の条件と、いま効いている条件。区切って、探す場所を分ける */
 .filterbar-row.is-more{margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}

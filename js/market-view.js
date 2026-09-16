@@ -36,8 +36,8 @@ const LOAD_LIMIT = 400;
 
 
 // 検討の軸。「自分の物件」ではなく、部屋を登録して検討しているかどうかで見る
-const MINE_OPTIONS = [['all', 'すべて'], ['mine', '検討している建物'],
-  ...STATUSES.map((x) => [x, x])];
+const MINE_OPTIONS = [['mine', '検討中の建物だけ'], ['all', '取り込んだ全建物'],
+  ...STATUSES.map((x) => [x, `検討中：${x}`])];
 
 
 /** 画面の状態。保存する値ではないので、smoke から作れるように出しておく */
@@ -53,7 +53,7 @@ const ui = {
   brand: 'all', developer: 'all', builder: 'all', designer: 'all',
   // 売り出しの行の条件
   from: 'all', to: 'all', listing: 'all', layout: 'all', sizeMin: null, sizeMax: null,
-  metric: 'tsubo', attr: 'year', group: 'building', fit: true, names: true, more: false,
+  metric: 'tsubo', attr: 'year', group: 'ageBand', fit: true, names: true, more: false,
   // 推移の粒度と、点にまとめる下限の件数。押した点は pick に覚える
   step: 'month', minCount: 3, pick: null, span: 7,
   // 一括出力から来たときは、描き終わってから保存の画面を出す
@@ -72,6 +72,12 @@ const SEARCH_KEYS = ['name', 'mine', 'building', 'area', 'town', 'age', 'walk',
   'brand', 'developer', 'builder', 'designer', 'from', 'to', 'listing', 'layout',
   'sizeMin', 'sizeMax'];
 export const marketDraft = {};
+
+/** いまの条件で何棟・何行が対象かを返す。検証と smoke から使う */
+export function marketCounts() {
+  const targets = targetBuildings();
+  return { buildings: targets.length, rows: saleRows(targets).length };
+}
 const copy = (to, from) => { for (const k of SEARCH_KEYS) to[k] = from[k]; };
 copy(marketDraft, ui);
 const marketDirty = () => SEARCH_KEYS.some((k) => String(ui[k]) !== String(marketDraft[k]));
@@ -235,10 +241,11 @@ function buildingFilter(targets, loaded, rows, rerender, hitBuildings = null) {
   const layoutOptions = options(rowsFor('layout').map((x) => layoutLabel(x.layout)));
 
   const loading = store.marketLoadingCount;
+  const dirty = marketDirty();
   // よく使う条件だけ出し、残りは「条件を増やす」の中へ。並べすぎると探す画面になる
   const open = ui.more;
   const extra = ['town', 'walk', ...FIRM_KEYS].filter((k) => marketDraft[k] !== 'all').length;
-  return el('div', { class: 'filterbar' },
+  return el('div', { class: 'filterbar' + (dirty ? ' is-dirty' : '') },
     el('div', { class: 'filterbar-row' },
       group('建物名', el('input', {
         class: 'ftext', type: 'search', placeholder: '建物名・住所・駅',
@@ -246,7 +253,7 @@ function buildingFilter(targets, loaded, rows, rerender, hitBuildings = null) {
         oninput: (e) => { d.name = e.target.value; },
         onkeydown: (e) => { if (e.key === 'Enter') { copy(ui, d); rerender(); } },
       })),
-      group('検討', band('mine', MINE_OPTIONS)),
+      group('対象', band('mine', MINE_OPTIONS)),
       group('エリア（最寄駅）', pick('area', areaOptions)),
       group('建物', pick('building', buildingOptions)),
       group('築年数', band('age', AGE_BANDS)),

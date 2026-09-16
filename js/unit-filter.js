@@ -116,6 +116,7 @@ export function unitMatches({ r, b }, except = null, f = unitUI) {
  * @param {object} [opts] lead=先頭に足す要素 / trail=末尾に足す要素 / unit=件数の単位
  */
 export function unitFilterBar(all, shown, rerender, { lead = null, trail = null, unit = '物件' } = {}) {
+  const dirty = draftDirty();
   const pick = (key, list) =>
     select(draft[key], [['all', 'すべて'], ...list], (v) => { draft[key] = v; rerender(); }, 'fsel');
   const band = (key, list) =>
@@ -148,7 +149,7 @@ export function unitFilterBar(all, shown, rerender, { lead = null, trail = null,
   // よく使う条件だけ出し、残りは「条件を増やす」の中へ。
   // 13個を並べると、どれがどこにあるか探す画面になってしまう
   const open = unitUI.more;
-  return el('div', { class: 'filterbar' },
+  return el('div', { class: 'filterbar' + (dirty ? ' is-dirty' : '') },
     el('div', { class: 'filterbar-row' },
       lead,
       group('建物名', el('input', {

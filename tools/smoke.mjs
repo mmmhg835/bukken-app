@@ -367,6 +367,32 @@ const screens = [
   }],
   ...marketTabs('相場'),
   // 相場の絞り込み。条件を変えると通る経路が変わるので、代表的な組み合わせを通す
+  ['相場：条件を押したぶんだけ対象が減る', () => {
+    const v = mods['market-view'];
+    const u = v.marketUI;
+    const saved = { ...u };
+    const set = (patch) => {
+      Object.assign(u, saved, patch);
+      Object.assign(v.marketDraft, u);      // 入力中と効いている条件を揃える
+      return v.marketCounts();
+    };
+    try {
+      const all = set({ mine: 'all' });
+      if (!all.buildings || !all.rows) throw new Error('全建物で何も出ていない');
+      const one = set({ mine: 'all', building: 'ref1' });
+      if (one.buildings !== 1) throw new Error('建物を選んでも1棟に絞れていない');
+      if (one.rows >= all.rows) throw new Error('1棟に絞ったのに行が減っていない');
+      const layout = set({ mine: 'all', layout: '2LDK' });
+      if (layout.rows >= all.rows) throw new Error('間取りで行が減っていない');
+      const open = set({ mine: 'all', listing: 'open' });
+      if (open.rows >= all.rows) throw new Error('募集状況で行が減っていない');
+      const none = set({ mine: 'all', name: '存在しない建物' });
+      if (none.buildings !== 0) throw new Error('当たらない名前でも建物が残っている');
+    } finally {
+      Object.assign(u, saved);
+      Object.assign(v.marketDraft, saved);
+    }
+  }],
   ['一括出力：条件のままレポートを組み立てる', () => {
     const v = mods['market-view'];
     const u = v.marketUI;
