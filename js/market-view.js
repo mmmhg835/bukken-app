@@ -832,15 +832,16 @@ function reportView(rows, buildings, rerender) {
   const stamp = `${when.getFullYear()}年${when.getMonth() + 1}月${when.getDate()}日`;
   const cond = activeConditions();
 
+  // 3つ目は表に残す行数。グラフの大きい節は少なく、表だけの節は多く載せる
   const sections = [
-    ['概況', () => overview(rows, buildings)],
-    ['売出', () => saleView(rows, buildings, rerender)],
-    ['推移', () => trendView(rows, rerender)],
-    ['供給', () => supplyView(rows, buildings, rerender)],
-    ['分布', () => distView(rows, rerender)],
-    ['建物別', () => groupView(rows, rerender)],
-    ['賃貸', () => rentView(buildings)],
-    ['新築', () => newView(buildings)],
+    ['概況', () => overview(rows, buildings), 12],
+    ['売出', () => saleView(rows, buildings, rerender), 10],
+    ['推移', () => trendView(rows, rerender), 10],
+    ['供給', () => supplyView(rows, buildings, rerender), 12],
+    ['分布', () => distView(rows, rerender), 24],
+    ['建物別', () => groupView(rows, rerender), 24],
+    ['賃貸', () => rentView(buildings), 10],
+    ['新築', () => newView(buildings), 10],
   ];
 
   // グラフを描き終えてから保存の画面を出す。すぐ呼ぶと白いまま印刷される
@@ -871,9 +872,9 @@ function reportView(rows, buildings, rerender) {
     el('p', { class: 'tiny muted noprint' },
       '保存の画面が出たら、送信先（プリンター）で「PDFに保存」を選んでください。'
       + 'タブ1つが1ページになります。'),
-    sections.map(([name, build]) => el('div', { class: 'report-sec' },
+    sections.map(([name, build, max]) => el('div', { class: 'report-sec' },
       el('h3', { class: 'report-sectitle' }, name),
-      trimTables(build()))),
+      trimTables(build(), max))),
   );
 }
 
