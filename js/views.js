@@ -29,16 +29,21 @@ const mark = () => touch();
 /* =========================================================
    一覧（建物カード）
    ========================================================= */
-const listUI = { mode: 'building', sort: 'price' };
+export const listUI = { mode: 'building', sort: 'price' };
 
 const ROOM_SORTS = [
-  ['price', '価格が安い順'], ['tsubo', '坪単価が安い順'], ['area', '広い順'],
-  ['monthly', '月額が安い順'], ['rating', '評価が高い順'], ['floor', '高層階順'],
+  ['price', '価格が安い順'], ['price-', '価格が高い順'],
+  ['tsubo', '坪単価が安い順'], ['tsubo-', '坪単価が高い順'],
+  ['area', '広い順'], ['area-', '狭い順'],
+  ['monthly', '月額が安い順'], ['monthly-', '月額が高い順'],
+  ['rating', '評価が高い順'], ['floor', '高層階順'], ['floor-', '低層階順'],
   ['discount', '値下げ幅が大きい順'], ['days', '販売期間が長い順'],
 ];
 const BUILDING_SORTS = [
-  ['price', '最安の部屋が安い順'], ['tsubo', '坪単価が安い順'],
-  ['age', '築年が新しい順'], ['rooms', '部屋数が多い順'], ['name', '名前順'],
+  ['price', '最安の部屋が安い順'], ['price-', '最安の部屋が高い順'],
+  ['tsubo', '坪単価が安い順'], ['tsubo-', '坪単価が高い順'],
+  ['age', '築年が新しい順'], ['age-', '築年が古い順'],
+  ['rooms', '部屋数が多い順'], ['name', '名前順'],
 ];
 
 export function renderList(root) {
@@ -118,7 +123,6 @@ function filterBar(all, shown, byRoom) {
       el('div', { class: 'fgroup' },
         select(listUI.sort, byRoom ? ROOM_SORTS : BUILDING_SORTS,
           (v) => { listUI.sort = v; rerender(); }, 'fsel')),
-      el('button', { class: 'btn btn-add', onclick: () => go('import') }, '貼り付けて取り込む'),
       el('button', {
         class: 'btn btn-primary btn-add',
         onclick: () => { const b = store.addBuilding(); go('b', b.id); },
@@ -147,7 +151,14 @@ function roomSorter(key) {
     discount: (x, y) => (a(x).totalChange ?? 0) - (a(y).totalChange ?? 0),
     days: (x, y) => (a(y).salesDays ?? -1) - (a(x).salesDays ?? -1),
   };
-  return by[key] || by.price;
+  return flip(by, key);
+}
+
+/** 末尾の「-」は逆順の印。同じ並びを2回書かないための仕掛け */
+function flip(by, key) {
+  const desc = String(key).endsWith('-');
+  const fn = by[desc ? String(key).slice(0, -1) : key] || by.price;
+  return desc ? (x, y) => fn(y, x) : fn;
 }
 
 /* ===== 建物ごと ===== */
@@ -172,7 +183,7 @@ function buildingSorter(key) {
     rooms: (x, y) => y.rooms.length - x.rooms.length,
     name: (x, y) => String(x.b.name).localeCompare(String(y.b.name), 'ja'),
   };
-  return by[key] || by.price;
+  return flip(by, key);
 }
 
 /**

@@ -9,7 +9,6 @@ import { initLightbox } from './gallery.js';
 import { renderLifeplan } from './lifeplan-view.js';
 import { renderViewing } from './viewing-view.js';
 import { renderMarket } from './market-view.js';
-import { renderImport } from './import-view.js';
 import { parsePairing } from './pairing.js';
 import { applyTheme, watchSystemTheme, themeButton } from './theme.js';
 import { applySkin } from './skin.js';
@@ -20,7 +19,7 @@ function parseHash() {
   const [view = 'list', id = null] = location.hash.replace(/^#\/?/, '').split('/');
   // 分析タブは相場に統合した。古いリンクを踏んでも迷子にならないようにする
   if (view === 'analysis') return { view: 'market', id: null };
-  const known = ['list', 'b', 'r', 'import', 'compare', 'plan', 'viewing', 'market', 'map', 'settings', 'setup'];
+  const known = ['list', 'b', 'r', 'compare', 'plan', 'viewing', 'market', 'map', 'settings', 'setup'];
   return { view: known.includes(view) ? view : 'list', id };
 }
 
@@ -45,7 +44,6 @@ function render() {
     if (route.id && !consuming) consumePairing(route.id);
     return;
   }
-  if (route.view === 'import') renderImport(main);
   else if (route.view === 'compare') renderCompare(main);
   else if (route.view === 'plan') renderLifeplan(main, render, route.id || 'plan');
   else if (route.view === 'viewing') renderViewing(main, render, route.id || 'check');

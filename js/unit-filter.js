@@ -2,18 +2,13 @@
 // 相場タブと同じ軸・同じ見た目にしてあるので、どの画面でも同じ感覚で探せる。
 // 対象は allUnits()（売り出し中の部屋＋登録した部屋）。
 import { el, STATUSES } from './util.js';
-import { select } from './ui.js';
+import { select, numberInput } from './ui.js';
 import { areaOf } from './analysis.js';
 import { CLOSED_STATUS } from './price.js';
 import {
-  AGE_BANDS, WALK_BANDS, AREA_BANDS, FIRM_KEYS, FIRM_LABEL,
+  AGE_BANDS, WALK_BANDS, FIRM_KEYS, FIRM_LABEL,
   stationsOf, ageOf, walkOf, inBand, options,
 } from './units.js';
-
-export const PRICE_BANDS = [
-  ['all', 'すべて'], ['-8000', '8,000万円以下'], ['8000-12000', '8,000〜1.2億'],
-  ['12000-15000', '1.2億〜1.5億'], ['15000-', '1.5億以上'],
-];
 
 // 検討の軸。「自分の物件」という区分は持たない。
 // 売り出し中かどうかは募集状況で、ガチで検討しているかは登録とステータスで見る
@@ -28,10 +23,20 @@ export const unitUI = {
   // 建物の条件。area は最寄駅、town は町名
   area: 'all', town: 'all', age: 'all', walk: 'all',
   brand: 'all', developer: 'all', builder: 'all', designer: 'all',
-  // 部屋の条件
-  price: 'all', layout: 'all', size: 'all',
+  // 部屋の条件。価格と広さは自分で下限・上限を入れる（決め打ちの帯だと刻みが合わない）
+  layout: 'all',
+  priceMin: null, priceMax: null, areaMin: null, areaMax: null,
   more: false, equip: [],
 };
+
+/** 下限〜上限に入るか。入れていない側は効かない。値が無い部屋は範囲を指定したら外す */
+export function inRange(v, min, max) {
+  if (min == null && max == null) return true;
+  if (v == null) return false;
+  if (min != null && v < min) return false;
+  if (max != null && v > max) return false;
+  return true;
+}
 
 /**
  * 1部屋がいまの条件に合うか。
@@ -58,8 +63,8 @@ export function unitMatches({ r, b }, except = null) {
   if (on('age') && !inBand(unitUI.age, ageOf(b))) return false;
   if (on('walk') && !inBand(unitUI.walk, walkOf(b))) return false;
   if (on('layout') && unitUI.layout !== 'all' && r.layout !== unitUI.layout) return false;
-  if (on('size') && !inBand(unitUI.size, r.area)) return false;
-  if (on('price') && !inBand(unitUI.price, r.price)) return false;
+  if (on('size') && !inRange(r.area, unitUI.areaMin, unitUI.areaMax)) return false;
+  if (on('price') && !inRange(r.price, unitUI.priceMin, unitUI.priceMax)) return false;
   if (on('equip') && unitUI.equip.length) {
     const tags = [...(r.roomEquipmentTags || []), ...(b.equipmentTags || []),
       ...(b.facilityTags || [])];
@@ -81,6 +86,25 @@ export function unitFilterBar(all, shown, rerender, { lead = null, trail = null,
   const band = (key, list) =>
     select(unitUI[key], list, (v) => { unitUI[key] = v; rerender(); }, 'fsel');
   const group = (label, ctrl) => el('div', { class: 'fgroup' }, el('label', {}, label), ctrl);
+  // 下限〜上限の入力。打つたびに描き直すと入力できないので、離れたときに効かせる
+  const range = (minKey, maxKey, unit, step) => el('div', { class: 'frange' },
+    numberInput({
+      value: unitUI[minKey] ?? '', fkey: minKey, cls: 'fnum', placeholder: '下限',
+      onInput: (v) => { unitUI[minKey] = v; },
+    }),
+    el('span', {}, '〜'),
+    numberInput({
+      value: unitUI[maxKey] ?? '', fkey: maxKey, cls: 'fnum', placeholder: '上限',
+      onInput: (v) => { unitUI[maxKey] = v; },
+    }),
+    el('span', { class: 'tiny muted' }, unit),
+    el('button', { class: 'btn btn-sm', onclick: () => rerender() }, '絞る'),
+    (unitUI[minKey] != null || unitUI[maxKey] != null)
+      ? el('button', {
+        class: 'btn btn-sm',
+        onclick: () => { unitUI[minKey] = null; unitUI[maxKey] = null; rerender(); },
+      }, '解除')
+      : null);
 
   // 選択肢は「その条件だけ外した結果」から作る。1つ選ぶと他の選択肢も連動して減る
   const pool = (key) => all.filter((x) => unitMatches(x, key));
@@ -111,8 +135,8 @@ export function unitFilterBar(all, shown, rerender, { lead = null, trail = null,
       FIRM_KEYS.map((k) => group(FIRM_LABEL[k],
         pick(k, options(buildings(k).map((b) => (b[k] || '').trim()))))),
       group('間取り', pick('layout', options(pool('layout').map((x) => x.r.layout)))),
-      group('広さ', band('size', AREA_BANDS)),
-      group('価格', band('price', PRICE_BANDS)),
+      group('広さ', range('areaMin', 'areaMax', '㎡')),
+      group('価格', range('priceMin', 'priceMax', '万円')),
       equipOptions.length
         ? el('button', {
           class: 'btn btn-sm' + (unitUI.more ? ' btn-primary' : ''),

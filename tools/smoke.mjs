@@ -34,8 +34,8 @@ Object.defineProperty(globalThis, 'location', {
 
 const FILES = [
   'util', 'loan', 'spec', 'price', 'chart', 'idb', 'image', 'github', 'migrate', 'store',
-  'ui', 'gallery', 'map', 'pairing', 'theme', 'analysis', 'lifeplan', 'sales', 'parse', 'sale', 'market', 'units', 'unit-filter',
-  'lifeplan-view', 'import-view', 'sale-view', 'viewing-view', 'market-view', 'views', 'main',
+  'ui', 'gallery', 'map', 'pairing', 'theme', 'analysis', 'lifeplan', 'sales', 'sale', 'market', 'units', 'unit-filter',
+  'lifeplan-view', 'sale-view', 'viewing-view', 'market-view', 'views', 'main',
 ];
 
 let bad = 0;
@@ -132,15 +132,6 @@ const checks = [
       if (new Set(g.options).size !== g.options.length) throw new Error(`${key} に重複がある`);
     }
   }],
-  ['parse', () => {
-    const { parseListing } = mods.parse;
-    const r = parseListing('価格\t1億2,800万円\n専有面積\t80.5m2\n所在階\t20階/RC40階建');
-    const get = (on, key) => r.items.find((i) => i.on === on && i.key === key)?.value;
-    if (get('room', 'price') !== 12800) throw new Error('価格を読めていない');
-    if (get('room', 'area') !== 80.5) throw new Error('面積を読めていない');
-    if (get('room', 'floor') !== 20) throw new Error('所在階を読めていない');
-    if (get('building', 'totalFloors') !== 40) throw new Error('総階数を所在階と取り違えている');
-  }],
   ['numberInput', () => {
     const { sanitizeNumeric, numOrNull } = mods.util;
     const cases = [
@@ -196,31 +187,6 @@ const checks = [
       if (!(rows[i].cashBack > rows[i - 1].cashBack)) throw new Error('手残りが年々増えていない');
     }
     if (breakEvenYear(rows) == null) throw new Error('手残りが0以上になる年を出せていない');
-  }],
-  ['import', () => {
-    const { parseListing } = mods.parse;
-    const { mergeInto } = mods['import-view'];
-    const res = parseListing([
-      'マンション名：テスト南タワー',
-      '価格：1億2,800万円',
-      '所在階：20階',
-      '専有面積：80.5m2',
-      '設備：オートロック、食器洗い乾燥機',
-    ].join('\n'));
-    const b = { name: '', facilityTags: [] };
-    const r = { label: '新規の部屋', priceHistory: [], roomEquipmentTags: ['床暖房'] };
-    mergeInto(b, r, {
-      items: res.items, tags: res.tags,
-      entry: { date: '2026-01-10', price: 12800, note: '登録時' },
-    });
-    if (b.name !== 'テスト南タワー') throw new Error('建物名が入っていない');
-    if (r.price !== 12800) throw new Error('価格が最新の履歴と揃っていない');
-    if (r.label !== '20階') throw new Error('部屋の呼び名が既定のまま');
-    if (!b.facilityTags.includes('オートロック')) throw new Error('共用施設のタグが入っていない');
-    // 既存のタグを消さずに足すこと
-    if (!r.roomEquipmentTags.includes('床暖房') || !r.roomEquipmentTags.includes('食洗機')) {
-      throw new Error('部屋の設備タグの合成が不正');
-    }
   }],
   ['market', () => {
     const m = mods.market;
@@ -338,7 +304,6 @@ const screens = [
   ['建物詳細', () => mods.views.renderBuilding(stubEl(), store.data.buildings[0].id)],
   ['部屋詳細', () => mods.views.renderRoom(stubEl(), room.id)],
   ['設定', () => mods.views.renderSettings(stubEl())],
-  ['取り込み', () => mods['import-view'].renderImport(stubEl())],
   ['地図', () => mods.views.renderMap(stubEl())],
   ['ライフプラン', lp('plan')],
   ['返済負担比率', lp('burden')],
@@ -528,6 +493,32 @@ const screens = [
     // 片付け。deleteRoom は保存まで走るので、ここでは配列から外すだけにする
     store.data.rooms = store.data.rooms.filter((x) => x.id !== gone.id && x.id !== unknown.id);
     room.listingStatus = savedStatus;
+  }],
+  ['価格と広さを自分で指定できる／高い順にも並べられる', () => {
+    const v = mods.views;
+    const f = mods['unit-filter'];
+    const saved = { ...f.unitUI };
+    try {
+      if (!f.inRange(80, null, null)) throw new Error('未指定で外している');
+      if (f.inRange(null, 50, null)) throw new Error('値が無いのに範囲に入れている');
+      if (!f.inRange(80, 70, 90) || f.inRange(95, 70, 90)) throw new Error('範囲の判定が違う');
+      Object.assign(f.unitUI, saved, { listing: 'all', priceMin: 12000 });
+      const all = mods.units.allUnits();
+      if (all.filter((x) => f.unitMatches(x)).some((x) => (x.r.price ?? 0) < 12000)) {
+        throw new Error('下限が効いていない');
+      }
+      Object.assign(f.unitUI, saved, { listing: 'all' });
+      // 高い順・安い順の両方で描ける
+      for (const sort of ['price', 'price-', 'area-', 'tsubo-']) {
+        v.listUI.sort = sort;
+        v.renderList(stubEl());
+      }
+      v.listUI.mode = 'building';
+      for (const sort of ['price-', 'age-']) { v.listUI.sort = sort; v.renderList(stubEl()); }
+    } finally {
+      Object.assign(f.unitUI, saved);
+      v.listUI.sort = 'price'; v.listUI.mode = 'building';
+    }
   }],
   ['絞り込みが一覧・比較・ライフプランで揃う', () => {
     const v = mods.views;

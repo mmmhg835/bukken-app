@@ -1,13 +1,13 @@
 // アプリ本体だけをキャッシュする軽量 Service Worker。
 // 物件データと画像は IndexedDB 側でキャッシュしているのでここでは扱わない。
-const VERSION = 'v82';
+const VERSION = 'v83';
 const CACHE = `bukken-app-${VERSION}`;
 const SHELL = [
   './', './index.html', './app.css', './skin-v2.css',
   './js/main.js', './js/views.js', './js/store.js', './js/github.js',
   './js/util.js', './js/idb.js', './js/image.js', './js/pairing.js',
   './js/ui.js', './js/gallery.js', './js/loan.js', './js/map.js', './js/migrate.js',
-  './js/price.js', './js/parse.js', './js/market.js', './js/market-view.js', './js/units.js', './js/unit-filter.js', './js/import-view.js', './js/sale.js', './js/sale-view.js', './js/chart.js', './js/sales.js', './js/spec.js', './js/theme.js', './js/skin.js', './js/analysis.js', './js/lifeplan.js', './js/lifeplan-view.js',
+  './js/price.js', './js/market.js', './js/market-view.js', './js/units.js', './js/unit-filter.js', './js/sale.js', './js/sale-view.js', './js/chart.js', './js/sales.js', './js/spec.js', './js/theme.js', './js/skin.js', './js/analysis.js', './js/lifeplan.js', './js/lifeplan-view.js',
   './manifest.webmanifest',
 ];
 
