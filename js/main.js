@@ -49,7 +49,7 @@ function render() {
   else if (route.view === 'analysis') renderAnalysis(main, render);
   else if (route.view === 'plan') renderLifeplan(main, render, route.id || 'plan');
   else if (route.view === 'viewing') renderViewing(main, render, route.id || 'check');
-  else if (route.view === 'market') renderMarket(main, render);
+  else if (route.view === 'market') renderMarket(main, render, route.id || 'overview');
   else if (route.view === 'map') renderMap(main);
   else if (route.view === 'settings') renderSettings(main);
   else if (route.view === 'b' && route.id) renderBuilding(main, route.id);

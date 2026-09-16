@@ -6,7 +6,7 @@ import { buildingDefaults, SPEC_GROUPS, BUILDING_EQUIPMENT } from './spec.js';
 import { defaultLifeplan, categoryOf } from './lifeplan.js';
 import { DEFAULT_SALE } from './sale.js';
 
-export const CURRENT_SCHEMA = 20;
+export const CURRENT_SCHEMA = 21;
 
 export function migrate(data) {
   let d = structuredClone(data);
@@ -29,6 +29,7 @@ export function migrate(data) {
   if (d.schemaVersion < 18) d = v17ToV18(d);
   if (d.schemaVersion < 19) d = v18ToV19(d);
   if (d.schemaVersion < 20) d = v19ToV20(d);
+  if (d.schemaVersion < 21) d = v20ToV21(d);
   d.settings ||= {};
   d.settings.loan = { ...DEFAULT_TERMS, ...(d.settings.loan || {}) };
   d.settings.places ||= [];   // 職場・駅など、地図上の参照地点
@@ -316,6 +317,21 @@ function v18ToV19(d) {
 function v19ToV20(d) {
   d.marketListings ||= [];
   d.schemaVersion = 20;
+  return d;
+}
+
+/**
+ * 賃料履歴と新築分譲価格の器を足し、建物の項目（専有面積の幅・建築面積・備考など）を埋める。
+ * マンションレビューの物件概要をそのまま写せるようにするため。
+ */
+function v20ToV21(d) {
+  for (const b of d.buildings || []) {
+    const def = buildingDefaults();
+    for (const [k, v] of Object.entries(def)) if (b[k] === undefined) b[k] = v;
+  }
+  d.rentListings ||= [];
+  d.newPrices ||= [];
+  d.schemaVersion = 21;
   return d;
 }
 

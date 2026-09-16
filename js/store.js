@@ -149,6 +149,8 @@ class Store extends EventTarget {
     this.data.buildings = this.data.buildings.filter((b) => b.id !== id);
     this.data.rooms = this.data.rooms.filter((r) => r.buildingId !== id);
     this.data.marketListings = this.marketListings.filter((m) => m.buildingId !== id);
+    this.data.rentListings = this.rentListings.filter((m) => m.buildingId !== id);
+    this.data.newPrices = this.newPrices.filter((m) => m.buildingId !== id);
     await this.save(`delete: 建物と配下の部屋を削除 (${id})`);
   }
 
@@ -175,6 +177,55 @@ class Store extends EventTarget {
 
   deleteListing(id) {
     this.data.marketListings = this.marketListings.filter((m) => m.id !== id);
+    this.markDirty();
+  }
+
+  // ===== 賃料履歴（同じ建物で募集に出た賃貸） =====
+  // 賃貸まわりの金額は円のまま持つ。掲載も生活実感も円で、万円に直すと写し間違えるため。
+  get rentListings() { return this.data.rentListings ||= []; }
+  rentsOf(buildingId) { return this.rentListings.filter((m) => m.buildingId === buildingId); }
+
+  addRent(buildingId, partial = {}) {
+    const m = {
+      id: uid('t'), buildingId,
+      ym: null,                             // 賃貸年月
+      floor: null, layout: '', direction: '', area: null,
+      rent: null,                           // 円/月
+      kanrihi: null,                        // 円/月
+      deposit: null, keyMoney: null, guarantee: null,   // 敷金・礼金・保証金（円）
+      source: 'マンレビ', note: '',
+      ...partial,
+    };
+    this.rentListings.push(m);
+    this.markDirty();
+    return m;
+  }
+
+  deleteRent(id) {
+    this.data.rentListings = this.rentListings.filter((m) => m.id !== id);
+    this.markDirty();
+  }
+
+  // ===== 新築分譲価格（新築時にいくらで売られたか） =====
+  get newPrices() { return this.data.newPrices ||= []; }
+  newPricesOf(buildingId) { return this.newPrices.filter((m) => m.buildingId === buildingId); }
+
+  addNewPrice(buildingId, partial = {}) {
+    const m = {
+      id: uid('n'), buildingId,
+      floor: null, direction: '', layout: '',
+      area: null, balcony: null,
+      price: null,                          // 万円。新築時の分譲価格
+      source: 'マンレビ', note: '',
+      ...partial,
+    };
+    this.newPrices.push(m);
+    this.markDirty();
+    return m;
+  }
+
+  deleteNewPrice(id) {
+    this.data.newPrices = this.newPrices.filter((m) => m.id !== id);
     this.markDirty();
   }
 

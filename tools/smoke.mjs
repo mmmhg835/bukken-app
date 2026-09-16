@@ -236,6 +236,16 @@ const checks = [
     if (m.pricePoints([row]).length !== 2) throw new Error('価格変更のぶん点が出ていない');
     const s = m.summary([row]);
     if (s.count !== 1 || s.open !== 0) throw new Error('まとめの件数が合わない');
+    // 賃貸は円のまま。マンレビの表示（坪13,768円）と合うこと
+    const rent = { ym: '2026-05', area: 67.23, rent: 280000 };
+    if (Math.round(m.rentTsuboOf(rent)) !== 13768) throw new Error('賃料の坪単価が掲載と合わない');
+    if (Math.round(m.rentSqmOf(rent)) !== 4165) throw new Error('賃料の㎡単価が掲載と合わない');
+    // 新築は売買と同じ万円
+    if (Math.round(m.newTsuboOf({ price: 3850, area: 75.95 })) !== 168) throw new Error('新築の坪単価が合わない');
+    // 表面利回り＝年間賃料÷売買価格。坪単価どうしで割る
+    const y = m.grossYield(590, m.rentTsuboOf(rent));
+    if (Math.abs(y - 2.80) > 0.01) throw new Error('表面利回りが合わない');
+    if (Math.abs(m.vsNew(590, 168) - 3.51) > 0.02) throw new Error('新築比が合わない');
   }],
   ['analysis', () => {
     const { METRICS, ATTRS, GROUPINGS } = mods.analysis;
@@ -285,6 +295,9 @@ room.priceHistory = [
 store.data.settings.lifeplan.selectedRoomId = room.id;
 
 const lifeplanTabs = ['plan', 'burden', 'graph', 'sale'];
+// 相場タブは4つのサブタブすべてを通す
+const marketTabs = (prefix) => ['overview', 'sale', 'rent', 'new'].map((tab) =>
+  [`${prefix}/${tab}`, () => mods['market-view'].renderMarket(stubEl(), () => {}, tab)]);
 const lp = (tab) => () => mods['lifeplan-view'].renderLifeplan(stubEl(), () => {}, tab);
 
 const screens = [
@@ -321,18 +334,24 @@ const screens = [
     mods['viewing-view'].renderViewing(stubEl(), () => {}, 'offer');
   }],
   ['比較（指値・相場つき）', () => mods.views.renderCompare(stubEl())],
-  // 相場タブ。履歴が0件の状態と、入っている状態の両方を通す
-  ['相場（履歴なし）', () => mods['market-view'].renderMarket(stubEl(), () => {})],
-  ['相場', () => {
+  // 相場タブ。3種類とも0件の状態と、入っている状態の両方を通す
+  ...marketTabs('相場（データなし）'),
+  ['相場のデータを入れる', () => {
     const b = store.data.buildings[0];
     store.addListing(b.id, { listedYM: '2026-05', closedYM: '2026-08', floor: 4, layout: '3LDK',
       direction: '東', feature: 'リフォーム', area: 75.67, balcony: 12.7, price: 9698,
       priceHistory: [{ ym: '2026-08', price: 9998 }, { ym: '2026-09', price: 9698 }],
       kanrihi: 1.184, shuzen: 1.984 });
+    store.addRent(b.id, { ym: '2026-05', floor: 13, layout: '1SLDK', direction: '北東',
+      area: 67.23, rent: 280000, kanrihi: 20000, deposit: 560000, keyMoney: 280000, guarantee: 0 });
+    store.addNewPrice(b.id, { floor: 4, direction: '南西', layout: '1LDK',
+      area: 75.95, balcony: 13.52, price: 3850 });
     // 中身がほとんど無い行も混ぜる。写し間違いでこの形になりうる
     store.addListing(b.id, { listedYM: '2025-11' });
-    mods['market-view'].renderMarket(stubEl(), () => {});
+    store.addRent(b.id, { ym: '2025-04' });
+    store.addNewPrice(b.id, {});
   }],
+  ...marketTabs('相場'),
   ['指値（絞り込み）', () => {
     const v = mods['viewing-view'];
     v.viewingUI.filter = { status: '検討中', offerOnly: true };

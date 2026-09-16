@@ -104,3 +104,75 @@ export function pricePoints(rows) {
   }
   return pts.sort((a, b) => a.x - b.x);
 }
+
+/* ===== 賃料履歴 ===== */
+// 賃貸は円のまま扱う。売買の万円と混ぜないこと。
+
+/** 賃料の坪単価（円/坪・月） */
+export const rentTsuboOf = (x) => (x.rent && x.area ? x.rent / (x.area / TSUBO_SQM) : null);
+
+/** 賃料の㎡単価（円/㎡・月） */
+export const rentSqmOf = (x) => (x.rent && x.area ? x.rent / x.area : null);
+
+/** 新しい順 */
+export function sortRents(rows) {
+  return [...rows].sort((a, b) =>
+    (ymToNum(b.ym) ?? -Infinity) - (ymToNum(a.ym) ?? -Infinity) || (b.rent ?? 0) - (a.rent ?? 0));
+}
+
+export function rentSummary(rows) {
+  const tsubo = rows.map(rentTsuboOf).filter(Number.isFinite);
+  const rents = rows.map((x) => x.rent).filter(Number.isFinite);
+  const ys = rows.map((x) => ymToNum(x.ym)).filter(Number.isFinite);
+  return {
+    count: rows.length,
+    rentMed: median(rents),
+    tsuboMin: tsubo.length ? Math.min(...tsubo) : null,
+    tsuboMed: median(tsubo),
+    tsuboMax: tsubo.length ? Math.max(...tsubo) : null,
+    span: ys.length ? {
+      from: rows.find((x) => ymToNum(x.ym) === Math.min(...ys))?.ym ?? null,
+      to: rows.find((x) => ymToNum(x.ym) === Math.max(...ys))?.ym ?? null,
+    } : null,
+  };
+}
+
+/* ===== 新築分譲価格 ===== */
+
+/** 新築時の坪単価（万円/坪）。売買と同じ単位 */
+export const newTsuboOf = (x) => (x.price && x.area ? x.price / (x.area / TSUBO_SQM) : null);
+
+/** 階の高い順。新築時の価格表は階による差を見るためのもの */
+export function sortNewPrices(rows) {
+  return [...rows].sort((a, b) => (b.floor ?? -Infinity) - (a.floor ?? -Infinity)
+    || (b.price ?? 0) - (a.price ?? 0));
+}
+
+export function newSummary(rows) {
+  const tsubo = rows.map(newTsuboOf).filter(Number.isFinite);
+  return {
+    count: rows.length,
+    tsuboMin: tsubo.length ? Math.min(...tsubo) : null,
+    tsuboMed: median(tsubo),
+    tsuboMax: tsubo.length ? Math.max(...tsubo) : null,
+  };
+}
+
+/* ===== 横断の指標 ===== */
+
+/**
+ * 表面利回り（％）。年間賃料 ÷ 売買価格。
+ * 面積の差をならすため、どちらも坪単価に直してから割る。
+ * @param {number} saleTsuboMan 売買の坪単価（万円/坪）
+ * @param {number} rentTsuboYen 賃料の坪単価（円/坪・月）
+ */
+export function grossYield(saleTsuboMan, rentTsuboYen) {
+  if (!saleTsuboMan || !rentTsuboYen) return null;
+  return ((rentTsuboYen * 12) / (saleTsuboMan * 10000)) * 100;
+}
+
+/** 新築時から何倍になったか */
+export function vsNew(saleTsuboMan, newTsuboMan) {
+  if (!saleTsuboMan || !newTsuboMan) return null;
+  return saleTsuboMan / newTsuboMan;
+}
