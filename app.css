@@ -408,6 +408,12 @@ table.cmp tr:hover td.lab{background:var(--surface-2)}
   margin:-1px -5px;border-radius:6px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
 .chart-legend.is-live button:hover{background:var(--surface-2)}
 .chart-legend.is-live button.is-on{background:var(--accent-soft);color:var(--text);font-weight:700}
+/* 押して線を消した分類。凡例からは消さない（戻せなくなるため） */
+.chart-legend.is-live button.is-off{opacity:.5;text-decoration:line-through}
+.chart-legend.is-live button.is-off i{filter:grayscale(1)}
+/* 凡例と「全部表示」を横に並べる */
+.legendrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:10px}
+.legendrow .chart-legend{margin-top:0}
 
 /* ===== 相場タブ ===== */
 .markettbl{font-size:12.5px}

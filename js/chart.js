@@ -2,9 +2,11 @@
 // 価格は改定日に階段状に変わるため、線形補間ではなく段で描く。
 
 const NS = 'http://www.w3.org/2000/svg';
-// 系列の色。散布図では任意の2点が隣り合うので、全ペアを色覚シミュレーション（P型・D型）
-// 込みで検証した6色に限る。この6色を超えたら色を増やさず「その他」にまとめる。
-export const SERIES_COLORS = ['#3186e9', '#cf7b26', '#00a089', '#ba3661', '#864ebc', '#577000'];
+// 系列の色。色覚シミュレーション（P型・D型・T型）込みで、隣り合う色の差と
+// 背景とのコントラストを検証した8色。線は8本までなので、この8色で足りる。
+// 8色を超えたら色を増やさず「その他」にまとめる（見分けられない色を足しても意味がない）。
+export const SERIES_COLORS = ['#3186e9', '#cf7b26', '#00a089', '#ba3661',
+  '#0089a8', '#864ebc', '#577000', '#e0508a'];
 // 色が尽きた系列をまとめる中立色。個々の識別は点を押したときの吹き出しが担う
 export const SERIES_MUTED = '#7d7a72';
 
@@ -122,25 +124,45 @@ export function stepChart(series, { height = 280 } = {}) {
 }
 
 /**
- * グラフの凡例。chart に散布図を渡すと、項目にさわった系列だけを残せる
- * （15件の凡例から色で点を探すのは無理なので、逆から辿れるようにする）
+ * グラフの凡例。
+ *
+ * chart に散布図を渡すと、項目にさわった系列だけを残せる
+ * （15件の凡例から色で点を探すのは無理なので、逆から辿れるようにする）。
+ * onToggle を渡すと、押した項目の線を消す／戻す。線が6本あると重なって
+ * 読めないので、いらない分類をその場で落とせるようにするため。
+ *
+ * @param {Array} series 凡例に並べる系列。消している系列も渡す（戻せなくなるため）
+ * @param {SVGElement|null} chart さわったときに絞る散布図
+ * @param {{hidden?: Set<string>, onToggle?: (name: string) => void}} opts
  */
-export function chartLegend(series, chart = null) {
+export function chartLegend(series, chart = null, { hidden = null, onToggle = null } = {}) {
   const box = document.createElement('div');
-  box.className = 'chart-legend' + (chart ? ' is-live' : '');
+  const live = chart || onToggle;
+  box.className = 'chart-legend' + (live ? ' is-live' : '');
   let pinned = null;
   const items = [];
-  series.filter((s) => s.points?.length).forEach((s, i) => {
-    const item = document.createElement(chart ? 'button' : 'span');
-    if (chart) item.type = 'button';
-    item.innerHTML = `<i style="background:${s.color || SERIES_COLORS[i % SERIES_COLORS.length]}"></i>`;
+  const off = (name) => !!hidden && hidden.has(name);
+  series.filter((s) => s.points?.length || off(s.name)).forEach((s, i) => {
+    const item = document.createElement(live ? 'button' : 'span');
+    if (live) item.type = 'button';
+    const color = s.color || SERIES_COLORS[i % SERIES_COLORS.length];
+    item.innerHTML = `<i style="background:${color}"></i>`;
     item.append(s.name);
+    if (off(s.name)) {
+      item.classList.add('is-off');
+      item.title = '押すと戻します';
+    }
     box.append(item);
-    if (!chart) return;
+    if (!live) return;
+    if (onToggle) {
+      item.addEventListener('click', () => onToggle(s.name));
+      if (!chart) return;
+    }
     items.push({ el: item, name: s.name });
     const paint = () => items.forEach((b) => b.el.classList.toggle('is-on', pinned === b.name));
     item.addEventListener('pointerenter', () => { if (pinned == null) chart.focusSeries(s.name); });
     item.addEventListener('pointerleave', () => { if (pinned == null) chart.focusSeries(null); });
+    if (onToggle) return;   // 押したら消す図では、押して絞る動きは付けない
     item.addEventListener('click', () => {
       pinned = pinned === s.name ? null : s.name;
       chart.focusSeries(pinned);

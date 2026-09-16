@@ -24,7 +24,7 @@ import {
   sortRows, summary, pricePoints, tsuboOf, sqmOf, monthsOf, cutOf, isOpen, ymLabel, ymToNum, median,
   sortRents, rentSummary, rentTsuboOf, rentSqmOf,
   sortNewPrices, newSummary, newTsuboOf, grossYield, vsNew, recent,
-  MARKET_METRICS, MARKET_ATTRS, MARKET_GROUPS, yearly, groupBy, bands, nowYear,
+  MARKET_METRICS, MARKET_ATTRS, MARKET_GROUPS, yearly, groupBy, bands, nowYear, minMax,
 } from './market.js';
 
 const SUBTABS = [
@@ -43,15 +43,38 @@ const LOAD_LIMIT = 400;
 const ui = {
   // 相場だけの条件。建物ひとつを選ぶ・売り出し年・募集状況
   building: 'all', from: 'all', to: 'all', listing: 'all',
-  metric: 'tsubo', attr: 'year', group: 'ageBand', fit: true, names: true, more: false,
+  metric: 'tsubo', attr: 'year', group: 'ageBand', group2: 'none',
+  fit: true, names: true, more: false,
   // 推移の粒度と、点にまとめる下限の件数。押した点は pick に覚える
   step: 'month', minCount: 3, pick: null, span: 7,
+  // 凡例を押して消した分類。線が重なって読めないときに落とす
+  hide: [],
   // 一括出力から来たときは、描き終わってから保存の画面を出す
   autoPrint: false,
   // 上限を超えていても読み込むか。押したときだけ立てる
   loadAll: false,
 };
 export const marketUI = ui;
+
+/** 凡例を押したときに、その分類の線を消す／戻す */
+const hiddenSet = () => new Set(ui.hide);
+function toggleSeries(name, rerender) {
+  const set = hiddenSet();
+  if (set.has(name)) set.delete(name);
+  else set.add(name);
+  ui.hide = [...set];
+  // 消した分類の点を押したままだと、下の一覧だけが残ってしまう
+  if (ui.pick && set.has(ui.pick.key)) ui.pick = null;
+  rerender();
+}
+
+/** 凡例のうしろに出す「全部表示」。消したまま忘れないようにする */
+const showAllButton = (rerender) => (ui.hide.length
+  ? el('button', {
+    class: 'btn btn-sm',
+    onclick: () => { ui.hide = []; rerender(); },
+  }, `全部表示（${ui.hide.length}件を戻す）`)
+  : null);
 
 /**
  * 入力中の条件。検索を押すまでグラフには効かない。
@@ -314,6 +337,7 @@ function applyAll() {
   copy(ui, marketDraft);
   // 条件が変われば、押していた点や棒の中身も変わる。選びっぱなしにしない
   ui.pick = null;
+  ui.hide = [];
 }
 
 /** 検索ボタン。条件を選んだ時点ではグラフを変えず、これを押して初めて効かせる */
@@ -459,7 +483,7 @@ function saleView(rows, buildings, rerender) {
         cell('最高', s.tsuboMax != null ? `${fmt.n(s.tsuboMax, 0)}万/坪` : '—'),
       )),
     axisControls(rerender, { attr: true, group: true, fit: true }),
-    scatterSection(rows, buildings),
+    scatterSection(rows, buildings, rerender),
     saleTable(sortRows(rows).slice(0, 400), rows.length, rerender),
   );
 }
@@ -480,14 +504,43 @@ function axisControls(rerender, { attr = false, group = false, groupLabel = '色
       group ? controlRow('◍', groupLabel,
         el('div', { style: 'display:flex;align-items:center;gap:18px;flex-wrap:wrap' },
           select(ui.group, Object.entries(MARKET_GROUPS).map(([k, v]) => [k, v.label]),
-            (k) => { ui.group = k; rerender(); }, 'picksel'),
+            (k) => { ui.group = k; ui.hide = []; rerender(); }, 'picksel'),
+          el('span', { class: 'tiny muted' }, '×'),
+          select(ui.group2, group2Options(),
+            (k) => { ui.group2 = k; ui.hide = []; rerender(); }, 'picksel'),
           fit ? toggle('近似直線と相場の幅', ui.fit, (v) => { ui.fit = v; rerender(); }) : null,
           fit ? toggle('物件名を出す', ui.names, (v) => { ui.names = v; rerender(); }) : null)) : null,
     ));
 }
 
 /**
- * 色は絞り込み前の全建物の並びで決める。絞っても残った系列の色が変わらないように。
+ * いま選んでいる分類。2つ選ぶと「エリア × 間取り」のように掛け合わせる。
+ *
+ * 「豊洲の3LDKだけがどう動いたか」は、エリアだけ・間取りだけでは出てこない。
+ * 掛け合わせると分類は増えるが、線は多い順に8本までなので画面は破綻しない。
+ */
+function activeGroup() {
+  const g1 = MARKET_GROUPS[ui.group] || MARKET_GROUPS.none;
+  const g2 = MARKET_GROUPS[ui.group2];
+  if (!g2 || ui.group2 === 'none' || ui.group === 'none' || ui.group2 === ui.group) return g1;
+  return {
+    label: `${g1.label} × ${g2.label}`,
+    // 掛け合わせると帯の順序は意味を失うので、色は通常の系列色に戻す
+    get: (x, b) => `${g1.get(x, b) ?? '不明'}・${g2.get(x, b) ?? '不明'}`,
+  };
+}
+
+/** 掛け合わせに出す選択肢。同じ分類どうしは選べない */
+const group2Options = () => [['none', '掛け合わせなし'],
+  ...Object.entries(MARKET_GROUPS)
+    .filter(([k]) => k !== 'none' && k !== ui.group)
+    .map(([k, v]) => [k, v.label])];
+
+/**
+ * 系列の色を決める。
+ *
+ * 渡すのは「実際に描く系列」だけにする。建物のように分類が90件もあるとき、
+ * 全部を並べてから色を配ると、描く8本がどれも色あふれの灰色になってしまう。
  * 築年数や駅徒歩のように順序のある区分は、並び順どおりに濃さが変わる色を当てる。
  */
 function colorOf(names, group = null) {
@@ -500,9 +553,9 @@ function colorOf(names, group = null) {
   return map;
 }
 
-function scatterSection(rows, buildings) {
+function scatterSection(rows, buildings, rerender) {
   const metric = MARKET_METRICS[ui.metric], attr = MARKET_ATTRS[ui.attr];
-  const group = MARKET_GROUPS[ui.group];
+  const group = activeGroup();
   const pts = [];
   for (const x of rows) {
     const b = buildingOf(x.buildingId);
@@ -514,7 +567,10 @@ function scatterSection(rows, buildings) {
 
   // 点の中身（建物名や価格の文字列）を組み立てる前に間引く
   const shownPts = thin(pts);
-  const order = [...new Set(shownPts.map((p) => p.key))];
+  // 色は点の多い分類から配る。出てきた順に配ると、ほとんどの点が灰色になる
+  const tally = new Map();
+  for (const p of shownPts) tally.set(p.key, (tally.get(p.key) || 0) + 1);
+  const order = [...tally.entries()].sort((a, b) => b[1] - a[1]).map(([k]) => k);
   const colors = colorOf(order, group);
   const OTHER = 'その他';
   const byKey = new Map();
@@ -537,9 +593,19 @@ function scatterSection(rows, buildings) {
     const i = group.order ? group.order.indexOf(name) : -1;
     return i < 0 ? 900 : i;
   };
-  const series = [...byKey.entries()]
+  const allSeries = [...byKey.entries()]
     .sort((a, b) => rank(a[0]) - rank(b[0]))
     .map(([name, points]) => ({ name, points, color: name === OTHER ? SERIES_MUTED : colors.get(name) }));
+  // 凡例で消した分類は描かない。凡例には残す（戻せなくなるため）
+  const hidden = hiddenSet();
+  const series = allSeries.filter((x) => !hidden.has(x.name));
+  if (!series.length) {
+    return el('div', { class: 'section' },
+      el('div', { class: 'empty' }, 'すべての分類を消しています'),
+      el('div', { class: 'legendrow' },
+        chartLegend(allSeries, null, { hidden, onToggle: (name) => toggleSeries(name, rerender) }),
+        showAllButton(rerender)));
+  }
 
   const fit = ui.fit ? linearFit(pts) : null;
   const chart = scatterChart(series, {
@@ -556,18 +622,24 @@ function scatterSection(rows, buildings) {
         el('span', {}, el('b', {}, `${fit.n.toLocaleString('ja-JP')}点`)),
       ) : null),
     el('div', { class: 'chartwrap' }, chart),
-    series.length > 1 ? chartLegend(series, chart) : null,
+    allSeries.length > 1
+      ? el('div', { class: 'legendrow' },
+        chartLegend(allSeries, chart, { hidden, onToggle: (name) => toggleSeries(name, rerender) }),
+        showAllButton(rerender))
+      : null,
     scatterFoot(pts, shownPts.length));
 }
 
 /** グラフの下に出す要約。点の散らばりを字面でも押さえられるようにする */
 function scatterFoot(pts, drawn = pts.length) {
   const rows = pts.map((p) => p.row);
+  // 全件（数万件）を相手にするので、Math.min(...配列) は使えない（引数として展開されて落ちる）
   const range = (vals, f) => {
     const v = vals.filter(Number.isFinite);
     if (!v.length) return null;
     const avg = v.reduce((s, x) => s + x, 0) / v.length;
-    return `${f(Math.min(...v))}〜${f(Math.max(...v))}（平均 ${f(avg)}）`;
+    const [lo, hi] = minMax(v);
+    return `${f(lo)}〜${f(hi)}（平均 ${f(avg)}）`;
   };
   const price = range(rows.map((r) => r.price), (x) => fmt.n(x, 0));
   const area = range(rows.map((r) => r.area), (x) => fmt.n(x, 1));
@@ -595,7 +667,7 @@ function scatterFoot(pts, drawn = pts.length) {
 function trendView(rows, rerender) {
   if (!rows.length) return el('div', { class: 'empty' }, '条件に合う売り出しがありません');
   const metric = MARKET_METRICS[ui.metric];
-  const group = MARKET_GROUPS[ui.group];
+  const group = activeGroup();
 
   // 見る期間。17年ぶんを1枚に描くと、いまの動きが潰れて読めない
   const from = ui.span === 'all' ? -Infinity : nowYear() - Number(ui.span);
@@ -635,17 +707,29 @@ function trendView(rows, rerender) {
       info: [`中央 ${fmt.n(median(vals), 1)}${metric.unit}　${vals.length}件`, '押すと下に一覧が出ます'],
     });
   }
-  const colors = colorOf([...byKey.keys()], group);
-  const series = [...byKey.entries()]
+  // 線が多すぎると読めないので、件数の多い順に SERIES_COLORS のぶんだけ描く。
+  // 色は「描くと決まった系列」に配る（全分類に配ると、描く線が灰色ばかりになる）
+  const drawnKeys = [...byKey.entries()]
     .sort((a, b) => b[1].length - a[1].length)
-    .slice(0, 8)                                   // 線が多すぎると読めない
-    .map(([name, points]) => ({
-      name, points: points.sort((a, b) => a.x - b.x),
-      color: colors.get(name) || SERIES_MUTED,
-    }));
-  if (!series.length) {
+    .slice(0, SERIES_COLORS.length);
+  const colors = colorOf(drawnKeys.map(([name]) => name), group);
+  const all = drawnKeys.map(([name, points]) => ({
+    name, points: points.sort((a, b) => a.x - b.x),
+    color: colors.get(name) || SERIES_MUTED,
+  }));
+  // 凡例で消した分類は描かない。凡例からは消さない（戻せなくなるため）
+  const hidden = hiddenSet();
+  const series = all.filter((s) => !hidden.has(s.name));
+  if (!all.length) {
     return el('div', {}, trendControls(rerender),
       el('div', { class: 'empty' }, 'まとめられる期間がありません'));
+  }
+  if (!series.length) {
+    return el('div', {}, trendControls(rerender),
+      el('div', { class: 'section' },
+        el('div', { class: 'empty' }, 'すべての分類を消しています'),
+        chartLegend(all, null, { hidden, onToggle: (name) => toggleSeries(name, rerender) }),
+        showAllButton(rerender)));
   }
 
   const fit = ui.fit ? linearFit(series.flatMap((s) => s.points)) : null;
@@ -679,8 +763,13 @@ function trendView(rows, rerender) {
     trendControls(rerender),
     el('div', { class: 'section' },
       el('div', { class: 'chartwrap' }, chart),
-      series.length > 1 ? chartLegend(series, chart) : null,
+      all.length > 1
+        ? el('div', { class: 'legendrow' },
+          chartLegend(all, chart, { hidden, onToggle: (name) => toggleSeries(name, rerender) }),
+          showAllButton(rerender))
+        : null,
       el('p', { class: 'tiny muted' },
+        all.length > 1 ? '凡例を押すと、その分類の線を消せます。' : '',
         floor < ui.minCount
           ? `${ui.minCount}件以上まとまる期間が無いため、${floor}件以上で描いています。`
           : '',
@@ -724,7 +813,7 @@ const GROWTH_MIN = 10;     // これ未満の件数は、伸び率が跳ねる�
 const GROWTH_ROWS = 30;
 
 function growthSection(target, series, metric) {
-  const group = MARKET_GROUPS[ui.group];
+  const group = activeGroup();
   const byKey = new Map();
   for (const x of target) {
     const k = group.get(x, buildingOf(x.buildingId)) ?? '不明';
@@ -813,7 +902,10 @@ function trendControls(rerender) {
       controlRow('◍', '分類',
         el('div', { style: 'display:flex;align-items:center;gap:18px;flex-wrap:wrap' },
           select(ui.group, Object.entries(MARKET_GROUPS).map(([k, v]) => [k, v.label]),
-            (k) => { ui.group = k; ui.pick = null; rerender(); }, 'picksel'),
+            (k) => { ui.group = k; ui.pick = null; ui.hide = []; rerender(); }, 'picksel'),
+          el('span', { class: 'tiny muted' }, '×'),
+          select(ui.group2, group2Options(),
+            (k) => { ui.group2 = k; ui.pick = null; ui.hide = []; rerender(); }, 'picksel'),
           segmented(ui.step, [['year', '年ごと'], ['month', '月ごと']],
             (k) => { ui.step = k; ui.pick = null; rerender(); }),
           // 期間。既定は直近7年。それ以上は線が詰まって、いまの動きが読めない
@@ -1063,7 +1155,8 @@ function distView(rows, rerender) {
 function groupView(rows, rerender) {
   if (!rows.length) return el('div', { class: 'empty' }, '条件に合う売り出しがありません');
   const metric = MARKET_METRICS[ui.metric];
-  const stats = groupBy(rows, buildingOf, ui.group === 'none' ? 'building' : ui.group, ui.metric);
+  const stats = groupBy(rows, buildingOf,
+    ui.group === 'none' ? MARKET_GROUPS.building : activeGroup(), ui.metric);
   const body = el('tbody', {}, stats.map((r) => el('tr', {},
     el('td', { class: 'lab' }, r.name),
     el('td', {}, r.count.toLocaleString('ja-JP')),

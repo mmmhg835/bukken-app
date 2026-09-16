@@ -265,10 +265,6 @@ export const MARKET_GROUPS = {
   direction: { label: '向き', get: (x) => x.direction || '不明' },
   feature:   { label: '特徴', get: (x) => x.feature || 'なし' },
   status:    { label: '募集状況', get: (x) => (isOpen(x) ? '販売中' : x.closedYM ? '終了' : '記録なし') },
-  decade:    { label: '売り出した年', get: (x) => {
-    const y = ymToNum(x.listedYM);
-    return y == null ? '不明' : `${Math.floor(y)}年`;
-  } },
   // 順序のある区分。並び順が決まっているので、色も濃さが順に変わるものを当てる
   ageBand: {
     label: '築年数', order: ['築10年以内', '築20年以内', '築30年以内', '築30年超'],
@@ -337,7 +333,9 @@ export function yearly(rows, metricKey = 'tsubo') {
 
 /** 区分ごとのまとめ。建物別・間取り別などに使う */
 export function groupBy(rows, buildingOf, groupKey, metricKey = 'tsubo') {
-  const g = MARKET_GROUPS[groupKey], metric = MARKET_METRICS[metricKey];
+  // 分類は名前でも、掛け合わせて作った分類そのものでも受ける
+  const g = typeof groupKey === 'string' ? MARKET_GROUPS[groupKey] : groupKey;
+  const metric = MARKET_METRICS[metricKey];
   const map = new Map();
   for (const x of rows) {
     const k = g.get(x, buildingOf(x.buildingId));

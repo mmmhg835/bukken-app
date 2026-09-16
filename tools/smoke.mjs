@@ -516,6 +516,28 @@ const screens = [
       Object.assign(u, saved);
     }
   }],
+  ['推移：分類を掛け合わせる／凡例を押して線を消す', () => {
+    const v = mods['market-view'];
+    const u = v.marketUI;
+    const saved = { ...u };
+    try {
+      // エリア × 間取り、エリア × 築年数。売出・建物別も同じ分類で描く
+      for (const group2 of ['layout', 'ageBand', 'none']) {
+        Object.assign(u, saved, { group: 'area', group2, minCount: 1, pick: null, hide: [] });
+        for (const tab of ['trend', 'sale', 'group']) v.renderMarket(stubEl(), () => {}, tab);
+      }
+      // 同じ分類どうしを掛けても落ちない（掛け合わせを無視する）
+      Object.assign(u, saved, { group: 'area', group2: 'area', minCount: 1, hide: [] });
+      v.renderMarket(stubEl(), () => {}, 'trend');
+      // 凡例で消した分類は線から外れる。全部消しても落ちない
+      Object.assign(u, saved, { group: 'layout', group2: 'none', minCount: 1, hide: ['2LDK'] });
+      v.renderMarket(stubEl(), () => {}, 'trend');
+      u.hide = ['1LDK', '2LDK', '3LDK', '4LDK', '1DK', '2DK', '3DK', '1K', '1R', '不明'];
+      v.renderMarket(stubEl(), () => {}, 'trend');
+    } finally {
+      Object.assign(u, saved);
+    }
+  }],
   ['相場（絞り込み）', () => {
     const v = mods['market-view'];
     const u = v.marketUI;
