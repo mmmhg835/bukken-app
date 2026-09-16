@@ -157,3 +157,19 @@
 :root[data-skin="v2"] .ftag{border-radius:9px;background:var(--surface);border-color:var(--line)}
 :root[data-skin="v2"] .selbar-in{border-radius:var(--r);padding:16px 20px}
 :root[data-skin="v2"] .pickbox.is-on .pickbox-mark{background:var(--accent);border-color:var(--accent)}
+
+/* ===== 見出しの面を淡い緑で揃える =====
+   クリームの濃淡だけで見出しと本文を分けると、値の幅が狭すぎて境目が読めない。
+   「ここは見出し」と言える面はすべて accent-soft に寄せ、本文は白のままにする。 */
+:root[data-skin="v2"] table.cmp thead th,
+:root[data-skin="v2"] table.cmp thead th.lab{ background:var(--accent-soft) }
+:root[data-skin="v2"] table.cmp tr.secrow td,
+:root[data-skin="v2"] table.cmp tr.secrow .secrow-fill{ background:var(--accent-soft) }
+:root[data-skin="v2"] table.cmp tfoot td{ background:var(--accent-soft) }
+:root[data-skin="v2"] .valuetable tr.totalrow td{ background:var(--accent-soft) }
+:root[data-skin="v2"] .wfhead{ background:var(--accent-soft); color:var(--text) }
+
+/* 見出しと同じ面になるので、いま見ている行は左の帯で見分ける */
+:root[data-skin="v2"] table.cmp tr.is-current td:first-child{
+  box-shadow:inset 2px 0 0 var(--accent);
+}
