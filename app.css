@@ -609,6 +609,12 @@ table.cmp tr.is-current td{background:var(--accent-soft)}
 .ucard{display:flex;flex-direction:column;gap:8px;padding:12px 14px 14px;cursor:pointer}
 .ucard:hover{border-color:var(--accent)}
 .ucard-top{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-height:22px}
+/* カードから検討ステータスを変える小さな選択。バッジと同じ大きさに見せる */
+.statussel{border:1px solid var(--line);background:var(--surface-2);border-radius:999px;
+  padding:3px 6px;font-size:11.5px;font-weight:700;color:var(--text-2);cursor:pointer;max-width:110px}
+.statussel:hover{border-color:var(--accent);color:var(--text)}
+/* まだ登録していない売り出し。選ぶとその場で登録される */
+.statussel.is-new{background:none;border-style:dashed;color:var(--text-3)}
 .ucard-name{font-size:15px;font-weight:700;line-height:1.35}
 .ucard-spec{font-size:12.5px;color:var(--text-2);font-weight:600;margin-top:2px}
 .ucard-spec small{color:var(--text-3);font-weight:600;margin-left:2px}

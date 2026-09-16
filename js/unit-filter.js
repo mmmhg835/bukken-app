@@ -12,8 +12,10 @@ import {
 
 // 検討の軸。「自分の物件」という区分は持たない。
 // 売り出し中かどうかは募集状況で、ガチで検討しているかは登録とステータスで見る
-export const OWN_OPTIONS = [['all', 'すべて'], ['mine', '登録した部屋'],
-  ...STATUSES.map((x) => [x, x])];
+// 「登録した部屋」は検討ステータスと中身がほぼ同じで、どちらを選べばいいのか
+// 分からなくなっていた。登録した部屋は必ずどれかのステータスを持つので、
+// ステータスだけを出す（登録していない売り出しは、どれを選んでも出ない）
+export const OWN_OPTIONS = [['all', 'すべて'], ...STATUSES.map((x) => [x, x])];
 
 /**
  * 絞り込みの状態。画面をまたいで共有するので、一覧で絞れば比較にもそのまま効く。
@@ -80,9 +82,8 @@ export function unitMatches({ r, b }, except = null, f = unitUI) {
   if (!b) return false;
   const on = (key) => key !== except;
   if (on('own') && f.own !== 'all') {
-    // 売り出しの行そのままの部屋は、まだ「登録した部屋」ではない
-    if (r.fromListing) return false;
-    if (f.own !== 'mine' && r.status !== f.own) return false;
+    // 売り出しの行そのままの部屋は、まだ検討ステータスを持っていない
+    if (r.fromListing || r.status !== f.own) return false;
   }
   if (on('listing') && f.listing !== 'all') {
     const closed = CLOSED_STATUS.includes(r.listingStatus);

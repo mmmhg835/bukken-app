@@ -184,14 +184,16 @@ function flip(by, key) {
 function buildingListing(shown) {
   const byBuilding = new Map();
   for (const x of shown) {
-    if (!byBuilding.has(x.b.id)) byBuilding.set(x.b.id, { b: x.b, rooms: [] });
-    byBuilding.get(x.b.id).rooms.push(x.r);
+    if (!byBuilding.has(x.b.id)) byBuilding.set(x.b.id, { b: x.b, rooms: [], units: [] });
+    const g = byBuilding.get(x.b.id);
+    g.rooms.push(x.r);
+    g.units.push(x);      // 1部屋だけの建物は、カードからステータスを変えられるようにする
   }
   const items = [...byBuilding.values()].sort(buildingSorter(listUI.sort));
   if (!items.length) return el('div', { class: 'empty' }, '条件に合う物件がありません');
   const page = items.slice(0, listUI.limit);
   return el('div', {},
-    el('div', { class: 'grid' }, page.map(({ b, rooms }) => buildingCard(b, rooms))),
+    el('div', { class: 'grid' }, page.map(({ b, rooms, units }) => buildingCard(b, rooms, units))),
     moreButton(items.length, page.length, rerender));
 }
 
@@ -346,6 +348,31 @@ function featureTag(icon, text) {
  * 1画面に3件しか入らなかったため。そのぶん数字を詰めて、開かなくても
  * 比べられるようにしている。
  */
+/**
+ * カードから検討ステータスを変える。
+ *
+ * 内見して「本命」に上げる・「見送り」に落とす、という操作は毎日起きる。
+ * そのたびに詳細を開いて戻ってくるのは手間なので、一覧のカードから直に変える。
+ * まだ登録していない売り出しを選んだときは、その場で登録してから付ける。
+ */
+function statusPicker(unit) {
+  const { r } = unit;
+  const opts = r.fromListing
+    ? [['', '未登録'], ...STATUSES.map((x) => [x, x])]
+    : STATUSES.map((x) => [x, x]);
+  const sel = select(r.fromListing ? '' : (r.status || '検討中'), opts, (v) => {
+    if (!v) return;
+    const room = r.fromListing ? promote(unit) : r;
+    room.status = v;
+    store.markDirty();
+    toast(r.fromListing ? `登録して「${v}」にしました` : `「${v}」にしました`);
+    rerender();
+  }, 'statussel' + (r.fromListing ? ' is-new' : ''));
+  // カード全体が詳細への入口なので、ここを押しても開かないようにする
+  sel.addEventListener('click', (e) => e.stopPropagation());
+  return sel;
+}
+
 function propertyCard({ r, b, listing = null, ambiguous = null }) {
   const url = unitUrl({ r, b, listing });
   const c = derive(r, b, store.loanTerms);
@@ -371,7 +398,7 @@ function propertyCard({ r, b, listing = null, ambiguous = null }) {
       gap ? el('span', { class: `badge ${gap.cls}`, title: gap.title }, gap.text) : null,
       CLOSED_STATUS.includes(r.listingStatus)
         ? el('span', { class: 'badge' }, r.listingStatus) : null,
-      r.fromListing ? null : statusBadge(r.status),
+      statusPicker({ r, b, listing }),
     ),
     el('div', { class: 'ucard-head' },
       el('div', { class: 'ucard-name' }, b.name),
@@ -477,7 +504,7 @@ function priceCut(r) {
 }
 
 /** 建物のカード。配下の部屋をまとめて表す。写真は載せず、数字を詰める */
-function buildingCard(b, rooms) {
+function buildingCard(b, rooms, units = []) {
   const prices = rooms.map((r) => r.price).filter((v) => v != null);
   const tsubos = rooms.map((r) => derive(r, b).tsuboPrice).filter(Number.isFinite);
   const c = derive(rooms[0] || {}, b, store.loanTerms);
@@ -490,6 +517,9 @@ function buildingCard(b, rooms) {
       pickBox(rooms.map((r) => r.id)),
       el('div', { class: 'spacer' }),
       el('span', { class: 'badge badge-ok' }, `${rooms.length}部屋`),
+      // 部屋が1つなら、その部屋のステータスをここで変えられる。
+      // 複数あるときは部屋ごとに違うので、建物を開いてから変えてもらう
+      units.length === 1 ? statusPicker(units[0]) : null,
     ),
     el('div', { class: 'ucard-head' },
       el('div', { class: 'ucard-name' }, b.name || '(名称未設定)'),

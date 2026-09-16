@@ -130,10 +130,10 @@ export function renderMarket(root, rerender, view = 'overview') {
           class: 'btn btn-primary',
           // よく使う入口。自分が検討している建物だけならすぐ出せる
           onclick: () => {
-            unitUI.own = 'mine'; unitDraft.own = 'mine';
+            unitUI.own = '検討中'; unitDraft.own = '検討中';
             ui.loadAll = false; rerender();
           },
-        }, '検討している建物だけ見る'),
+        }, '検討中の建物だけ見る'),
         el('button', {
           class: 'btn',
           onclick: () => { ui.loadAll = true; rerender(); },
@@ -200,8 +200,7 @@ export function targetBuildings(except = null, f = ui, u = unitUI) {
   return store.allBuildings.filter((b) => {
     if (on('own') && u.own !== 'all') {
       const rooms = store.roomsOf(b.id);
-      if (!rooms.length) return false;
-      if (u.own !== 'mine' && !rooms.some((r) => r.status === u.own)) return false;
+      if (!rooms.some((r) => r.status === u.own)) return false;
     }
     if (on('name') && u.name && !nameHit(b, u.name)) return false;
     if (on('building') && f.building !== 'all' && b.id !== f.building) return false;

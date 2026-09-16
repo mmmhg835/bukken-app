@@ -433,12 +433,40 @@ const screens = [
       const none = set({ common: { own: 'all', name: '存在しない建物' } });
       if (none.buildings !== 0) throw new Error('当たらない名前でも建物が残っている');
       // 一覧で絞った条件が相場にもそのまま効く
-      const mine = set({ common: { own: 'mine' } });
+      const mine = set({ common: { own: '検討中' } });
       if (mine.buildings >= all.buildings) throw new Error('検討の条件が相場に効いていない');
     } finally {
       Object.assign(u, saved);
       Object.assign(v.marketDraft, saved);
       Object.assign(f.unitUI, shared);
+      f.resetDraft();
+    }
+  }],
+  ['検討ステータスで絞ると、登録した部屋がすべて出る', () => {
+    const f = mods['unit-filter'];
+    const u = mods.units;
+    const saved = { ...f.unitUI };
+    try {
+      // 「登録した部屋」という選択肢は無くした。ステータスだけで選ぶ
+      const labels = f.OWN_OPTIONS.map(([v]) => v);
+      if (labels.includes('mine')) throw new Error('「登録した部屋」が選択肢に残っている');
+      const all = u.allUnits();
+      const registered = all.filter((x) => !x.r.fromListing);
+      let hit = 0;
+      for (const st of labels.filter((v) => v !== 'all')) {
+        Object.assign(f.unitUI, saved, { listing: 'all', own: st });
+        hit += all.filter((x) => f.unitMatches(x)).length;
+      }
+      if (hit !== registered.length) {
+        throw new Error(`ステータスで拾えるのが ${hit}室、登録は ${registered.length}室`);
+      }
+      // 売り出しのままの部屋は、どのステータスでも出ない
+      Object.assign(f.unitUI, saved, { listing: 'all', own: '検討中' });
+      if (all.filter((x) => f.unitMatches(x)).some((x) => x.r.fromListing)) {
+        throw new Error('登録していない売り出しがステータスで出ている');
+      }
+    } finally {
+      Object.assign(f.unitUI, saved);
       f.resetDraft();
     }
   }],
@@ -673,7 +701,7 @@ const screens = [
     const saved = { ...f.unitUI };
     try {
       // 条件を変えると、内見と地図の中身も一緒に絞られる
-      Object.assign(f.unitUI, saved, { listing: 'all', own: 'mine', area: '存在しない駅' });
+      Object.assign(f.unitUI, saved, { listing: 'all', own: '検討中', area: '存在しない駅' });
       f.resetDraft();
       mods['viewing-view'].renderViewing(stubEl(), () => {}, 'check');
       mods['viewing-view'].renderViewing(stubEl(), () => {}, 'offer');
@@ -785,7 +813,7 @@ const screens = [
       v.renderCompare(stubEl());
       mods['lifeplan-view'].renderLifeplan(stubEl(), () => {});
       // 登録した部屋だけに絞る
-      Object.assign(f.unitUI, saved, { listing: 'all', own: 'mine' });
+      Object.assign(f.unitUI, saved, { listing: 'all', own: '検討中' });
       if (all.filter((x) => f.unitMatches(x)).some((x) => x.r.fromListing)) {
         throw new Error('売り出しの行が「登録した部屋」に混ざっている');
       }
