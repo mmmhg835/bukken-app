@@ -182,6 +182,16 @@ export function canonLayout(v) {
   return m ? `${m[1]}${m[2]}` : null;
 }
 
+/**
+ * 選択肢に出す間取りの形。
+ * 納戸が2つ3つある部屋は 2SSLDK・2SSSLDK のように書かれるが、
+ * 選択肢に並べても選びようがないので S はひとつにまとめる（2SLDK に含める）。
+ */
+export function layoutLabel(v) {
+  const t = norm(v).replace(/[＋+]/g, '');
+  return t ? t.replace(/S{2,}/, 'S') : '';
+}
+
 /** 間取りが食い違っていないか。どちらかが分からないときは判断しない */
 const layoutOk = (a, b) => {
   const x = canonLayout(a), y = canonLayout(b);

@@ -7,7 +7,7 @@ import { areaOf } from './analysis.js';
 import { CLOSED_STATUS } from './price.js';
 import {
   AGE_BANDS, WALK_BANDS, FIRM_KEYS, FIRM_LABEL,
-  stationsOf, ageOf, walkOf, inBand, options,
+  stationsOf, ageOf, walkOf, inBand, options, layoutLabel,
 } from './units.js';
 
 // 検討の軸。「自分の物件」という区分は持たない。
@@ -94,7 +94,7 @@ export function unitMatches({ r, b }, except = null, f = unitUI) {
   }
   if (on('age') && !inBand(f.age, ageOf(b))) return false;
   if (on('walk') && !inBand(f.walk, walkOf(b))) return false;
-  if (on('layout') && f.layout !== 'all' && r.layout !== f.layout) return false;
+  if (on('layout') && f.layout !== 'all' && layoutLabel(r.layout) !== f.layout) return false;
   if (on('size') && !inRange(r.area, f.areaMin, f.areaMax)) return false;
   if (on('price') && !inRange(r.price, f.priceMin, f.priceMax)) return false;
   if (on('equip') && f.equip.length) {
@@ -153,7 +153,7 @@ export function unitFilterBar(all, shown, rerender, { lead = null, trail = null,
       // 自分が登録した部屋だけを見る使い方が多いので、これは畳まない
       group('検討', band('own', OWN_OPTIONS)),
       group('エリア（最寄駅）', pick('area', options(buildings('area').flatMap(stationsOf)))),
-      group('間取り', pick('layout', options(pool('layout').map((x) => x.r.layout)))),
+      group('間取り', pick('layout', options(pool('layout').map((x) => layoutLabel(x.r.layout))))),
       group('価格', range('priceMin', 'priceMax', '万円')),
       group('広さ', range('areaMin', 'areaMax', '㎡')),
       el('button', {

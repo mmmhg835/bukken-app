@@ -14,7 +14,7 @@ import { linearFit, areaOf } from './analysis.js';
 import { inRange } from './unit-filter.js';
 import {
   AGE_BANDS, WALK_BANDS, FIRM_KEYS, FIRM_LABEL,
-  stationsOf, ageOf, walkOf, inBand, options,
+  stationsOf, ageOf, walkOf, inBand, options, layoutLabel,
 } from './units.js';
 import { RENOVATION } from './spec.js';
 import {
@@ -176,7 +176,7 @@ function saleRows(buildings, except = null, f = ui) {
       if (on('year') && to != null && (y == null || y >= to + 1)) continue;
       if (on('listing') && f.listing === 'open' && !isOpen(x)) continue;
       if (on('listing') && f.listing === 'closed' && isOpen(x)) continue;
-      if (on('layout') && f.layout !== 'all' && (x.layout || '') !== f.layout) continue;
+      if (on('layout') && f.layout !== 'all' && layoutLabel(x.layout) !== f.layout) continue;
       if (on('size') && !inRange(x.area, f.sizeMin, f.sizeMax)) continue;
       out.push(x);
     }
@@ -215,7 +215,7 @@ function buildingFilter(targets, loaded, rows, rerender, hitBuildings = null) {
     const y = ymToNum(x.listedYM);
     return y == null ? null : String(Math.floor(y));
   }), (v) => `${v}年`).sort((a, b) => b[0].localeCompare(a[0]));
-  const layoutOptions = options(rowsFor('layout').map((x) => x.layout));
+  const layoutOptions = options(rowsFor('layout').map((x) => layoutLabel(x.layout)));
 
   const loading = store.marketLoadingCount;
   // よく使う条件だけ出し、残りは「条件を増やす」の中へ。並べすぎると探す画面になる
