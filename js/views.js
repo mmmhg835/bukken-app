@@ -153,9 +153,16 @@ function coverPick(owner, prefer = null) {
   return hit ? { path: hit.thumbPath || hit.path, thumb: '' } : null;
 }
 
-function coverImage(owner, alt, prefer = null) {
+function coverImage(owner, alt, prefer = null, url = null) {
   const pickImg = coverPick(owner, prefer);
-  if (!pickImg) return el('div', { class: 'ph' }, '写真なし');
+  if (!pickImg) {
+    return el('div', { class: 'ph' }, url
+      ? el('a', {
+        href: url, target: '_blank', rel: 'noreferrer',
+        onclick: (e) => e.stopPropagation(),     // カードのタップに巻き込まれない
+      }, 'マンレビで写真を見る')
+      : '写真なし');
+  }
   const img = el('img', { src: pickImg.thumb, alt, loading: 'lazy' });
   if (pickImg.path) store.imageUrl(pickImg.path).then((u) => { img.src = u; }).catch(() => {});
   return img;
@@ -193,7 +200,7 @@ function propertyCard(r, b) {
       statusBadge(r.status),
     ),
     el('div', { class: 'pcard-img' },
-      coverImage(r, r.label, '間取り'),
+      coverImage(r, r.label, '間取り', b.url),
       r.images?.length ? el('span', { class: 'imgcount' }, `${r.images.length}枚`) : null,
     ),
     el('div', { class: 'pcard-body' },
@@ -235,7 +242,7 @@ function buildingCard(b, rooms) {
       el('span', { class: 'badge badge-ok' }, `${rooms.length}部屋`),
     ),
     el('div', { class: 'pcard-img' },
-      coverImage(coverPick(b, '概要') ? b : (rooms.find((r) => coverPick(r)) || b), b.name, '概要'),
+      coverImage(coverPick(b, '概要') ? b : (rooms.find((r) => coverPick(r)) || b), b.name, '概要', b.url),
       imageCount ? el('span', { class: 'imgcount' }, `${imageCount}枚`) : null,
     ),
     el('div', { class: 'pcard-body' },
@@ -329,17 +336,19 @@ export function renderBuilding(root, id) {
 
 /**
  * マンションレビューに載っている写真。
- * 画像そのものは取り込まない（第三者が権利を持つため、規約でも転載を断っている）。
- * URL だけ持って、向こうから読んで出す。
+ * 画像は取り込まないし、向こうから読んで出すこともしない。
+ * 規約が転載・複製に事前許諾を求めているため、ここは「見に行くリンク」だけにしている。
  */
 function mrPhotos(b) {
-  const list = b.photos || [];
-  if (!list.length) return null;
+  if (!b.url) return null;
+  const n = (b.photos || []).length;
   return el('div', { class: 'section' },
-    el('h3', {}, 'マンションレビューの写真'),
-    el('div', { class: 'mrpics' }, list.map((src) =>
-      el('a', { href: b.url || src, target: '_blank', rel: 'noreferrer' },
-        el('img', { src, alt: '', loading: 'lazy', referrerpolicy: 'no-referrer' })))));
+    el('h3', {}, '写真'),
+    el('div', { class: 'card', style: 'padding:14px' },
+      el('a', { href: b.url, target: '_blank', rel: 'noreferrer' },
+        `マンションレビューで写真を見る${n ? `（${n}枚）` : ''}`),
+      el('p', { class: 'tiny muted', style: 'margin:6px 0 0' },
+        '写真は先方のページで見る形にしています。手元の写真は下のギャラリーに追加できます。')));
 }
 
 /** 設備のチェックリスト。建物と部屋で対象グループを切り替える */
