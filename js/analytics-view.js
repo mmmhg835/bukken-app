@@ -4,13 +4,13 @@ import { el, fmt, mount } from './util.js';
 import { section, segmented, controlRow, toggle, select } from './ui.js';
 import {
   METRICS, ATTRS, GROUPINGS, buildRows, linearFit, residuals,
-  groupStats, histogram, monthlyTrend, areaOf,
+  groupStats, histogram, monthlyTrend, areaOf, shortName,
   EQUIPMENT_FILTERS, filterByEquipment, hasEquipment,
 } from './analysis.js';
-import { scatterChart, histogramChart, stepChart, chartLegend, SERIES_COLORS } from './chart.js';
+import { scatterChart, histogramChart, stepChart, chartLegend, SERIES_COLORS, SERIES_MUTED } from './chart.js';
 import { CLOSED_STATUS } from './price.js';
 
-const ui = { metric: 'tsubo', attr: 'area', group: 'building', fit: true, histMetric: 'tsubo', equip: [] };
+const ui = { metric: 'tsubo', attr: 'area', group: 'building', fit: true, labels: true, histMetric: 'tsubo', equip: [] };
 
 export function renderAnalysis(root, rerender) {
   const all = buildRows(store);
@@ -22,7 +22,7 @@ export function renderAnalysis(root, rerender) {
 
   mount(root,
     equipmentFilter(all, rows, rerender),
-    scatterSection(rows, rerender),
+    scatterSection(all, rows, rerender),
     valueSection(rows),
     areaSection(rows),
     distributionSection(rows, rerender),
@@ -61,7 +61,36 @@ function equipmentFilter(all, rows, rerender) {
 /* =========================================================
    相関（散布図）
    ========================================================= */
-function scatterSection(rows, rerender) {
+const OTHER = 'その他';
+
+/**
+ * 区分に色を割り当てる。並びは絞り込み前の全件で決めるので、
+ * 設備で絞っても残った区分の色は変わらない。
+ * 色を使い回すと別々の建物が同じ色になるため、6色を超えた分は「その他」にまとめ、
+ * 個々の識別は点の名前とホバーに任せる。
+ */
+function colorOf(all, group) {
+  const order = [];
+  for (const x of all) {
+    const k = group.get(x);
+    if (!order.includes(k)) order.push(k);
+  }
+  return new Map(order.map((k, i) => [k, i < SERIES_COLORS.length ? SERIES_COLORS[i] : null]));
+}
+
+/** 点を押したときに出す3行。どの部屋かが分かる最低限に絞る */
+function pointInfo(x) {
+  // 階は見出しの部屋名に出るので、ここでは繰り返さない
+  const spec = [x.r.layout, fmt.sqm(x.r.area), x.r.renovation && x.r.renovation !== 'なし' ? x.r.renovation : null]
+    .filter(Boolean).join('・');
+  return [
+    spec,
+    `${fmt.man(x.r.price)}　坪 ${fmt.n(x.c.tsuboPrice, 0)}万`,
+    x.r.offerPrice != null ? `指値 ${fmt.man(x.r.offerPrice)}` : '',
+  ].filter(Boolean);
+}
+
+function scatterSection(all, rows, rerender) {
   if (!rows.length) {
     return el('div', { class: 'section' },
       el('div', { class: 'empty' }, '絞り込み条件に合う部屋がありません。'));
@@ -71,15 +100,23 @@ function scatterSection(rows, rerender) {
   const valid = rows.filter((x) => Number.isFinite(metric.get(x)) && Number.isFinite(attr.get(x)));
   const fit = ui.fit ? linearFit(valid.map((x) => ({ x: attr.get(x), y: metric.get(x) }))) : null;
 
+  const colors = colorOf(all, group);
   const byGroup = new Map();
   for (const x of valid) {
-    const k = group.get(x);
+    const k = colors.get(group.get(x)) ? group.get(x) : OTHER;
     if (!byGroup.has(k)) byGroup.set(k, []);
-    byGroup.get(k).push({ x: attr.get(x), y: metric.get(x), label: `${x.b.name} ${x.r.label}` });
+    byGroup.get(k).push({
+      x: attr.get(x), y: metric.get(x),
+      label: `${x.b.name} ${x.r.label}`,
+      short: `${shortName(x.b.name)} ${x.r.label}`,
+      info: pointInfo(x),
+    });
   }
-  const series = [...byGroup.entries()].map(([name, points], i) => ({
-    name, points, color: SERIES_COLORS[i % SERIES_COLORS.length],
-  }));
+  const series = [...byGroup.entries()]
+    .sort((a, b) => (a[0] === OTHER ? 1 : 0) - (b[0] === OTHER ? 1 : 0))   // その他は最後
+    .map(([name, points]) => ({
+      name, points, color: name === OTHER ? SERIES_MUTED : colors.get(name),
+    }));
 
   const controls = el('div', { class: 'panel-controls' },
     controlRow('↕', '表示単位',
@@ -92,9 +129,16 @@ function scatterSection(rows, rerender) {
       el('div', { style: 'display:flex;align-items:center;gap:18px;flex-wrap:wrap' },
         select(ui.group, Object.entries(GROUPINGS).map(([k, v]) => [k, v.label]),
           (k) => { ui.group = k; rerender(); }, 'picksel'),
+        toggle('点に名前', ui.labels, (v) => { ui.labels = v; rerender(); }),
         toggle('近似直線と相場の幅', ui.fit, (v) => { ui.fit = v; rerender(); }),
       )),
   );
+
+  const chart = scatterChart(series, {
+    xLabel: `${attr.label}（${attr.unit}）`,
+    yLabel: `${metric.label}（${metric.unit}）`,
+    fit, xTick: attr.tick, height: 340, labels: ui.labels,
+  });
 
   const body = valid.length
     ? el('div', { class: 'panel-chart' },
@@ -108,13 +152,8 @@ function scatterSection(rows, rerender) {
           el('span', {}, el('b', {}, `${fit.n}件`)),
         ) : null,
       ),
-      el('div', { class: 'chartwrap' },
-        scatterChart(series, {
-          xLabel: `${attr.label}（${attr.unit}）`,
-          yLabel: `${metric.label}（${metric.unit}）`,
-          fit, xTick: attr.tick, height: 340,
-        })),
-      series.length > 1 ? chartLegend(series) : null,
+      el('div', { class: 'chartwrap' }, chart),
+      series.length > 1 ? chartLegend(series, chart) : null,
       !fit && ui.fit && valid.length < 3
         ? el('div', { class: 'tiny muted', style: 'margin-top:8px' }, '近似直線には3件以上必要')
         : null,

@@ -2,7 +2,15 @@
 // 価格は改定日に階段状に変わるため、線形補間ではなく段で描く。
 
 const NS = 'http://www.w3.org/2000/svg';
-export const SERIES_COLORS = ['#2563eb', '#0d9488', '#d97706', '#db2777', '#7c3aed', '#65a30d'];
+// 系列の色。散布図では任意の2点が隣り合うため、全ペアを色覚シミュレーション付きで
+// 検証した6色に限る（この6色を超えたら色を増やさず「その他」にまとめる）。
+export const SERIES_COLORS = ['#006ade', '#cc7d1b', '#00ad8d', '#b60254', '#9a6ec9', '#397600'];
+// 色が尽きた系列をまとめる中立色。識別は名前ラベルとホバーが担う
+export const SERIES_MUTED = '#7d7a72';
+
+/** ラベルの幅の目安。全角1・半角0.55で数える（実測は描いてからでないと取れない） */
+const textWidth = (s, fs) =>
+  [...String(s)].reduce((w, ch) => w + (ch.charCodeAt(0) < 0x2e80 ? 0.55 : 1), 0) * fs;
 
 function n(tag, attrs = {}, ...kids) {
   const e = document.createElementNS(NS, tag);
@@ -110,15 +118,31 @@ export function stepChart(series, { height = 280 } = {}) {
   return svg;
 }
 
-/** グラフの凡例 */
-export function chartLegend(series) {
+/**
+ * グラフの凡例。chart に散布図を渡すと、項目にさわった系列だけを残せる
+ * （15件の凡例から色で点を探すのは無理なので、逆から辿れるようにする）
+ */
+export function chartLegend(series, chart = null) {
   const box = document.createElement('div');
-  box.className = 'chart-legend';
+  box.className = 'chart-legend' + (chart ? ' is-live' : '');
+  let pinned = null;
+  const items = [];
   series.filter((s) => s.points?.length).forEach((s, i) => {
-    const item = document.createElement('span');
+    const item = document.createElement(chart ? 'button' : 'span');
+    if (chart) item.type = 'button';
     item.innerHTML = `<i style="background:${s.color || SERIES_COLORS[i % SERIES_COLORS.length]}"></i>`;
     item.append(s.name);
     box.append(item);
+    if (!chart) return;
+    items.push({ el: item, name: s.name });
+    const paint = () => items.forEach((b) => b.el.classList.toggle('is-on', pinned === b.name));
+    item.addEventListener('pointerenter', () => { if (pinned == null) chart.focusSeries(s.name); });
+    item.addEventListener('pointerleave', () => { if (pinned == null) chart.focusSeries(null); });
+    item.addEventListener('click', () => {
+      pinned = pinned === s.name ? null : s.name;
+      chart.focusSeries(pinned);
+      paint();
+    });
   });
   return box;
 }
@@ -129,12 +153,15 @@ export function chartLegend(series) {
    ========================================================= */
 
 /**
- * @param {Array} series [{name, color, points:[{x,y,label}]}]
- * @param {object} opts { xLabel, yLabel, xUnit, yUnit, fit, height, xTick }
+ * @param {Array} series [{name, color, points:[{x,y,label,short}]}]
+ *   label は吹き出しに出す名前、short は点の脇に出す短い名前
+ * @param {object} opts { xLabel, yLabel, xUnit, yUnit, fit, height, xTick, labels }
  *   fit は linearFit() の結果。渡すと近似直線と±1σの帯を描く
+ *   labels を true にすると点の脇に名前を出す
+ * @returns {SVGElement} focusSeries(name) で系列を絞れる
  */
 export function scatterChart(series, opts = {}) {
-  const { xLabel = '', yLabel = '', fit = null, height = 320, xTick = null } = opts;
+  const { xLabel = '', yLabel = '', fit = null, height = 320, xTick = null, labels = false } = opts;
   const pts = series.flatMap((s) => s.points);
   if (!pts.length) return n('svg', { viewBox: '0 0 10 10' });
 
@@ -198,15 +225,110 @@ export function scatterChart(series, opts = {}) {
       transform: `rotate(-90 14 ${pad.t + ih / 2})` }, yLabel),
   );
 
+  // 点。凡例との連動とホバーのために、描いた円を控えておく
+  const dots = [];
   series.forEach((s, si) => {
     const color = s.color || SERIES_COLORS[si % SERIES_COLORS.length];
     for (const p of s.points) {
       const c = n('circle', { cx: X(p.x), cy: Y(p.y), r: 6.5, fill: color, opacity: '.9',
         stroke: 'var(--surface)', 'stroke-width': 2, class: 'dot' });
-      c.append(n('title', {}, `${p.label || s.name}\n${xLabel} ${trim(p.x)} / ${yLabel} ${trim(p.y)}`));
       svg.append(c);
+      dots.push({ el: c, name: s.name, x: X(p.x), y: Y(p.y), p,
+        text: p.label || s.name, short: p.short || p.label || s.name });
     }
   });
+
+  // 点の脇に名前を出す。重なる分は出さない（ホバーで読める）
+  const marks = [];
+  if (labels) {
+    const FS = 10.5;
+    // 自分の点は避ける対象から外す（すぐ脇に置くので必ず接する）
+    const boxes = dots.map((d) => ({ x1: d.x - 8, x2: d.x + 8, y1: d.y - 8, y2: d.y + 8, own: d }));
+    const hits = (b, self) => boxes.some((t) =>
+      t.own !== self && !(b.x2 <= t.x1 || b.x1 >= t.x2 || b.y2 <= t.y1 || b.y1 >= t.y2));
+    for (const d of dots) {
+      const w = textWidth(d.short, FS);
+      // 右→左→上→下→斜めの順に置ける場所を探す。
+      // 近くが埋まっている点は一段離した位置も試す（20点あると素直な位置は取り合いになる）
+      const spots = [
+        [10, 3.5, 'start'], [-10, 3.5, 'end'], [0, -11, 'middle'], [0, 15, 'middle'],
+        [9, -8, 'start'], [-9, -8, 'end'], [9, 15, 'start'], [-9, 15, 'end'],
+        [0, -24, 'middle'], [0, 28, 'middle'], [22, -20, 'start'], [-22, -20, 'end'],
+        [22, 27, 'start'], [-22, 27, 'end'],
+      ];
+      for (const [dx, dy, anchor] of spots) {
+        const tx = d.x + dx, ty = d.y + dy;
+        const x1 = anchor === 'start' ? tx : anchor === 'end' ? tx - w : tx - w / 2;
+        const box = { x1: x1 - 2, x2: x1 + w + 2, y1: ty - FS, y2: ty + 3 };
+        if (box.x1 < 2 || box.x2 > W - 2 || box.y1 < pad.t - 4 || box.y2 > pad.t + ih + 4) continue;
+        if (hits(box, d)) continue;
+        boxes.push(box);
+        const t = n('text', { x: tx, y: ty, class: 'ptlab', 'text-anchor': anchor }, d.short);
+        svg.append(t);
+        marks.push({ el: t, name: d.name });
+        break;
+      }
+    }
+  }
+
+  // 点にさわると出る吹き出し。既定の title は出るまで遅く、指では出ない。
+  // クリックすると留まるので、名前が重なって出せなかった点もここで読める。
+  const tip = n('g', { class: 'chart-tip', visibility: 'hidden' });
+  const tipBg = n('rect', { rx: 7, class: 'chart-tip-bg' });
+  const tipName = n('text', { class: 'chart-tip-n' });
+  const tipLines = [0, 1, 2].map(() => n('text', { class: 'chart-tip-v' }));
+  tip.append(tipBg, tipName, ...tipLines);
+  svg.append(tip);
+  let pinned = null;
+
+  const showTip = (d) => {
+    const info = d.p.info?.length ? d.p.info : [`${xLabel} ${trim(d.p.x)}　${yLabel} ${trim(d.p.y)}`];
+    tipName.textContent = d.text;
+    tipLines.forEach((t, i) => {
+      t.textContent = info[i] || '';
+      t.setAttribute('visibility', info[i] ? 'visible' : 'hidden');
+    });
+    const shown = tipLines.filter((t) => t.textContent);
+    const PX = 10, PY = 8, LH = 15;
+    const tw = Math.max(tipName.getComputedTextLength(),
+      ...shown.map((t) => t.getComputedTextLength())) + PX * 2;
+    const th = 13 + LH * shown.length + PY * 2;
+    let bx = d.x + 13, by = d.y - th - 10;
+    if (bx + tw > W - 3) bx = d.x - 13 - tw;     // 右端では左に開く
+    if (bx < 3) bx = 3;
+    if (by < 3) by = d.y + 14;                   // 上端では下に開く
+    tipBg.setAttribute('x', bx); tipBg.setAttribute('y', by);
+    tipBg.setAttribute('width', tw); tipBg.setAttribute('height', th);
+    tipName.setAttribute('x', bx + PX);
+    tipName.setAttribute('y', by + PY + 11);
+    shown.forEach((t, i) => {
+      t.setAttribute('x', bx + PX);
+      t.setAttribute('y', by + PY + 13 + LH * (i + 1));
+    });
+    for (const q of dots) q.el.classList.toggle('is-hot', q === d);
+    tip.setAttribute('visibility', 'visible');
+  };
+  const hideTip = () => {
+    for (const d of dots) d.el.classList.remove('is-hot');
+    tip.setAttribute('visibility', 'hidden');
+  };
+  for (const d of dots) {
+    d.el.addEventListener('pointerenter', () => { if (!pinned) showTip(d); });
+    d.el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      pinned = pinned === d ? null : d;          // もう一度押すと閉じる
+      if (pinned) showTip(d); else hideTip();
+    });
+  }
+  svg.addEventListener('pointerleave', () => { if (!pinned) hideTip(); });
+  svg.addEventListener('click', () => { pinned = null; hideTip(); });
+
+  /** 凡例から呼ぶ。指定した系列だけ残して他を薄くする（null で解除） */
+  svg.focusSeries = (name) => {
+    for (const m of [...dots, ...marks]) {
+      m.el.classList.toggle('is-dim', name != null && m.name !== name);
+    }
+  };
 
   return svg;
 }
