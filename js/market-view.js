@@ -883,7 +883,7 @@ function reportView(rows, buildings, rerender) {
  * タブ1つで1ページに収めたいので、グラフと一緒に載る分だけ残す。
  * 元の件数は下に添えるので、全部見たいときは画面に戻ってもらう。
  */
-function trimTables(node, max = 18) {
+function trimTables(node, max = 10) {
   for (const body of node.querySelectorAll ? node.querySelectorAll('tbody') : []) {
     const rows = [...body.children];
     if (rows.length <= max) continue;

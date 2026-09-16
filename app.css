@@ -804,13 +804,39 @@ table.cmp tfoot td.lab{text-align:left;font-weight:700}
   body{ background:#fff }
   .main{ max-width:none; padding:0 }
   .card,.section{ box-shadow:none }
+
   /* タブ1つで1ページ。概況・売出・推移…と紙をめくって追えるようにする */
-  .report-sec{ break-before:page; page-break-before:always; margin-top:0; border-top:0; padding-top:0 }
+  .report-sec{ break-before:page; page-break-before:always;
+    margin:0; border-top:0; padding-top:0 }
   .report-sec:first-of-type{ break-before:auto; page-break-before:avoid }
-  .section{ break-inside:avoid; page-break-inside:avoid }
+
+  /* 紙は縦に限りがあるので詰める。
+     区切りをまたがせない指定を広く掛けると、入りきらない塊が次のページへ
+     送られ、下が大きく空く。またがせないのは行とグラフだけにする */
+  /* 紙1枚にタブ1つが収まるよう、全体を少し縮める。
+     ここを詰めないと、あと少しはみ出した分がもう1ページになり、
+     下がまるまる空いてしまう */
+  .report{ font-size:10.5px; zoom:.92 }
+  .report .section{ margin:0 0 6px; padding:0; border-top:0 }
+  .report .section > h3{ font-size:12px; margin:6px 0 4px }
+  .report-sectitle{ font-size:14px; margin:0 0 6px }
+  .report-head h2{ font-size:16px }
+  .report-cond{ padding:6px 8px; margin-bottom:8px }
+  /* 紙の幅は794px相当で、画面ならスマホ扱いになる幅。
+     1列に崩れて縦に伸びるので、印刷では横並びに戻す */
+  .report .calcgrid{ gap:6px; grid-template-columns:repeat(4,minmax(0,1fr)) }
+  .report .calcgrid-3{ grid-template-columns:repeat(3,minmax(0,1fr)) }
+  .report .calcgrid-6{ grid-template-columns:repeat(6,minmax(0,1fr)) }
+  .report .calcgrid > div{ padding:5px 7px; border-radius:4px }
+  .report .calcgrid .v{ font-size:13px }
+  .report .calcgrid .k,.report .calcgrid .tiny{ font-size:9px }
+  .report table{ font-size:9.5px }
+  .report table th,.report table td{ padding:3px 6px }
+  /* グラフは紙の3分の1まで。これ以上大きいと表が次のページに送られる */
+  .report .chartwrap{ max-height:76mm }
+  .report .chartwrap svg{ max-height:76mm }
   .chartwrap{ break-inside:avoid; page-break-inside:avoid }
-  table{ break-inside:auto }
   tr{ break-inside:avoid; page-break-inside:avoid }
   thead{ display:table-header-group }        /* 表が続くページにも見出しを出す */
-  @page{ margin:12mm }
+  @page{ size:A4; margin:10mm }
 }
