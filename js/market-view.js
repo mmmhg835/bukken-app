@@ -4,7 +4,7 @@
 // 売り出しに対して同じことをするほうが、相場の話としては筋が通るため。
 // 単位は売買が万円、賃貸が円。混ぜないこと。
 import { store } from './store.js';
-import { el, mount, fmt, derive, preserveFocus, STATUSES } from './util.js';
+import { el, mount, fmt, derive, STATUSES } from './util.js';
 import { select, segmented, toggle, controlRow } from './ui.js';
 import { scatterChart, chartLegend, histogramChart, SERIES_COLORS, SERIES_MUTED } from './chart.js';
 import { linearFit, areaOf, walkMinutesOf, builtYearOf } from './analysis.js';
@@ -24,20 +24,26 @@ const SUBTABS = [
 /** 一度に読みに行く建物の上限。これを超えたら条件を絞ってもらう */
 const LOAD_LIMIT = 60;
 
-const BUILT_BANDS = [['all', 'すべて'], ['-1999', '1999年まで'], ['2000-2009', '2000年代'],
-  ['2010-2019', '2010年代'], ['2020-', '2020年以降']];
+// 竣工年ではなく築年数で見る。何年に建ったかより、いま何年たっているかで選ぶため
+const AGE_BANDS = [['all', 'すべて'], ...[5, 10, 15, 20, 25, 30, 35, 40]
+  .map((n) => [`-${n}`, `築${n}年以内`]), ['40-', '築40年超']];
 const WALK_BANDS = [['all', 'すべて'], ['-5', '5分以内'], ['-10', '10分以内'],
   ['-15', '15分以内'], ['15-', '15分超']];
+// 部屋の広さ。10㎡刻みだと選択肢が増えすぎるので、実際に探す区切りに寄せる
+const AREA_BANDS = [['all', 'すべて'], ['-50', '50㎡未満'], ['50-60', '50〜60㎡'],
+  ['60-70', '60〜70㎡'], ['70-80', '70〜80㎡'], ['80-90', '80〜90㎡'],
+  ['90-100', '90〜100㎡'], ['100-', '100㎡以上']];
 
 /** 画面の状態。保存する値ではないので、smoke から作れるように出しておく */
 const ui = {
-  // 建物の範囲。部屋を登録した建物だけに絞るか
-  mine: true,
+  // 対象。mine は部屋を登録した建物だけ、all は取り込んだ建物も含む
+  scope: 'mine',
   // 検討状態（検討中・内見済・本命…）。募集状況とは別の軸なので混ぜない
   roomStatus: 'all',
-  q: '', dev: '', town: 'all', built: 'all', walk: 'all',
-  // 売り出しの行の絞り込み。listing は募集状況（販売中・終了）
-  from: 'all', to: 'all', listing: 'all',
+  // 建物の条件。area は最寄駅、town は町名
+  building: 'all', area: 'all', town: 'all', age: 'all', walk: 'all', firm: 'all',
+  // 売り出しの行の条件
+  from: 'all', to: 'all', listing: 'all', layout: 'all', size: 'all',
   metric: 'tsubo', attr: 'year', group: 'building', fit: true,
 };
 export const marketUI = ui;
@@ -95,47 +101,68 @@ function subTabs(current) {
    絞り込み
    ========================================================= */
 
-/** 条件に合う建物。相場はここで決まった建物ぶんだけ読む */
-function targetBuildings() {
-  const q = ui.q.trim(), dev = ui.dev.trim();
+/** 最寄駅。「有明テニスの森 / 有明 / 国際展示場」を配列にする */
+const stationsOf = (b) => String(b.stations || '').split('/').map((x) => x.trim()).filter(Boolean);
+
+/** 事業者。ブランド・施工・分譲・設計をまとめて1つの選択肢にする */
+const firmsOf = (b) => [b.brand, b.builder, b.developer, b.designer]
+  .map((v) => (v || '').trim()).filter(Boolean);
+
+/** 築年数。竣工年そのものではなく、いま何年たっているかで見る */
+function ageOf(b) {
+  const y = builtYearOf(b);
+  if (y == null) return null;
+  const now = new Date();
+  return now.getFullYear() + now.getMonth() / 12 - y;
+}
+
+/** 「-10」「40-」のような帯に入るか */
+function inBand(band, v) {
+  if (band === 'all') return true;
+  if (v == null) return false;
+  const [lo, hi] = band.split('-').map((x) => (x === '' ? null : Number(x)));
+  if (lo != null && v < lo) return false;
+  if (hi != null && v > hi) return false;
+  return true;
+}
+
+/**
+ * 条件に合う建物。相場はここで決まった建物ぶんだけ読む。
+ * except を渡すと、その条件だけ外して数える。選択肢を作るときに使う
+ * （エリアを絞ったら、建物の選択肢もそのエリアの建物だけになる）。
+ */
+function targetBuildings(except = null) {
+  const on = (key) => key !== except;
   return store.allBuildings.filter((b) => {
     const rooms = store.roomsOf(b.id);
-    if ((ui.mine || ui.roomStatus !== 'all') && !rooms.length) return false;
-    if (ui.roomStatus !== 'all' && !rooms.some((r) => r.status === ui.roomStatus)) return false;
-    if (q && !b.name.includes(q)) return false;
-    if (dev && ![b.developer, b.builder, b.designer, b.brand]
-      .some((v) => (v || '').includes(dev))) return false;
-    if (ui.town !== 'all' && areaOf(b).town !== ui.town) return false;
-    if (ui.built !== 'all') {
-      const y = builtYearOf(b);
-      if (y == null) return false;
-      const [lo, hi] = ui.built.split('-').map((v) => (v === '' ? null : Number(v)));
-      if (lo != null && y < lo) return false;
-      if (hi != null && y >= hi + 1) return false;
-    }
-    if (ui.walk !== 'all') {
-      const w = walkMinutesOf(b);
-      if (w == null) return false;
-      const [lo, hi] = ui.walk.split('-').map((v) => (v === '' ? null : Number(v)));
-      if (lo != null && w < lo) return false;
-      if (hi != null && w > hi) return false;
-    }
+    if (on('scope') && ui.scope === 'mine' && !rooms.length) return false;
+    if (on('roomStatus') && ui.roomStatus !== 'all'
+      && !rooms.some((r) => r.status === ui.roomStatus)) return false;
+    if (on('building') && ui.building !== 'all' && b.id !== ui.building) return false;
+    if (on('area') && ui.area !== 'all' && !stationsOf(b).includes(ui.area)) return false;
+    if (on('town') && ui.town !== 'all' && areaOf(b).town !== ui.town) return false;
+    if (on('firm') && ui.firm !== 'all' && !firmsOf(b).includes(ui.firm)) return false;
+    if (on('age') && !inBand(ui.age, ageOf(b))) return false;
+    if (on('walk') && !inBand(ui.walk, walkMinutesOf(b))) return false;
     return true;
   });
 }
 
-/** 売り出しの行。期間と募集状況で絞る */
-function saleRows(buildings) {
+/** 売り出しの行。期間・募集状況・間取り・広さで絞る。except は選択肢を作るとき用 */
+function saleRows(buildings, except = null) {
+  const on = (key) => key !== except;
   const from = ui.from === 'all' ? null : Number(ui.from);
   const to = ui.to === 'all' ? null : Number(ui.to);
   const out = [];
   for (const b of buildings) {
     for (const x of store.listingsOf(b.id)) {
       const y = ymToNum(x.listedYM);
-      if (from != null && (y == null || y < from)) continue;
-      if (to != null && (y == null || y >= to + 1)) continue;
-      if (ui.listing === 'open' && !isOpen(x)) continue;
-      if (ui.listing === 'closed' && isOpen(x)) continue;
+      if (on('year') && from != null && (y == null || y < from)) continue;
+      if (on('year') && to != null && (y == null || y >= to + 1)) continue;
+      if (on('listing') && ui.listing === 'open' && !isOpen(x)) continue;
+      if (on('listing') && ui.listing === 'closed' && isOpen(x)) continue;
+      if (on('layout') && ui.layout !== 'all' && (x.layout || '') !== ui.layout) continue;
+      if (on('size') && !inBand(ui.size, x.area)) continue;
       out.push(x);
     }
   }
@@ -144,46 +171,62 @@ function saleRows(buildings) {
 
 const buildingOf = (id) => store.building(id);
 
+/** 件数の多い順に並べた選択肢。何を選べばいいか分かるように件数を添える */
+function options(values, label = (v) => v) {
+  const count = new Map();
+  for (const v of values) if (v) count.set(v, (count.get(v) || 0) + 1);
+  return [...count.entries()]
+    .sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(b[0], 'ja'))
+    .map(([v, n]) => [v, `${label(v)}（${n}）`]);
+}
+
 function buildingFilter(targets, loaded, rows, rerender) {
-  const uniq = (list) => [...new Set(list.filter(Boolean))].sort();
-  const towns = uniq(store.allBuildings.map((b) => areaOf(b).town));
-  const years = uniq(store.allBuildings.flatMap((b) =>
-    store.listingsOf(b.id).map((x) => {
-      const y = ymToNum(x.listedYM);
-      return y == null ? null : String(Math.floor(y));
-    })));
-  const yearOptions = [['all', 'すべて'], ...years.map((y) => [y, `${y}年`])];
-  const pick = (key, options) =>
-    select(ui[key], options, (v) => { ui[key] = v; rerender(); }, 'fsel');
-  const text = (key, ph) => el('input', {
-    type: 'text', class: 'fsel ftext', value: ui[key], placeholder: ph,
-    'data-fkey': `market-${key}`,
-    oninput: (e) => { ui[key] = e.target.value; preserveFocus(rerender); },
-  });
+  const pick = (key, list) =>
+    select(ui[key], [['all', 'すべて'], ...list], (v) => { ui[key] = v; rerender(); }, 'fsel');
+  const band = (key, list) =>
+    select(ui[key], list, (v) => { ui[key] = v; rerender(); }, 'fsel');
+  const group = (label, ctrl) => el('div', { class: 'fgroup' }, el('label', {}, label), ctrl);
+
+  // 選択肢は「その条件だけ外した結果」から作る。1つ選ぶと他の選択肢が連動して減る
+  const pool = (key) => targetBuildings(key);
+  const rowsFor = (key) => saleRows(loaded, key);
+  // 建物名は id で選ぶ。同じ名前の建物があっても取り違えない
+  const buildingOptions = [...pool('building')]
+    .sort((a, b) => a.name.localeCompare(b.name, 'ja'))
+    .map((b) => [b.id, b.name]);
+  const areaOptions = options(pool('area').flatMap(stationsOf));
+  const townOptions = options(pool('town').map((b) => areaOf(b).town));
+  const firmOptions = options(pool('firm').flatMap(firmsOf));
+  const yearOptions = options(rowsFor('year').map((x) => {
+    const y = ymToNum(x.listedYM);
+    return y == null ? null : String(Math.floor(y));
+  }), (v) => `${v}年`).sort((a, b) => b[0].localeCompare(a[0]));
+  const layoutOptions = options(rowsFor('layout').map((x) => x.layout));
 
   const loading = store.marketLoadingCount;
   return el('div', { class: 'filterbar' },
     el('div', { class: 'filterbar-row' },
-      toggle('登録した部屋がある建物', ui.mine, (v) => { ui.mine = v; rerender(); }),
-      el('div', { class: 'fgroup' }, el('label', {}, '検討状態'),
-        pick('roomStatus', [['all', 'すべて'], ...STATUSES.map((x) => [x, x])])),
-      el('div', { class: 'fgroup' }, el('label', {}, '建物名'), text('q', '名前で探す')),
-      el('div', { class: 'fgroup' }, el('label', {}, '事業者'), text('dev', 'デベロッパー・施工')),
-      el('div', { class: 'fgroup' }, el('label', {}, 'エリア'),
-        pick('town', [['all', 'すべて'], ...towns.map((t) => [t, t])])),
-      el('div', { class: 'fgroup' }, el('label', {}, '竣工年'), pick('built', BUILT_BANDS)),
-      el('div', { class: 'fgroup' }, el('label', {}, '駅徒歩'), pick('walk', WALK_BANDS)),
+      group('対象', segmented(ui.scope, [['mine', '自分の物件'], ['all', 'すべて']],
+        (v) => { ui.scope = v; rerender(); })),
+      group('検討状態', pick('roomStatus', STATUSES.map((x) => [x, x]))),
+      group('エリア（最寄駅）', pick('area', areaOptions)),
+      group('住所', pick('town', townOptions)),
+      group('築年数', band('age', AGE_BANDS)),
+      group('駅徒歩', band('walk', WALK_BANDS)),
       el('div', { class: 'spacer' }),
       el('span', { class: 'fcount' },
         `${targets.length}棟${loading ? `（${loading}棟 読み込み中）` : ''}`
         + (store.refsReady ? '' : '（建物を読み込み中）')),
     ),
     el('div', { class: 'filterbar-row' },
-      el('div', { class: 'fgroup' }, el('label', {}, '売り出し年'),
-        el('div', { class: 'frange' },
-          pick('from', yearOptions), el('span', {}, '〜'), pick('to', yearOptions))),
-      el('div', { class: 'fgroup' }, el('label', {}, '募集状況'),
-        pick('listing', [['all', 'すべて'], ['open', '販売中'], ['closed', '終了']])),
+      group('建物', pick('building', buildingOptions)),
+      group('事業者', pick('firm', firmOptions)),
+      group('間取り', pick('layout', layoutOptions)),
+      group('広さ', band('size', AREA_BANDS)),
+      group('売り出し年', el('div', { class: 'frange' },
+        pick('from', yearOptions), el('span', {}, '〜'), pick('to', yearOptions))),
+      group('募集状況', band('listing',
+        [['all', 'すべて'], ['open', '販売中'], ['closed', '終了']])),
       el('div', { class: 'spacer' }),
       el('span', { class: 'fcount' }, `売り出し ${rows.length.toLocaleString('ja-JP')}件`),
       loaded.length < targets.length

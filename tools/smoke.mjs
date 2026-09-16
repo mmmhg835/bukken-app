@@ -381,22 +381,27 @@ const screens = [
     const u = v.marketUI;
     const saved = { ...u };
     for (const patch of [
-      { mine: false },
-      { q: 'テスト' },
-      { dev: '長谷工' },
+      { scope: 'all' },
+      { building: 'b1' },
+      { firm: '長谷工' },
+      { area: '東雲' },
       { town: '東京都江東区東雲' },
-      { built: '2000-2009' },
+      { age: '-20' },
+      { age: '40-' },
       { walk: '-10' },
+      { layout: '3LDK' },
+      { size: '70-80' },
+      { size: '100-' },
       { from: '2026', to: '2026' },
       { listing: 'open' },
       { listing: 'closed' },
       { roomStatus: '検討中' },
       { roomStatus: '本命' },
-      { mine: false, roomStatus: '内見済' },
+      { scope: 'all', roomStatus: '内見済' },
       { metric: 'price', attr: 'age', group: 'layout' },
       { metric: 'months', attr: 'floor', group: 'status' },
       { metric: 'sqm', attr: 'area', group: 'none', fit: false },
-      { q: '該当しない名前' },
+      { building: '該当しないid' },
     ]) {
       Object.assign(u, saved, patch);
       for (const tab of ['overview', 'sale', 'trend', 'dist', 'group']) {
@@ -409,7 +414,7 @@ const screens = [
     const v = mods['market-view'];
     const u = v.marketUI;
     const saved = { ...u };
-    Object.assign(u, saved, { mine: false });
+    Object.assign(u, saved, { scope: 'all' });
     v.renderMarket(stubEl(), () => {}, 'overview');
     v.renderMarket(stubEl(), () => {}, 'sale');
     if (!store.allBuildings.some((b) => b.id === 'ref1')) throw new Error('参考建物が相場に出ていない');
