@@ -12,7 +12,7 @@ import {
 
 // 検討の軸。「自分の物件」という区分は持たない。
 // 売り出し中かどうかは募集状況で、ガチで検討しているかは登録とステータスで見る
-const OWN_OPTIONS = [['all', 'すべて'], ['mine', '登録した部屋'],
+export const OWN_OPTIONS = [['all', 'すべて'], ['mine', '登録した部屋'],
   ...STATUSES.map((x) => [x, x])];
 
 /**

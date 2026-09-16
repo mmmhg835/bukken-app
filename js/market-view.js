@@ -4,14 +4,17 @@
 // 売り出しに対して同じことをするほうが、相場の話としては筋が通るため。
 // 単位は売買が万円、賃貸が円。混ぜないこと。
 import { store } from './store.js';
-import { el, mount, fmt, derive, STATUSES } from './util.js';
+import { el, mount, fmt, derive } from './util.js';
 import { select, segmented, toggle, controlRow, numberInput } from './ui.js';
 import {
   scatterChart, chartLegend, histogramChart, thin,
   SERIES_COLORS, SERIES_MUTED, BAND_COLORS,
 } from './chart.js';
 import { linearFit, areaOf } from './analysis.js';
-import { inRange } from './unit-filter.js';
+import {
+  unitUI, draft as unitDraft, applyDraft, resetDraft, clearDraft, draftDirty,
+  OWN_OPTIONS, inRange,
+} from './unit-filter.js';
 import {
   AGE_BANDS, WALK_BANDS, FIRM_KEYS, FIRM_LABEL,
   stationsOf, ageOf, walkOf, inBand, options, layoutLabel, nameHit,
@@ -35,24 +38,11 @@ const SUBTABS = [
 const LOAD_LIMIT = 400;
 
 
-// 検討の軸。「自分の物件」ではなく、部屋を登録して検討しているかどうかで見る
-const MINE_OPTIONS = [['mine', '検討中の建物だけ'], ['all', '取り込んだ全建物'],
-  ...STATUSES.map((x) => [x, `検討中：${x}`])];
-
 
 /** 画面の状態。保存する値ではないので、smoke から作れるように出しておく */
 const ui = {
-  // 検討。mine は部屋を登録した建物、STATUSES はそのうちの状態で絞る。
-  // 「自分の物件」という区分は持たない。売り出し中かどうかは募集状況で見る
-  mine: 'mine',
-  // 建物名・住所・駅名の文字でも絞れるようにする
-  name: '',
-  // 建物の条件。area は最寄駅、town は町名
-  building: 'all', area: 'all', town: 'all', age: 'all', walk: 'all',
-  // 事業者。ブランドと会社は別物なので混ぜない
-  brand: 'all', developer: 'all', builder: 'all', designer: 'all',
-  // 売り出しの行の条件
-  from: 'all', to: 'all', listing: 'all', layout: 'all', sizeMin: null, sizeMax: null,
+  // 相場だけの条件。建物ひとつを選ぶ・売り出し年・募集状況
+  building: 'all', from: 'all', to: 'all', listing: 'all',
   metric: 'tsubo', attr: 'year', group: 'ageBand', fit: true, names: true, more: false,
   // 推移の粒度と、点にまとめる下限の件数。押した点は pick に覚える
   step: 'month', minCount: 3, pick: null, span: 7,
@@ -68,9 +58,8 @@ export const marketUI = ui;
  * 選ぶそばから結果が入れ替わると、何を変えたのか分からなくなるため。
  * 表示の仕方（表示単位・色分けの軸・物件名を出すか）は即座に効かせる。
  */
-const SEARCH_KEYS = ['name', 'mine', 'building', 'area', 'town', 'age', 'walk',
-  'brand', 'developer', 'builder', 'designer', 'from', 'to', 'listing', 'layout',
-  'sizeMin', 'sizeMax'];
+// 相場だけの条件。ほかは一覧・比較と共通（unit-filter）
+const SEARCH_KEYS = ['building', 'from', 'to', 'listing'];
 export const marketDraft = {};
 
 /** いまの条件で何棟・何行が対象かを返す。検証と smoke から使う */
@@ -80,7 +69,8 @@ export function marketCounts() {
 }
 const copy = (to, from) => { for (const k of SEARCH_KEYS) to[k] = from[k]; };
 copy(marketDraft, ui);
-const marketDirty = () => SEARCH_KEYS.some((k) => String(ui[k]) !== String(marketDraft[k]));
+const marketDirty = () => SEARCH_KEYS.some((k) => String(ui[k]) !== String(marketDraft[k]))
+  || draftDirty();
 // 「リセット」で戻す先
 const MARKET_DEFAULTS = JSON.parse(JSON.stringify(ui));
 
@@ -112,10 +102,19 @@ export function renderMarket(root, rerender, view = 'overview') {
       el('p', { class: 'tiny muted' },
         '相場は建物ごとに別のファイルなので、読み込みに時間がかかります。'
         + '条件を絞るか、このまま全部読み込んでください（2回目からは手元の控えから出ます）。'),
-      el('button', {
-        class: 'btn btn-primary',
-        onclick: () => { ui.loadAll = true; rerender(); },
-      }, `${ids.length.toLocaleString('ja-JP')}棟をすべて読み込む`)));
+      el('div', { style: 'display:flex;gap:10px;justify-content:center;flex-wrap:wrap' },
+        el('button', {
+          class: 'btn btn-primary',
+          // よく使う入口。自分が検討している建物だけならすぐ出せる
+          onclick: () => {
+            unitUI.own = 'mine'; unitDraft.own = 'mine';
+            ui.loadAll = false; rerender();
+          },
+        }, '検討している建物だけ見る'),
+        el('button', {
+          class: 'btn',
+          onclick: () => { ui.loadAll = true; rerender(); },
+        }, `${ids.length.toLocaleString('ja-JP')}棟をすべて読み込む`))));
     return;
   }
   if (!loaded.length) {
@@ -162,23 +161,34 @@ function subTabs(current) {
  * except を渡すと、その条件だけ外して数える。選択肢を作るときに使う
  * （エリアを絞ったら、建物の選択肢もそのエリアの建物だけになる）。
  */
-function targetBuildings(except = null, f = ui) {
+/**
+ * 条件に合う建物。
+ *
+ * 建物名・検討・エリア・住所・築年数・駅徒歩・事業者は、一覧や比較と同じ
+ * 条件（unit-filter）をそのまま使う。タブごとに別の絞り方があると探せない。
+ * 相場だけの条件（建物ひとつを選ぶ・売り出し年・募集状況）はここで持つ。
+ *
+ * @param {string|null} except この条件だけ外して数える（選択肢を作るとき用）
+ * @param {object} f  相場だけの条件
+ * @param {object} u  共有の条件
+ */
+function targetBuildings(except = null, f = ui, u = unitUI) {
   const on = (key) => key !== except;
   return store.allBuildings.filter((b) => {
-    const rooms = store.roomsOf(b.id);
-    if (on('mine') && f.mine !== 'all') {
+    if (on('own') && u.own !== 'all') {
+      const rooms = store.roomsOf(b.id);
       if (!rooms.length) return false;
-      if (f.mine !== 'mine' && !rooms.some((r) => r.status === f.mine)) return false;
+      if (u.own !== 'mine' && !rooms.some((r) => r.status === u.own)) return false;
     }
-    if (on('name') && f.name && !nameHit(b, f.name)) return false;
+    if (on('name') && u.name && !nameHit(b, u.name)) return false;
     if (on('building') && f.building !== 'all' && b.id !== f.building) return false;
-    if (on('area') && f.area !== 'all' && !stationsOf(b).includes(f.area)) return false;
-    if (on('town') && f.town !== 'all' && areaOf(b).town !== f.town) return false;
+    if (on('area') && u.area !== 'all' && !stationsOf(b).includes(u.area)) return false;
+    if (on('town') && u.town !== 'all' && areaOf(b).town !== u.town) return false;
     for (const k of FIRM_KEYS) {
-      if (on(k) && f[k] !== 'all' && (b[k] || '').trim() !== f[k]) return false;
+      if (on(k) && u[k] !== 'all' && (b[k] || '').trim() !== u[k]) return false;
     }
-    if (on('age') && !inBand(f.age, ageOf(b))) return false;
-    if (on('walk') && !inBand(f.walk, walkOf(b))) return false;
+    if (on('age') && !inBand(u.age, ageOf(b))) return false;
+    if (on('walk') && !inBand(u.walk, walkOf(b))) return false;
     return true;
   });
 }
@@ -187,7 +197,7 @@ function targetBuildings(except = null, f = ui) {
  * 売り出しの行。期間・募集状況・間取り・広さで絞る。except は選択肢を作るとき用。
  * 並べ替えはしない（数万件を選択肢の数だけ並べ直すのは無駄なので、必要な画面で行う）。
  */
-function saleRows(buildings, except = null, f = ui) {
+function saleRows(buildings, except = null, f = ui, u = unitUI) {
   const on = (key) => key !== except;
   const from = f.from === 'all' ? null : Number(f.from);
   const to = f.to === 'all' ? null : Number(f.to);
@@ -199,8 +209,9 @@ function saleRows(buildings, except = null, f = ui) {
       if (on('year') && to != null && (y == null || y >= to + 1)) continue;
       if (on('listing') && f.listing === 'open' && !isOpen(x)) continue;
       if (on('listing') && f.listing === 'closed' && isOpen(x)) continue;
-      if (on('layout') && f.layout !== 'all' && layoutLabel(x.layout) !== f.layout) continue;
-      if (on('size') && !inRange(x.area, f.sizeMin, f.sizeMax)) continue;
+      if (on('layout') && u.layout !== 'all' && layoutLabel(x.layout) !== u.layout) continue;
+      if (on('size') && !inRange(x.area, u.areaMin, u.areaMax)) continue;
+      if (on('price') && !inRange(x.price, u.priceMin, u.priceMax)) continue;
       out.push(x);
     }
   }
@@ -210,23 +221,29 @@ function saleRows(buildings, except = null, f = ui) {
 const buildingOf = (id) => store.building(id);
 
 function buildingFilter(targets, loaded, rows, rerender, hitBuildings = null) {
-  const d = marketDraft;
+  const d = marketDraft;             // 相場だけの条件
+  const u = unitDraft;               // 一覧・比較と共通の条件
   const pick = (key, list) =>
     select(d[key], [['all', 'すべて'], ...list], (v) => { d[key] = v; rerender(); }, 'fsel');
   const band = (key, list) =>
     select(d[key], list, (v) => { d[key] = v; rerender(); }, 'fsel');
-  const range = (minKey, maxKey, unit) => el('div', { class: 'frange' },
-    numberInput({ value: d[minKey] ?? '', fkey: `m-${minKey}`, cls: 'fnum', placeholder: '下限',
-      onInput: (v) => { d[minKey] = v; } }),
+  // 共通の条件はこちら。unit-filter の入力中の値を読み書きする
+  const uPick = (key, list) =>
+    select(u[key], [['all', 'すべて'], ...list], (v) => { u[key] = v; rerender(); }, 'fsel');
+  const uBand = (key, list) =>
+    select(u[key], list, (v) => { u[key] = v; rerender(); }, 'fsel');
+  const uRange = (minKey, maxKey, unitLabel) => el('div', { class: 'frange' },
+    numberInput({ value: u[minKey] ?? '', fkey: `m-${minKey}`, cls: 'fnum', placeholder: '下限',
+      onInput: (v) => { u[minKey] = v; } }),
     el('span', {}, '〜'),
-    numberInput({ value: d[maxKey] ?? '', fkey: `m-${maxKey}`, cls: 'fnum', placeholder: '上限',
-      onInput: (v) => { d[maxKey] = v; } }),
-    el('span', { class: 'tiny muted' }, unit));
+    numberInput({ value: u[maxKey] ?? '', fkey: `m-${maxKey}`, cls: 'fnum', placeholder: '上限',
+      onInput: (v) => { u[maxKey] = v; } }),
+    el('span', { class: 'tiny muted' }, unitLabel));
   const group = (label, ctrl) => el('div', { class: 'fgroup' }, el('label', {}, label), ctrl);
 
-  // 選択肢は「その条件だけ外した結果」から作る。1つ選ぶと他の選択肢が連動して減る
-  const pool = (key) => targetBuildings(key, marketDraft);
-  const rowsFor = (key) => saleRows(loaded, key, marketDraft);
+  // 選択肢は「その条件だけ外した結果」から作る。1つ選ぶと他の選択肢も連動して減る
+  const pool = (key) => targetBuildings(key, marketDraft, unitDraft);
+  const rowsFor = (key) => saleRows(loaded, key, marketDraft, unitDraft);
   // 建物名は id で選ぶ。同じ名前の建物があっても取り違えない
   const buildingOptions = [...pool('building')]
     .sort((a, b) => a.name.localeCompare(b.name, 'ja'))
@@ -244,21 +261,21 @@ function buildingFilter(targets, loaded, rows, rerender, hitBuildings = null) {
   const dirty = marketDirty();
   // よく使う条件だけ出し、残りは「条件を増やす」の中へ。並べすぎると探す画面になる
   const open = ui.more;
-  const extra = ['town', 'walk', ...FIRM_KEYS].filter((k) => marketDraft[k] !== 'all').length;
+  const extra = ['town', 'walk', ...FIRM_KEYS].filter((k) => unitDraft[k] !== 'all').length;
   return el('div', { class: 'filterbar' + (dirty ? ' is-dirty' : '') },
     el('div', { class: 'filterbar-row' },
       group('建物名', el('input', {
         class: 'ftext', type: 'search', placeholder: '建物名・住所・駅',
-        value: d.name, 'data-fkey': 'market-name',
-        oninput: (e) => { d.name = e.target.value; },
-        onkeydown: (e) => { if (e.key === 'Enter') { copy(ui, d); rerender(); } },
+        value: u.name, 'data-fkey': 'market-name',
+        oninput: (e) => { u.name = e.target.value; },
+        onkeydown: (e) => { if (e.key === 'Enter') { applyAll(); rerender(); } },
       })),
-      group('対象', band('mine', MINE_OPTIONS)),
-      group('エリア（最寄駅）', pick('area', areaOptions)),
+      group('検討', uBand('own', OWN_OPTIONS)),
+      group('エリア（最寄駅）', uPick('area', areaOptions)),
       group('建物', pick('building', buildingOptions)),
-      group('築年数', band('age', AGE_BANDS)),
-      group('間取り', pick('layout', layoutOptions)),
-      group('広さ', range('sizeMin', 'sizeMax', '㎡')),
+      group('築年数', uBand('age', AGE_BANDS)),
+      group('間取り', uPick('layout', layoutOptions)),
+      group('広さ', uRange('areaMin', 'areaMax', '㎡')),
       el('button', {
         class: 'btn btn-sm fmore' + (open ? ' is-on' : ''),
         onclick: () => { ui.more = !open; rerender(); },
@@ -266,10 +283,12 @@ function buildingFilter(targets, loaded, rows, rerender, hitBuildings = null) {
       searchButton(rerender),
     ),
     el('div', { class: 'filterbar-row' },
+      group('価格', uRange('priceMin', 'priceMax', '万円')),
       group('売り出し年', el('div', { class: 'frange' },
         pick('from', yearOptions), el('span', {}, '〜'), pick('to', yearOptions))),
+      // 相場は履歴を見る画面なので、既定は終了した分も含める
       group('募集状況', band('listing',
-        [['all', 'すべて'], ['open', '販売中'], ['closed', '終了']])),
+        [['all', 'すべて（履歴も）'], ['open', '販売中だけ'], ['closed', '終了だけ']])),
       el('div', { class: 'spacer' }),
       el('span', { class: 'fcount' },
         `${(hitBuildings ? hitBuildings.length : targets.length).toLocaleString('ja-JP')}棟`
@@ -282,11 +301,17 @@ function buildingFilter(targets, loaded, rows, rerender, hitBuildings = null) {
     ),
     open
       ? el('div', { class: 'filterbar-row is-more' },
-        group('住所', pick('town', townOptions)),
-        group('駅徒歩', band('walk', WALK_BANDS)),
-        FIRM_KEYS.map((k) => group(FIRM_LABEL[k], pick(k, firmOptions(k)))),
+        group('住所', uPick('town', townOptions)),
+        group('駅徒歩', uBand('walk', WALK_BANDS)),
+        FIRM_KEYS.map((k) => group(FIRM_LABEL[k], uPick(k, firmOptions(k)))),
       )
       : null);
+}
+
+/** 入力中の条件をまとめて効かせる（共通の分と相場だけの分の両方） */
+function applyAll() {
+  applyDraft();
+  copy(ui, marketDraft);
 }
 
 /** 検索ボタン。条件を選んだ時点ではグラフを変えず、これを押して初めて効かせる */
@@ -296,13 +321,16 @@ function searchButton(rerender) {
     dirty ? el('span', { class: 'tiny', style: 'color:var(--warn)' }, '条件が未反映') : null,
     el('button', {
       class: 'btn btn-sm' + (dirty ? ' btn-primary' : ''),
-      onclick: () => { copy(ui, marketDraft); rerender(); },
+      onclick: () => { applyAll(); rerender(); },
     }, 'この条件で検索'),
     el('button', {
       class: 'btn btn-sm',
       onclick: () => {
-        if (dirty) copy(marketDraft, ui);          // 直している途中なら元に戻す
-        else { copy(marketDraft, MARKET_DEFAULTS); copy(ui, MARKET_DEFAULTS); }
+        if (dirty) { copy(marketDraft, ui); resetDraft(); }   // 直している途中なら元に戻す
+        else {
+          copy(marketDraft, MARKET_DEFAULTS); copy(ui, MARKET_DEFAULTS);
+          clearDraft();
+        }
         rerender();
       },
     }, dirty ? '戻す' : 'リセット'),

@@ -371,26 +371,36 @@ const screens = [
     const v = mods['market-view'];
     const u = v.marketUI;
     const saved = { ...u };
-    const set = (patch) => {
-      Object.assign(u, saved, patch);
-      Object.assign(v.marketDraft, u);      // 入力中と効いている条件を揃える
+    const f = mods['unit-filter'];
+    const shared = { ...f.unitUI };
+    // 相場だけの条件は marketUI、それ以外は一覧と共通の unitUI
+    const set = ({ market = {}, common = {} }) => {
+      Object.assign(u, saved, market);
+      Object.assign(v.marketDraft, u);
+      Object.assign(f.unitUI, shared, { listing: 'all' }, common);
+      f.resetDraft();
       return v.marketCounts();
     };
     try {
-      const all = set({ mine: 'all' });
+      const all = set({ common: { own: 'all' } });
       if (!all.buildings || !all.rows) throw new Error('全建物で何も出ていない');
-      const one = set({ mine: 'all', building: 'ref1' });
+      const one = set({ market: { building: 'ref1' }, common: { own: 'all' } });
       if (one.buildings !== 1) throw new Error('建物を選んでも1棟に絞れていない');
       if (one.rows >= all.rows) throw new Error('1棟に絞ったのに行が減っていない');
-      const layout = set({ mine: 'all', layout: '2LDK' });
+      const layout = set({ common: { own: 'all', layout: '2LDK' } });
       if (layout.rows >= all.rows) throw new Error('間取りで行が減っていない');
-      const open = set({ mine: 'all', listing: 'open' });
+      const open = set({ market: { listing: 'open' }, common: { own: 'all' } });
       if (open.rows >= all.rows) throw new Error('募集状況で行が減っていない');
-      const none = set({ mine: 'all', name: '存在しない建物' });
+      const none = set({ common: { own: 'all', name: '存在しない建物' } });
       if (none.buildings !== 0) throw new Error('当たらない名前でも建物が残っている');
+      // 一覧で絞った条件が相場にもそのまま効く
+      const mine = set({ common: { own: 'mine' } });
+      if (mine.buildings >= all.buildings) throw new Error('検討の条件が相場に効いていない');
     } finally {
       Object.assign(u, saved);
       Object.assign(v.marketDraft, saved);
+      Object.assign(f.unitUI, shared);
+      f.resetDraft();
     }
   }],
   ['一括出力：条件のままレポートを組み立てる', () => {
