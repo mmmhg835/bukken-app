@@ -387,6 +387,12 @@ table.cmp tr:hover td.lab{background:var(--surface-2)}
 .chart-legend.is-live button:hover{background:var(--surface-2)}
 .chart-legend.is-live button.is-on{background:var(--accent-soft);color:var(--text);font-weight:700}
 
+/* ===== 相場タブ ===== */
+.markettbl{font-size:12.5px}
+.markettbl td,.markettbl th{padding:7px 10px}
+.openmark{color:var(--warn)}
+.cutmark{color:var(--good);font-weight:700}
+
 .valuetable td,.valuetable th{text-align:right}
 .valuetable td.lab,.valuetable th.lab{text-align:left;min-width:160px}
 .valuetable td.worse{color:var(--bad);font-weight:700}

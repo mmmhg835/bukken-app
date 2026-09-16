@@ -34,8 +34,8 @@ Object.defineProperty(globalThis, 'location', {
 
 const FILES = [
   'util', 'loan', 'spec', 'price', 'chart', 'idb', 'image', 'github', 'migrate', 'store',
-  'ui', 'gallery', 'map', 'pairing', 'theme', 'analysis', 'lifeplan', 'sales', 'parse', 'sale',
-  'analytics-view', 'lifeplan-view', 'import-view', 'sale-view', 'viewing-view', 'views', 'main',
+  'ui', 'gallery', 'map', 'pairing', 'theme', 'analysis', 'lifeplan', 'sales', 'parse', 'sale', 'market',
+  'analytics-view', 'lifeplan-view', 'import-view', 'sale-view', 'viewing-view', 'market-view', 'views', 'main',
 ];
 
 let bad = 0;
@@ -222,6 +222,21 @@ const checks = [
       throw new Error('部屋の設備タグの合成が不正');
     }
   }],
+  ['market', () => {
+    const m = mods.market;
+    const row = { listedYM: '2026-05', closedYM: '2026-08', area: 75.67, price: 9698,
+      priceHistory: [{ ym: '2026-08', price: 9998 }, { ym: '2026-09', price: 9698 }] };
+    if (Math.abs(m.tsuboOf(row) - 9698 / (75.67 / 3.305785)) > 1e-6) throw new Error('坪単価が合わない');
+    if (m.monthsOf(row) !== 3) throw new Error('販売期間の月数が合わない');
+    if (!(m.cutOf(row) < 0)) throw new Error('値下げを負の値にできていない');
+    if (m.ymLabel('2026-08') !== '2026/08') throw new Error('年月の表記が不正');
+    // 販売中は終了年月が無い
+    if (!m.isOpen({ listedYM: '2026-05' })) throw new Error('販売中を判定できていない');
+    // 価格変更履歴があれば、その本数ぶん点を打つ
+    if (m.pricePoints([row]).length !== 2) throw new Error('価格変更のぶん点が出ていない');
+    const s = m.summary([row]);
+    if (s.count !== 1 || s.open !== 0) throw new Error('まとめの件数が合わない');
+  }],
   ['analysis', () => {
     const { METRICS, ATTRS, GROUPINGS } = mods.analysis;
     for (const [name, set] of [['METRICS', METRICS], ['ATTRS', ATTRS], ['GROUPINGS', GROUPINGS]]) {
@@ -306,6 +321,18 @@ const screens = [
     mods['viewing-view'].renderViewing(stubEl(), () => {}, 'offer');
   }],
   ['比較（指値・相場つき）', () => mods.views.renderCompare(stubEl())],
+  // 相場タブ。履歴が0件の状態と、入っている状態の両方を通す
+  ['相場（履歴なし）', () => mods['market-view'].renderMarket(stubEl(), () => {})],
+  ['相場', () => {
+    const b = store.data.buildings[0];
+    store.addListing(b.id, { listedYM: '2026-05', closedYM: '2026-08', floor: 4, layout: '3LDK',
+      direction: '東', feature: 'リフォーム', area: 75.67, balcony: 12.7, price: 9698,
+      priceHistory: [{ ym: '2026-08', price: 9998 }, { ym: '2026-09', price: 9698 }],
+      kanrihi: 1.184, shuzen: 1.984 });
+    // 中身がほとんど無い行も混ぜる。写し間違いでこの形になりうる
+    store.addListing(b.id, { listedYM: '2025-11' });
+    mods['market-view'].renderMarket(stubEl(), () => {});
+  }],
   ['指値（絞り込み）', () => {
     const v = mods['viewing-view'];
     v.viewingUI.filter = { status: '検討中', offerOnly: true };

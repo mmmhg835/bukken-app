@@ -6,7 +6,7 @@ import { buildingDefaults, SPEC_GROUPS, BUILDING_EQUIPMENT } from './spec.js';
 import { defaultLifeplan, categoryOf } from './lifeplan.js';
 import { DEFAULT_SALE } from './sale.js';
 
-export const CURRENT_SCHEMA = 19;
+export const CURRENT_SCHEMA = 20;
 
 export function migrate(data) {
   let d = structuredClone(data);
@@ -28,6 +28,7 @@ export function migrate(data) {
   if (d.schemaVersion < 17) d = v16ToV17(d);
   if (d.schemaVersion < 18) d = v17ToV18(d);
   if (d.schemaVersion < 19) d = v18ToV19(d);
+  if (d.schemaVersion < 20) d = v19ToV20(d);
   d.settings ||= {};
   d.settings.loan = { ...DEFAULT_TERMS, ...(d.settings.loan || {}) };
   d.settings.places ||= [];   // 職場・駅など、地図上の参照地点
@@ -305,6 +306,16 @@ function v18ToV19(d) {
     delete r.marketSource;
   }
   d.schemaVersion = 19;
+  return d;
+}
+
+/**
+ * 建物ごとの売り出し履歴の器を足す。
+ * 部屋（検討中の物件）とは別に、同じ建物で過去に売りに出た部屋を貯める場所。
+ */
+function v19ToV20(d) {
+  d.marketListings ||= [];
+  d.schemaVersion = 20;
   return d;
 }
 

@@ -144,11 +144,38 @@ class Store extends EventTarget {
     return b;
   }
 
-  /** 建物を消すと、その配下の部屋も一緒に消える */
+  /** 建物を消すと、その配下の部屋と売り出し履歴も一緒に消える */
   async deleteBuilding(id) {
     this.data.buildings = this.data.buildings.filter((b) => b.id !== id);
     this.data.rooms = this.data.rooms.filter((r) => r.buildingId !== id);
+    this.data.marketListings = this.marketListings.filter((m) => m.buildingId !== id);
     await this.save(`delete: 建物と配下の部屋を削除 (${id})`);
+  }
+
+  // ===== 売り出し履歴（同じ建物で過去に売りに出た部屋） =====
+  get marketListings() { return this.data.marketListings ||= []; }
+  listingsOf(buildingId) { return this.marketListings.filter((m) => m.buildingId === buildingId); }
+
+  addListing(buildingId, partial = {}) {
+    const m = {
+      id: uid('m'), buildingId,
+      listedYM: null, closedYM: null,      // closedYM が null なら販売中
+      floor: null, layout: '', direction: '', feature: '',
+      area: null, balcony: null,
+      price: null,                          // 万円。価格変更後の最終価格
+      priceHistory: [],                     // [{ ym, price }] 価格変更履歴
+      kanrihi: null, shuzen: null,          // 万円/月。部屋と単位をそろえる
+      source: 'マンレビ', note: '',
+      ...partial,
+    };
+    this.marketListings.push(m);
+    this.markDirty();
+    return m;
+  }
+
+  deleteListing(id) {
+    this.data.marketListings = this.marketListings.filter((m) => m.id !== id);
+    this.markDirty();
   }
 
   // ===== 部屋 =====
