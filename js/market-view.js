@@ -130,11 +130,19 @@ export function renderMarket(root, rerender, view = 'overview') {
 }
 
 function subTabs(current) {
-  return el('nav', { class: 'subtabs' }, SUBTABS.map(([key, label]) =>
+  return el('nav', { class: 'subtabs' },
+    SUBTABS.map(([key, label]) =>
+      el('button', {
+        class: 'subtab' + (key === current ? ' is-active' : ''),
+        onclick: () => { location.hash = key === 'overview' ? '#/market' : `#/market/${key}`; },
+      }, label)),
+    el('div', { class: 'spacer' }),
+    // タブの右端に置く。絞り込みの中にあると、条件の一部だと思われる
     el('button', {
-      class: 'subtab' + (key === current ? ' is-active' : ''),
-      onclick: () => { location.hash = key === 'overview' ? '#/market' : `#/market/${key}`; },
-    }, label)));
+      class: 'btn btn-sm subtab-out',
+      title: 'いまの条件のまま、すべてのタブを並べてPDFにします',
+      onclick: () => { ui.autoPrint = true; location.hash = '#/market/report'; },
+    }, '一括出力（PDF）'));
 }
 
 /* =========================================================
@@ -240,12 +248,6 @@ function buildingFilter(targets, loaded, rows, rerender, hitBuildings = null) {
         onclick: () => { ui.more = !open; rerender(); },
       }, `${open ? '条件を隠す' : '条件を増やす'}${extra ? `（${extra}）` : ''}`),
       searchButton(rerender),
-      el('button', {
-        class: 'btn btn-sm',
-        title: 'いまの条件のまま、すべての画面を並べてPDFにします',
-        // 押したらレポートを組み立て、そのまま保存の画面まで出す
-        onclick: () => { ui.autoPrint = true; location.hash = '#/market/report'; },
-      }, '一括出力（PDF）'),
     ),
     el('div', { class: 'filterbar-row' },
       group('売り出し年', el('div', { class: 'frange' },

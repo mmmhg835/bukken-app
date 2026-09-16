@@ -545,7 +545,10 @@ table.cmp tr.is-current td{background:var(--accent-soft)}
 .filterrow{display:flex;align-items:center;gap:12px;margin-top:10px}
 
 /* ===== ライフプランのサブタブ ===== */
-.subtabs{display:flex;gap:4px;margin-bottom:16px;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none}
+.subtabs{display:flex;align-items:center;gap:4px;margin-bottom:16px;
+  border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none}
+/* タブの右端に置く操作。タブと同じ高さに見えないよう少し下げる */
+.subtab-out{margin:0 2px 6px auto;white-space:nowrap}
 .subtabs::-webkit-scrollbar{display:none}
 .subtab{background:none;border:0;padding:9px 16px;border-bottom:2px solid transparent;
   color:var(--text-2);cursor:pointer;font-weight:700;font-size:13.5px;white-space:nowrap;margin-bottom:-1px}
