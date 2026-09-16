@@ -172,15 +172,23 @@ export function waterfall(res, roomLabel = null) {
       items: res.byCategory.fixed,
       note: '毎月ほぼ決まって出る支出',
     },
+    // 変動費も同じ段として積む。ここだけ別枠にすると、最後に家計が
+    // プラスなのかマイナスなのかが1本の流れで読めなくなる
+    {
+      key: 'variable', label: '変動費', amount: res.variable,
+      items: res.byCategory.variable,
+      note: '月によって動く支出',
+    },
   ];
   let left = res.income;
   for (const st of steps) { st.before = left; left -= st.amount; st.after = left; }
   return {
     steps,
-    variableBudget: left,                       // ここが生活費に回せる額
+    // 変動費を引く前の残り。返済負担率など他の画面が見ている値なので残す
+    variableBudget: steps[steps.length - 1].before,
     variableActual: res.variable,
     variableItems: res.byCategory.variable,
-    rest: left - res.variable,
+    rest: left,                                 // 最後に手元に残る額
   };
 }
 

@@ -63,7 +63,8 @@ const checks = [
     if (Math.abs(sum - res.expense) > 1e-9) {
       throw new Error(`区分の合計 ${sum} が支出合計 ${res.expense} と一致しない`);
     }
-    if (w.steps.length !== 4) throw new Error('段階表の段数が想定と違う');
+    if (w.steps.length !== 5) throw new Error('段階表の段数が想定と違う');
+    if (Math.abs(w.rest - res.balance) > 1e-9) throw new Error('段階表の最後の残りが毎月の残りと合わない');
     // 段階表の最後の残りが、変動費に回せる額と一致すること
     if (Math.abs(w.variableBudget - res.variableBudget) > 1e-9) {
       throw new Error('段階表と変動費予算が食い違う');

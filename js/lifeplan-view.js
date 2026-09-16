@@ -12,7 +12,13 @@ import { saleView } from './sale-view.js';
 
 import { derive } from './util.js';
 
-const ui = { afterLoans: false, openGroups: null };
+const ui = {
+  afterLoans: false,
+  openGroups: null,
+  // 金利と価格の表に出す金利。設定の金利からの上乗せ幅（%）で持つ。
+  // 設定側の金利を直しても選び直さずに済むように、絶対値ではなく差で持つ。
+  rateSteps: [0, 0.25, 0.5, 0.75, 1],
+};
 
 const SUBTABS = [['plan', 'ライフプラン'], ['burden', '返済負担比率'], ['matrix', '金利と価格'],
   ['graph', 'グラフ'], ['sale', '売却']];
@@ -44,7 +50,7 @@ export function renderLifeplan(root, rerender, sub = 'plan') {
     propertyPicker(plan, room, building, rerender, view),
     offerRoom && view === 'plan'
       ? offerComparison(plan, room, offerRoom, building, res, baseRes) : null,
-    view === 'matrix' ? matrixView(plan, offerRoom || room, building)
+    view === 'matrix' ? matrixView(plan, offerRoom || room, building, rerender)
       : view === 'burden' ? burdenView(plan, offerRoom || room, res, mark, rerender)
         : view === 'graph' ? graphView(plan, offerRoom || room, building, res, offerRoom ? room : null)
           : view === 'sale' ? saleView(plan, offerRoom || room, rerender)
@@ -369,24 +375,19 @@ function waterfallSection(res, room, building, baseRes = null) {
       el('b', {}, yen(st.after))),
   );
 
+  const plus = w.rest >= 0;
   return el('div', { class: 'section' },
-    el('h3', {}, 'この物件だと、生活費にいくら使えるか'),
+    el('h3', {}, '収入から何を引くと、いくら残るか'),
     el('div', { class: 'panel wfpanel' },
       el('div', { class: 'wfhead' },
         el('span', {}, '月の手取り収入'),
         el('b', {}, yen(res.income))),
       w.steps.map(stepRow),
-      el('div', { class: 'wfresult' },
-        el('div', {},
-          el('div', { class: 'tiny muted' }, '変動費に使える額'),
-          el('div', { class: 'wfresult-big' }, yen(w.variableBudget))),
-        el('div', { class: 'wfresult-sub' },
-          el('div', {}, `いまの変動費　− ${yen(w.variableActual)}`),
-          el('div', { class: w.rest >= 0 ? 'pos' : 'neg' },
-            `差し引き　${w.rest >= 0 ? '+' : ''}${yen(w.rest)}`)),
-      ),
-      el('div', { class: 'wfvar' },
-        w.variableItems.map((it) => el('span', { class: 'wfchip' }, `${it.name} ${fmt.n(it.amount, 1)}`))),
+      // 最後の1行だけは結果なので、段と同じ形にしつつ数字を大きく置く
+      el('div', { class: 'wfend' },
+        el('span', {}, '毎月の残り'),
+        el('b', { class: plus ? 'pos' : 'neg' },
+          `${plus ? '+' : '▲'}${yen(Math.abs(w.rest))}`)),
     ));
 }
 
@@ -608,15 +609,17 @@ function thSub(title, sub) {
  * ローンの返済額だけでは家計に効いてくる形が見えないので、住居費と毎月の残りを
  * 同じマスに並べる。前提（収入・生活費・車）はライフプランのものをそのまま使う。
  */
-function matrixView(plan, room, building) {
+function matrixView(plan, room, building, rerender) {
   if (!room) return el('div', { class: 'empty' }, '対象の物件を選んでください');
   const terms = store.loanTerms;
   const opts = { excludeTemporary: ui.afterLoans };
   const t = { ...terms, ...(room.loan || {}) };
 
-  // 金利はいまの条件に上振れを3段。同じ値が並ばないよう重複は落とす
-  const rates = [...new Set([Number(t.rate), 1.5, 2.0, 2.5])]
-    .filter((v) => Number.isFinite(v)).sort((a, b) => a - b);
+  // 設定の金利を起点に0.25%刻み。押した分だけ列になる
+  const baseRate = Number(t.rate) || 0;
+  const OFFSETS = [0, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+  const picked = OFFSETS.filter((o) => ui.rateSteps.includes(o));
+  const rates = (picked.length ? picked : [0]).map((o) => Math.round((baseRate + o) * 1000) / 1000);
   // 価格は売り出しから500万刻みで下へ。指値が入っていればその額も行に混ぜる
   const steps = [0, 500, 1000, 1500, 2000].map((d) => (room.price ?? 0) - d);
   const prices = [...new Set([...steps, room.offerPrice].filter((v) => v != null && v > 0))]
@@ -646,16 +649,27 @@ function matrixView(plan, room, building) {
       }));
   }));
 
+  const ratePicker = el('div', { class: 'pillrow' }, OFFSETS.map((o) => el('button', {
+    class: 'pill' + (ui.rateSteps.includes(o) ? ' is-on' : ''),
+    onclick: () => {
+      ui.rateSteps = ui.rateSteps.includes(o)
+        ? ui.rateSteps.filter((x) => x !== o)
+        : [...ui.rateSteps, o].sort((a, b) => a - b);
+      rerender();
+    },
+  }, `${Math.round((baseRate + o) * 1000) / 1000}%`)));
+
   return el('div', {},
     el('div', { class: 'section' },
       el('h3', {}, `${building?.name ?? ''} ${room.label}　金利と価格`),
+      ratePicker,
       el('div', { class: 'tablewrap' },
         el('table', { class: 'cmp mxtbl' },
           el('thead', {}, el('tr', {},
             el('th', { class: 'lab' }, '物件価格'),
             el('th', {}, thSub('借入額', t.includeFees ? '諸費用を含む' : '諸費用は現金')),
-            ...rates.map((r) => el('th', {},
-              thSub(`金利 ${r}%`, `${t.years}年 ${t.method === 'equal' ? '元利均等' : '元金均等'}`))),
+            ...rates.map((r, i) => el('th', {},
+              thSub(`金利 ${r}%`, picked[i] ? `いまより +${picked[i]}%` : 'いまの設定'))),
           )),
           body))),
   );

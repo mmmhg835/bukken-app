@@ -136,8 +136,6 @@
 /* ===== ライフプラン（13番の構成を明るい配色で） ===== */
 :root[data-skin="v2"] .stackseg.is-saving{ background:var(--accent) }
 :root[data-skin="v2"] .stackseg.is-housing{ background:#4b8f74 }
-:root[data-skin="v2"] .wfresult{ background:var(--accent-soft) }
-:root[data-skin="v2"] .wfresult-big{ color:var(--accent) }
 :root[data-skin="v2"] .lpgroup-head{ padding:14px 16px }
 
 /* ===== 一覧（新デザイン） ===== */

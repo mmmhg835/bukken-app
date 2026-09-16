@@ -454,15 +454,15 @@ table.cmp tr.is-current td{background:var(--accent-soft)}
 .wfchip{background:var(--surface-2);border:1px solid var(--line);border-radius:999px;
   padding:3px 9px;font-size:11px;color:var(--text-2);white-space:nowrap}
 
-.wfresult{display:flex;align-items:center;gap:20px;flex-wrap:wrap;padding:16px;background:var(--accent-soft)}
-.wfresult-big{font-size:28px;font-weight:800;color:var(--accent);letter-spacing:-.02em;line-height:1.2}
-.wfresult-sub{margin-left:auto;text-align:right;font-size:13px;color:var(--text-2);line-height:1.9}
-.wfvar{display:flex;flex-wrap:wrap;gap:5px;padding:12px 16px}
+/* 最後の1行。ここだけ結果なので、段と同じ形のまま数字だけ大きくする。
+   色地で強調すると、どこが流れでどこが結果なのか却って読めなくなる */
+.wfend{display:flex;align-items:baseline;gap:12px;padding:16px;
+  border-top:2px solid var(--line-2);font-weight:700}
+.wfend b{margin-left:auto;font-size:24px;letter-spacing:-.02em}
 
 @media(max-width:560px){
   .lpitem{gap:6px}
   .lpitem-name{min-width:100px}
-  .wfresult-sub{margin-left:0;text-align:left}
   .wfstep-detail{margin-left:0}
 }
 .tag.is-empty{opacity:.45}
@@ -649,3 +649,9 @@ table.cmp tr.is-current td.lab{background:var(--accent-soft)}
 /* 金利と価格のマス目。1つのマスに住居費と毎月の残りを縦に並べる */
 .mxline{display:flex;gap:8px;justify-content:flex-end;align-items:baseline;white-space:nowrap}
 .mxline .dk{font-size:10.5px;color:var(--text-3);font-weight:600}
+/* 押した分だけ表の列になる札。内見のチェックと違い ON/OFF の2状態 */
+.pillrow{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.pill{cursor:pointer;background:var(--surface);border:1px solid var(--line-2);border-radius:999px;
+  padding:7px 14px;font-size:13px;font-weight:700;color:var(--text-2)}
+.pill:hover{background:var(--surface-2)}
+.pill.is-on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
