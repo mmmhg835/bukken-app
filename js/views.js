@@ -17,7 +17,7 @@ import {
 } from './units.js';
 import { unitUI, unitMatches, unitFilterBar, filteredUnits } from './unit-filter.js';
 import { analyze, LISTING_STATUS, CLOSED_STATUS, formatDate } from './price.js';
-import { ymLabel, tsuboOf, monthsOf } from './market.js';
+import { ymLabel, ymToNum, tsuboOf, monthsOf, nowYear } from './market.js';
 import { stepChart, chartLegend, SERIES_COLORS } from './chart.js';
 
 export const route = { view: 'list', id: null };
@@ -230,9 +230,12 @@ function unitHistoryTable(direction, rows, r, showHead) {
       el('span', {}, '記録 ', el('b', {}, `${rows.length}件`)),
       prices.length ? el('span', {}, `最高 ${fmt.man(Math.max(...prices))}`) : null,
       prices.length ? el('span', {}, `最安 ${fmt.man(Math.min(...prices))}`) : null,
+      // 何年前の掲載と比べているのかを出す。8年前と比べた差を今の値動きと
+      // 読まれると、判断を誤らせる
       last && r.price != null
-        ? el('span', {}, `前回の掲載 ${fmt.man(last.price)} → 今回 `,
-          el('b', {}, `${r.price > last.price ? '+' : ''}${fmt.n(r.price - last.price, 0)}万円`))
+        ? el('span', {}, `前回の掲載 ${ymLabel(last.listedYM)}（${fmt.man(last.price)}）→ 今回 `,
+          el('b', {}, `${r.price > last.price ? '+' : ''}${fmt.n(r.price - last.price, 0)}万円`),
+          agoText(last.listedYM))
         : null),
     el('div', { class: 'tablewrap' },
       el('table', { class: 'cmp valuetable' },
@@ -255,6 +258,15 @@ function unitHistoryTable(direction, rows, r, showHead) {
 }
 
 const isOpenRow = (x) => (x.open != null ? !!x.open : !x.closedYM);
+
+/** 何年前の話かを添える。古い掲載との差を今の動きと読み違えないように */
+function agoText(ym) {
+  const y = ymToNum(ym);
+  if (y == null) return null;
+  const years = nowYear() - y;
+  if (years < 1.5) return null;
+  return el('small', { class: 'muted' }, `（${Math.round(years)}年前の掲載）`);
+}
 
 /* ===== カード ===== */
 /**
