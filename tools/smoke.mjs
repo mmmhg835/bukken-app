@@ -556,6 +556,15 @@ const screens = [
       // 同じ分類どうしを掛けても落ちない（掛け合わせを無視する）
       Object.assign(u, saved, { group: 'area', group2: 'area', minCount: 1, hide: [] });
       v.renderMarket(stubEl(), () => {}, 'trend');
+      // 表から選んだ分類は、件数の順に関わらず必ず線にする
+      Object.assign(u, saved, { group: 'area', group2: 'none', minCount: 1, hide: [], pin: [] });
+      v.renderMarket(stubEl(), () => {}, 'trend');
+      u.pin = ['存在しないエリア'];
+      v.renderMarket(stubEl(), () => {}, 'trend');
+      // 消した分類と選んだ分類が同時に指定されていても落ちない
+      u.hide = ['2LDK']; u.pin = ['2LDK'];
+      v.renderMarket(stubEl(), () => {}, 'trend');
+      Object.assign(u, saved, { hide: [], pin: [] });
       // 凡例で消した分類は線から外れる。全部消しても落ちない
       Object.assign(u, saved, { group: 'layout', group2: 'none', minCount: 1, hide: ['2LDK'] });
       v.renderMarket(stubEl(), () => {}, 'trend');

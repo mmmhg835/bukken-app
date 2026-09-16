@@ -432,6 +432,10 @@ table.cmp tr:hover td.lab{background:var(--surface-2)}
 .seriesdot{width:11px;height:11px;border-radius:3px;display:inline-block;vertical-align:middle}
 /* グラフに線が出ていない分類（8本を超えたぶん） */
 .seriesdot.is-off{background:none;border:1px dashed var(--line)}
+/* 伸びの表は、押すとグラフに出し入れできる */
+.pickrow{cursor:pointer}
+.pickrow:hover td{background:var(--surface-2)}
+.pickrow.is-on td.lab{font-weight:700;color:var(--text)}
 /* 相場の前年比。値下げ（cutmark）とは意味が違うので別に持つ */
 .markettbl td.up{color:var(--bad);font-weight:700}
 .markettbl td.down{color:var(--good);font-weight:700}

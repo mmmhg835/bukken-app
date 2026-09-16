@@ -52,12 +52,27 @@ const ui = {
   step: 'month', minCount: 3, pick: null, span: 7,
   // 凡例を押して消した分類。線が重なって読めないときに落とす
   hide: [],
+  // 下の表から選んで、必ず線にする分類。件数の順では出てこないエリアを見るため
+  pin: [],
   // 一括出力から来たときは、描き終わってから保存の画面を出す
   autoPrint: false,
   // 上限を超えていても読み込むか。押したときだけ立てる
   loadAll: false,
 };
 export const marketUI = ui;
+
+/** 下の表から押したときに、その分類を必ず線にする／やめる */
+function togglePin(name, rerender) {
+  const set = new Set(ui.pin);
+  if (set.has(name)) set.delete(name);
+  else {
+    set.add(name);
+    // 消していた分類を選び直したときは、消した指定のほうを外す
+    ui.hide = ui.hide.filter((x) => x !== name);
+  }
+  ui.pin = [...set];
+  rerender();
+}
 
 /** 凡例を押したときに、その分類の線を消す／戻す */
 const hiddenSet = () => new Set(ui.hide);
@@ -72,11 +87,11 @@ function toggleSeries(name, rerender) {
 }
 
 /** 凡例のうしろに出す「全部表示」。消したまま忘れないようにする */
-const showAllButton = (rerender) => (ui.hide.length
+const showAllButton = (rerender) => (ui.hide.length || ui.pin.length
   ? el('button', {
     class: 'btn btn-sm',
-    onclick: () => { ui.hide = []; rerender(); },
-  }, `全部表示（${ui.hide.length}件を戻す）`)
+    onclick: () => { ui.hide = []; ui.pin = []; rerender(); },
+  }, '選び直す（件数の多い順に戻す）')
   : null);
 
 /**
@@ -345,6 +360,7 @@ function applyAll() {
   // 条件が変われば、押していた点や棒の中身も変わる。選びっぱなしにしない
   ui.pick = null;
   ui.hide = [];
+  ui.pin = [];
 }
 
 /** 検索ボタン。条件を選んだ時点ではグラフを変えず、これを押して初めて効かせる */
@@ -363,7 +379,7 @@ function searchButton(rerender) {
         else {
           copy(marketDraft, MARKET_DEFAULTS); copy(ui, MARKET_DEFAULTS);
           clearDraft();
-          ui.pick = null;
+          ui.pick = null; ui.hide = []; ui.pin = [];
         }
         rerender();
       },
@@ -511,10 +527,10 @@ function axisControls(rerender, { attr = false, group = false, groupLabel = '色
       group ? controlRow('◍', groupLabel,
         el('div', { style: 'display:flex;align-items:center;gap:18px;flex-wrap:wrap' },
           select(ui.group, Object.entries(MARKET_GROUPS).map(([k, v]) => [k, v.label]),
-            (k) => { ui.group = k; ui.hide = []; rerender(); }, 'picksel'),
+            (k) => { ui.group = k; ui.hide = []; ui.pin = []; rerender(); }, 'picksel'),
           el('span', { class: 'tiny muted' }, '×'),
           select(ui.group2, group2Options(),
-            (k) => { ui.group2 = k; ui.hide = []; rerender(); }, 'picksel'),
+            (k) => { ui.group2 = k; ui.hide = []; ui.pin = []; rerender(); }, 'picksel'),
           fit ? toggle('近似直線と相場の幅', ui.fit, (v) => { ui.fit = v; rerender(); }) : null,
           fit ? toggle('物件名を出す', ui.names, (v) => { ui.names = v; rerender(); }) : null,
           // 出し直した分まで並べると、同じ部屋が何個も点になる
@@ -762,7 +778,9 @@ function trendView(rows, rerender) {
   while (floor > 1 && !enough(floor)) floor = floor === 10 ? 5 : floor === 5 ? 3 : 1;
 
   const byKey = new Map();
+  const rowsOf = new Map();          // 分類ごとの売り出し件数。どれを線にするかの順番に使う
   for (const c of cells.values()) {
+    rowsOf.set(c.key, (rowsOf.get(c.key) || 0) + c.rows.length);
     const vals = c.rows.map((x) => metric.get(x, buildingOf(x.buildingId))).filter(Number.isFinite);
     if (vals.length < floor) continue;
     if (!byKey.has(c.key)) byKey.set(c.key, []);
@@ -772,11 +790,19 @@ function trendView(rows, rerender) {
       info: [`中央 ${fmt.n(median(vals), 1)}${metric.unit}　${vals.length}件`, '押すと下に一覧が出ます'],
     });
   }
-  // 線が多すぎると読めないので、件数の多い順に SERIES_COLORS のぶんだけ描く。
-  // 色は「描くと決まった系列」に配る（全分類に配ると、描く線が灰色ばかりになる）
-  const drawnKeys = [...byKey.entries()]
-    .sort((a, b) => b[1].length - a[1].length)
+  // 線が多すぎると読めないので、売り出しの多い順に SERIES_COLORS のぶんだけ描く。
+  //
+  // 以前は「点（＝線を引ける月）の数」で選んでいたため、件数は少ないのに記録が
+  // 長い分類が上に来て、川崎や横浜のような大きいエリアが落ちていた。
+  // 下で選んだ分類（pin）は件数に関わらず必ず描き、消した分類のぶんは次が繰り上がる。
+  const hidden = hiddenSet();
+  const ranked = [...byKey.entries()]
+    .filter(([name]) => !hidden.has(name))
+    .sort((a, b) => (rowsOf.get(b[0]) || 0) - (rowsOf.get(a[0]) || 0));
+  const pinned = ranked.filter(([name]) => ui.pin.includes(name));
+  const drawnKeys = [...pinned, ...ranked.filter(([name]) => !ui.pin.includes(name))]
     .slice(0, SERIES_COLORS.length);
+  // 色は「描くと決まった系列」に配る（全分類に配ると、描く線が灰色ばかりになる）
   const colors = colorOf(drawnKeys.map(([name]) => name), group);
   // 築年数のように順序のある区分は、凡例も新しい順に並べる（件数順だと読めない）
   if (group.order) {
@@ -786,13 +812,14 @@ function trendView(rows, rerender) {
     };
     drawnKeys.sort((a, b) => rank(a[0]) - rank(b[0]));
   }
-  const all = drawnKeys.map(([name, points]) => ({
+  const series = drawnKeys.map(([name, points]) => ({
     name, points: points.sort((a, b) => a.x - b.x),
     color: colors.get(name) || SERIES_MUTED,
   }));
-  // 凡例で消した分類は描かない。凡例からは消さない（戻せなくなるため）
-  const hidden = hiddenSet();
-  const series = all.filter((s) => !hidden.has(s.name));
+  // 凡例には、消した分類も残す（消すと凡例から消えては戻せない）
+  const all = [...series,
+    ...[...byKey.keys()].filter((name) => hidden.has(name))
+      .map((name) => ({ name, points: byKey.get(name), color: SERIES_MUTED }))];
   if (!all.length) {
     return el('div', {}, trendControls(rerender),
       el('div', { class: 'empty' }, 'まとめられる期間がありません'));
@@ -842,12 +869,17 @@ function trendView(rows, rerender) {
           showAllButton(rerender))
         : null,
       el('p', { class: 'tiny muted' },
+        // 絞り込みで減ったと誤解されるので、何件のうち何本を描いているかを必ず出す
+        byKey.size > series.length
+          ? `${group.label}は${byKey.size.toLocaleString('ja-JP')}件あります。`
+            + `売り出しの多い${series.length}件を線にしています（下の表は全件）。`
+          : '',
         all.length > 1 ? '凡例を押すと、その分類の線を消せます。' : '',
         floor < ui.minCount
           ? `${ui.minCount}件以上まとまる期間が無いため、${floor}件以上で描いています。`
           : '',
         'グラフの点を押すと、その期間の売り出しが下に並びます')),
-    ui.group === 'none' || series.length < 2 ? null : growthSection(target, series, metric),
+    ui.group === 'none' || series.length < 2 ? null : growthSection(target, series, metric, rerender),
     picked
       ? el('div', { class: 'section' },
         el('div', { class: 'pickhead' },
@@ -885,7 +917,7 @@ function trendView(rows, rerender) {
 const GROWTH_MIN = 10;     // これ未満の件数は、伸び率が跳ねるので順位づけに使わない
 const GROWTH_ROWS = 30;
 
-function growthSection(target, series, metric) {
+function growthSection(target, series, metric, rerender) {
   const group = activeGroup();
   const byKey = new Map();
   for (const x of target) {
@@ -928,12 +960,16 @@ function growthSection(target, series, metric) {
           ['', group.label, '件数', '期間', `最初（${metric.unit}）`, `最後（${metric.unit}）`,
             '年平均の伸び', '倍率'].map((c, i) =>
             el('th', { class: i === 1 ? 'lab' : null }, c)))),
-        el('tbody', {}, list.map((r) => el('tr', {},
-          el('td', {}, el('i', {
-            class: 'seriesdot' + (r.color ? '' : ' is-off'),
-            style: r.color ? `background:${r.color}` : null,
-          })),
-          el('td', { class: 'lab' }, r.name),
+        el('tbody', {}, list.map((r) => el('tr', {
+          class: 'pickrow' + (r.color ? ' is-on' : ''),
+          title: r.color ? '押すとグラフから外します' : '押すとグラフに出します',
+          onclick: () => togglePin(r.name, rerender),
+        },
+        el('td', {}, el('i', {
+          class: 'seriesdot' + (r.color ? '' : ' is-off'),
+          style: r.color ? `background:${r.color}` : null,
+        })),
+        el('td', { class: 'lab' }, r.name),
           el('td', {}, r.rows.toLocaleString('ja-JP')),
           el('td', {}, r.first ? `${r.first.year}年〜${(r.last || r.first).year}年` : '—'),
           el('td', {}, r.first ? fmt.n(r.first.median, 1) : '—'),
@@ -943,9 +979,10 @@ function growthSection(target, series, metric) {
           el('td', {}, r.times == null ? '—' : `${fmt.n(r.times, 2)}倍`),
         ))))),
     el('p', { class: 'tiny muted' },
-      '年平均の伸びは、最初の年と最後の年の中央値から出した複利の伸び率です。'
+      `色が付いている${SERIES_COLORS.length}件がグラフの線です。行を押すと、その${group.label}を`
+      + 'グラフに出し入れできます。'
+      + '年平均の伸びは、最初の年と最後の年の中央値から出した複利の伸び率です。'
       + '1年ぶんしか記録が無い分類は「—」になります。'
-      + `色が付いているのがグラフに出ている${group.label}です。`
       + (all.length > list.length
         ? `　${all.length.toLocaleString('ja-JP')}件のうち伸びの高い順に${GROWTH_ROWS}件を出しています。`
         : '')));
@@ -975,10 +1012,10 @@ function trendControls(rerender) {
       controlRow('◍', '分類',
         el('div', { style: 'display:flex;align-items:center;gap:18px;flex-wrap:wrap' },
           select(ui.group, Object.entries(MARKET_GROUPS).map(([k, v]) => [k, v.label]),
-            (k) => { ui.group = k; ui.pick = null; ui.hide = []; rerender(); }, 'picksel'),
+            (k) => { ui.group = k; ui.pick = null; ui.hide = []; ui.pin = []; rerender(); }, 'picksel'),
           el('span', { class: 'tiny muted' }, '×'),
           select(ui.group2, group2Options(),
-            (k) => { ui.group2 = k; ui.pick = null; ui.hide = []; rerender(); }, 'picksel'),
+            (k) => { ui.group2 = k; ui.pick = null; ui.hide = []; ui.pin = []; rerender(); }, 'picksel'),
           segmented(ui.step, [['year', '年ごと'], ['month', '月ごと']],
             (k) => { ui.step = k; ui.pick = null; rerender(); }),
           // 期間。既定は直近7年。それ以上は線が詰まって、いまの動きが読めない
