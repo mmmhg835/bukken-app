@@ -12,6 +12,9 @@ import { el, mount, fmt, derive, preserveFocus, STATUSES } from './util.js';
 import { store } from './store.js';
 import { numberInput, select, toggle } from './ui.js';
 import { VIEWING_SECTIONS } from './spec.js';
+// 比較対象の選択は一覧・比較タブと同じものを使う。
+// ここだけ別に持つと、選び直しが要るうえ比較の中身も二重になる。
+import { isPicked, togglePick } from './views.js';
 
 const SUBTABS = [['check', 'チェックポイント'], ['note', '内見の記録'], ['offer', '指値']];
 
@@ -21,8 +24,6 @@ const ui = {
   sort: { key: 'offer', dir: 'asc' },
   // 物件が増えると全室を並べても読めないので、見る範囲を絞れるようにする
   filter: { status: '', offerOnly: false },
-  // 下段で並べて見る部屋。横に16列ある表のままでは2件でも見比べられない
-  picked: new Set(),
 };
 
 /**
@@ -40,7 +41,6 @@ export function renderViewing(root, rerender, view = 'check') {
   // 入力のたびに描き直すので、打っている欄からフォーカスを外さない
   const mark = () => { store.markDirty(); preserveFocus(rerender); };
 
-  rerenderPicked = rerender;
   mount(root,
     subTabs(view),
     view === 'offer'
@@ -269,11 +269,8 @@ function offerSection(mark, rerender) {
       el('td', { class: 'lab' },
         el('label', { class: 'pickcell' },
           el('input', {
-            type: 'checkbox', checked: ui.picked.has(r.id) ? '' : null,
-            onchange: (e) => {
-              if (e.target.checked) ui.picked.add(r.id); else ui.picked.delete(r.id);
-              rerender();
-            },
+            type: 'checkbox', checked: isPicked(r.id) ? '' : null,
+            onchange: (e) => { togglePick(r.id, e.target.checked); rerender(); },
           }),
           el('span', {}, `${b?.name ?? ''} ${r.label}`))),
       el('td', {}, d.ageYears != null ? `築${d.ageYears}年` : '—'),
@@ -323,75 +320,11 @@ function offerSection(mark, rerender) {
           sortTh('running', '管理＋修繕', '月額'),
         )),
         body))),
-    pickedCompare(rows),
-  );
-}
-
-/**
- * 選んだ部屋だけを縦に並べ替えて見比べる。
- * 上の表は列が16本あり、横に流れるので2件でも同時に読めない。
- * 項目を行・物件を列にすれば、件数が増えても見る場所が変わらない。
- */
-function pickedCompare(rows) {
-  const picked = rows.filter((x) => ui.picked.has(x.r.id));
-  if (!picked.length) return null;
-
-  const man = (v) => (v == null ? '—' : `${fmt.man1(Math.round(v))}万`);
-  const gapOf = (x, key) => {
-    const m = x.r[key] ?? null;
-    return m != null && x.offerTsubo != null ? m - x.offerTsubo : null;
-  };
-  const signed = (v) => (v == null ? '—' : `${v >= 0 ? '+' : '▲'}${fmt.n(Math.abs(v), 0)}万/坪`);
-
-  // [見出し, 表示, 並べ替え用の値, 望ましい向き]。向きが null の行は優劣を付けない
-  const lines = [
-    ['築年数', (x) => (x.d.ageYears != null ? `築${x.d.ageYears}年` : '—'), (x) => x.d.ageYears, 'low'],
-    ['階 / 広さ', (x) => `${x.r.floor ?? '—'}F / ${x.r.area ?? '—'}㎡`, null, null],
-    ['現価格', (x) => man(x.r.price), (x) => x.r.price, 'low'],
-    ['指値', (x) => man(x.offer), (x) => x.offer, 'low'],
-    ['値引き率', (x) => (x.offer == null || !x.r.price ? '—' : `${((1 - x.offer / x.r.price) * 100).toFixed(1)}%`),
-      (x) => (x.offer == null || !x.r.price ? null : 1 - x.offer / x.r.price), 'high'],
-    ['元坪', (x) => man(x.d.tsuboPrice), (x) => x.d.tsuboPrice, 'low'],
-    ['指値坪', (x) => man(x.offerTsubo), (x) => x.offerTsubo, 'low'],
-    ...MARKET_SOURCES.flatMap(([mk, label]) => [
-      [`${label} 坪`, (x) => man(x.r[mk]), null, null],
-      [`${label}との差`, (x) => signed(gapOf(x, mk)), (x) => gapOf(x, mk), 'high'],
-    ]),
-    ['諸費用', (x) => man(x.fees), (x) => x.fees, 'low'],
-    ['管理＋修繕', (x) => (x.d.kanriShuzen != null ? `${fmt.n(x.d.kanriShuzen, 2)}万` : '—'),
-      (x) => x.d.kanriShuzen, 'low'],
-  ];
-
-  const body = el('tbody', {}, lines.map(([label, show, pick, better]) => {
-    let best = null;
-    if (pick && better && picked.length > 1) {
-      const vs = picked.map(pick).filter((v) => v != null && !Number.isNaN(v));
-      if (vs.length) best = better === 'low' ? Math.min(...vs) : Math.max(...vs);
-    }
-    return el('tr', {},
-      el('td', { class: 'lab' }, label),
-      ...picked.map((x) => {
-        const v = pick ? pick(x) : null;
-        const isBest = best != null && v != null && Math.abs(v - best) < 1e-9;
-        return el('td', { class: isBest ? 'best' : null }, show(x));
-      }));
-  }));
-
-  return el('div', { class: 'section' },
-    el('h3', {}, `選んだ${picked.length}件を並べる`),
-    el('div', { class: 'toolbar' },
+    el('div', { class: 'toolbar', style: 'margin-top:12px' },
       el('button', {
         class: 'btn btn-sm',
-        onclick: () => { ui.picked.clear(); rerenderPicked(); },
-      }, '選択を解除')),
-    el('div', { class: 'tablewrap' },
-      el('table', { class: 'cmp' },
-        el('thead', {}, el('tr', {},
-          el('th', { class: 'lab' }, '項目'),
-          ...picked.map((x) => el('th', {}, `${x.b?.name ?? ''} ${x.r.label}`)))),
-        body)));
+        onclick: () => { location.hash = '#/compare'; },
+      }, '選んだ部屋を比較で見る')),
+  );
 }
-
-/** 選択解除だけのために画面全体を描き直す */
-let rerenderPicked = () => {};
 

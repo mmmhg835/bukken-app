@@ -786,6 +786,16 @@ function priceChart(rows) {
    [見出し, 値の文字列, 数値(強調用), 'min'|'max', 長文か]
    セクションに分けて折りたたみ、既定では差がある項目だけを出す。
    項目を全部並べると縦に長くなりすぎ、違いを探すのに向かないため。 */
+/** 相場の出どころ。内見タブの指値表と同じ並びにしてある */
+const MARKET_COLS = [['marketIsoge', 'ISOGE'], ['marketMrev', 'マンレビ']];
+
+/** 相場坪単価 − 指値の坪単価。＋ほど相場より安く買えるという向き */
+function marketGap(x, key) {
+  const m = x.r[key] ?? null;
+  if (m == null || x.r.offerPrice == null || !x.c.tsubo) return null;
+  return m - x.r.offerPrice / x.c.tsubo;
+}
+
 function compareSections() {
   const tag = (key) => (x) => {
     const list = (x.r[key] ?? x.b[key] ?? []);
@@ -800,6 +810,24 @@ function compareSections() {
       ['坪単価', (x) => fmt.n(x.c.tsuboPrice, 1) + '万円', (x) => x.c.tsuboPrice, 'min'],
       ['㎡単価', (x) => (x.r.price && x.r.area ? fmt.n(x.r.price / x.r.area, 2) + '万円' : '—'),
         (x) => (x.r.price && x.r.area ? x.r.price / x.r.area : null), 'min'],
+    ]],
+    ['指値・相場', true, [
+      ['指値', (x) => (x.r.offerPrice != null ? fmt.man1(x.r.offerPrice) + '万円' : '—'),
+        (x) => x.r.offerPrice, 'min'],
+      ['値引き率', (x) => (x.r.offerPrice != null && x.r.price
+        ? `${((1 - x.r.offerPrice / x.r.price) * 100).toFixed(1)}%` : '—'),
+      (x) => (x.r.offerPrice != null && x.r.price ? 1 - x.r.offerPrice / x.r.price : null), 'max'],
+      ['指値の坪単価', (x) => (x.r.offerPrice != null && x.c.tsubo
+        ? fmt.n(x.r.offerPrice / x.c.tsubo, 1) + '万円' : '—'),
+      (x) => (x.r.offerPrice != null && x.c.tsubo ? x.r.offerPrice / x.c.tsubo : null), 'min'],
+      ...MARKET_COLS.flatMap(([key, label]) => [
+        [`${label} 相場坪`, (x) => (x.r[key] != null ? fmt.n(x.r[key], 1) + '万円' : '—'),
+          (x) => x.r[key], 'max'],
+        [`${label}との差`, (x) => {
+          const g = marketGap(x, key);
+          return g == null ? '—' : `${g >= 0 ? '+' : '▲'}${fmt.n(Math.abs(g), 0)}万円/坪`;
+        }, (x) => marketGap(x, key), 'max'],
+      ]),
     ]],
     ['毎月の支払い', true, [
       ['管理費', (x) => fmt.yen万(x.r.kanrihi) + '/月', (x) => x.r.kanrihi, 'min'],

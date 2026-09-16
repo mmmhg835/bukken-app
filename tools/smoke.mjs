@@ -291,12 +291,11 @@ const screens = [
   ['内見チェック', () => mods['viewing-view'].renderViewing(stubEl(), () => {}, 'check')],
   ['内見の記録', () => mods['viewing-view'].renderViewing(stubEl(), () => {}, 'note')],
   ['指値', () => mods['viewing-view'].renderViewing(stubEl(), () => {}, 'offer')],
-  ['指値（選択して比較）', () => {
-    const v = mods['viewing-view'];
-    v.viewingUI.picked = new Set(store.data.rooms.slice(0, 2).map((x) => x.id));
-    v.renderViewing(stubEl(), () => {}, 'offer');
-    v.viewingUI.picked.clear();
+  ['指値（部屋を選んだ状態）', () => {
+    for (const x of store.data.rooms.slice(0, 2)) mods.views.togglePick(x.r?.id ?? x.id, true);
+    mods['viewing-view'].renderViewing(stubEl(), () => {}, 'offer');
   }],
+  ['比較（指値・相場つき）', () => mods.views.renderCompare(stubEl())],
   ['指値（絞り込み）', () => {
     const v = mods['viewing-view'];
     v.viewingUI.filter = { status: '検討中', offerOnly: true };
