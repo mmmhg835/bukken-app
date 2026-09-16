@@ -119,13 +119,12 @@ Claude と ChatGPT で交互に開発しています。相手に最初にこれ�
 ```bash
 node tools/smoke.mjs          # 全モジュールの読み込みと整合性
 node tools/verify-loan.mjs    # ローン計算（返済表と突き合わせ）
-node tools/verify-parse.mjs   # 貼り付け取り込みの解析
 node tools/verify-sale.mjs    # 売却試算（ローン残高を返済表と突き合わせ）
 node tools/verify-lifeplan.mjs # 家計の初期値
 node tools/serve.mjs 8765     # 画面確認
 ```
 
-`smoke.mjs` と `verify-loan.mjs` と `verify-parse.mjs` は**失敗すると終了コードを返す**。
+`smoke.mjs` と `verify-loan.mjs` と `verify-sale.mjs` は**失敗すると終了コードを返す**。
 `verify-loan.mjs` は以前 常に 0 を返していたため、全項目が ❌ のまま気づかれていなかった。
 
 `smoke.mjs` は必須。ブロック単位の書き換えで**隣の関数を巻き込む事故が5回**起きている。
@@ -145,10 +144,8 @@ node tools/serve.mjs 8765     # 画面確認
 | 設備の選択肢を追加 | `js/spec.js` の各配列 |
 | 部屋の入力項目を追加 | `js/views.js` の `ROOM_FIELDS` |
 | 比較表に行を追加 | `js/views.js` の `compareSections()` |
-| 分析の軸を追加 | `js/analysis.js` の `METRICS` / `ATTRS` / `GROUPINGS` |
-| 取り込む見出しを増やす | `js/parse.js` の `FIELDS`（変更後は `verify-parse.mjs`） |
-| 取り込み画面の構成 | `js/import-view.js` |
-| 分析画面の構成 | `js/analytics-view.js` |
+| 相場の軸を追加 | `js/market.js` の `MARKET_METRICS` / `MARKET_ATTRS` / `MARKET_GROUPS` |
+| 絞り込みの条件を追加 | `js/unit-filter.js`（一覧・比較・ライフプラン）と `js/market-view.js` |
 | 家計の項目・計算 | `js/lifeplan.js`（変更後は `verify-lifeplan.mjs`） |
 | 数値の入力欄 | `js/ui.js` の `numberInput()` |
 | ライフプランの画面 | `js/lifeplan-view.js`（サブタブ plan / burden / graph / sale） |
@@ -456,32 +453,6 @@ https://msearch.gsi.go.jp/address-search/AddressSearch?q=<住所>
 - 掲載ページの URL を渡して取り込む（ブラウザから直接は CORS で読めないので未着手）
 - 過去の募集情報の一括登録（形式はユーザーに確認する）
 - 写真の一括アップロードは**作らない**。既存の追加機能で足りるとの判断
-
-#### 貼り付け取り込みの制限（既知・未修正）
-
-対応しているのは次の2つ。
-
-| 形 | 例 |
-|---|---|
-| タブ区切りの表 | `価格<TAB>1億5,980万円` |
-| 見出し：値 | `価格：1億5,980万円` |
-
-**SUUMO の物件概要をコピーした形は読めない。** 項目名と値が別の行に分かれ、
-間に「ヒント」（吹き出し）が挟まるため。この形だと価格・専有面積・間取り・
-所在階・管理費・修繕積立金・築年月・総戸数・構造をすべて取りこぼし、
-住所と交通くらいしか入らない。
-
-```
-価格
-ヒント
-1億6500万円
-```
-
-直すなら `js/parse.js` の `pairs()` を**行単位ではなく「列の並び」として読む**形にする
-（行をタブでほどいて1本の列にし、見出しに当たったら次の要素を値として取る。
-「ヒント」は項目名の目印として使ってから捨てる）。あわせて `parseFee()` が
-`2万2500円` を 2 万円と読んでしまうのも直す（正しくは 2.25 万円）。
-**ユーザーはスクショ運用で足りているため、優先度は低いと判断して保留にしている。**
 
 ### 3. 項目そのものの拡充
 

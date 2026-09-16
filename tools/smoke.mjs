@@ -494,6 +494,32 @@ const screens = [
     store.data.rooms = store.data.rooms.filter((x) => x.id !== gone.id && x.id !== unknown.id);
     room.listingStatus = savedStatus;
   }],
+  ['条件は検索を押して初めて効く', () => {
+    const f = mods['unit-filter'];
+    const v = mods.views;
+    const saved = { ...f.unitUI };
+    try {
+      f.resetDraft();
+      if (f.draftDirty()) throw new Error('入力中と適用中がずれている');
+      f.draft.listing = 'closed';
+      if (!f.draftDirty()) throw new Error('変更に気づいていない');
+      if (f.unitUI.listing === 'closed') throw new Error('押す前に効いてしまっている');
+      v.renderList(stubEl());                 // 未反映の印つきで描ける
+      f.applyDraft();
+      if (f.unitUI.listing !== 'closed') throw new Error('検索しても効かない');
+      if (f.draftDirty()) throw new Error('押したのに未反映のまま');
+      // 戻す
+      f.draft.listing = 'all';
+      f.resetDraft();
+      if (f.draft.listing !== 'closed') throw new Error('戻せていない');
+      // リセットは既定に戻す
+      f.clearDraft();
+      if (f.unitUI.listing !== 'open' || f.draftDirty()) throw new Error('リセットできていない');
+    } finally {
+      Object.assign(f.unitUI, saved);
+      f.resetDraft();
+    }
+  }],
   ['価格と広さを自分で指定できる／高い順にも並べられる', () => {
     const v = mods.views;
     const f = mods['unit-filter'];
@@ -545,6 +571,7 @@ const screens = [
       v.renderList(stubEl());
     } finally {
       Object.assign(f.unitUI, saved);
+      f.resetDraft();
     }
   }],
   ['参考建物', () => {

@@ -5,11 +5,12 @@
 // 単位は売買が万円、賃貸が円。混ぜないこと。
 import { store } from './store.js';
 import { el, mount, fmt, derive, STATUSES } from './util.js';
-import { select, segmented, toggle, controlRow } from './ui.js';
+import { select, segmented, toggle, controlRow, numberInput } from './ui.js';
 import { scatterChart, chartLegend, histogramChart, SERIES_COLORS, SERIES_MUTED, BAND_COLORS } from './chart.js';
 import { linearFit, areaOf } from './analysis.js';
+import { inRange } from './unit-filter.js';
 import {
-  AGE_BANDS, WALK_BANDS, AREA_BANDS, FIRM_KEYS, FIRM_LABEL,
+  AGE_BANDS, WALK_BANDS, FIRM_KEYS, FIRM_LABEL,
   stationsOf, ageOf, walkOf, inBand, options,
 } from './units.js';
 import { RENOVATION } from './spec.js';
@@ -43,10 +44,25 @@ const ui = {
   // 事業者。ブランドと会社は別物なので混ぜない
   brand: 'all', developer: 'all', builder: 'all', designer: 'all',
   // 売り出しの行の条件
-  from: 'all', to: 'all', listing: 'all', layout: 'all', size: 'all',
+  from: 'all', to: 'all', listing: 'all', layout: 'all', sizeMin: null, sizeMax: null,
   metric: 'tsubo', attr: 'year', group: 'building', fit: true, names: true,
 };
 export const marketUI = ui;
+
+/**
+ * 入力中の条件。検索を押すまでグラフには効かない。
+ * 選ぶそばから結果が入れ替わると、何を変えたのか分からなくなるため。
+ * 表示の仕方（表示単位・色分けの軸・物件名を出すか）は即座に効かせる。
+ */
+const SEARCH_KEYS = ['mine', 'building', 'area', 'town', 'age', 'walk',
+  'brand', 'developer', 'builder', 'designer', 'from', 'to', 'listing', 'layout',
+  'sizeMin', 'sizeMax'];
+export const marketDraft = {};
+const copy = (to, from) => { for (const k of SEARCH_KEYS) to[k] = from[k]; };
+copy(marketDraft, ui);
+const marketDirty = () => SEARCH_KEYS.some((k) => String(ui[k]) !== String(marketDraft[k]));
+// 「リセット」で戻す先
+const MARKET_DEFAULTS = JSON.parse(JSON.stringify(ui));
 
 export function renderMarket(root, rerender, view = 'overview') {
   // 参考建物（相場だけ見る建物）はここで初めて読む
@@ -106,41 +122,41 @@ function subTabs(current) {
  * except を渡すと、その条件だけ外して数える。選択肢を作るときに使う
  * （エリアを絞ったら、建物の選択肢もそのエリアの建物だけになる）。
  */
-function targetBuildings(except = null) {
+function targetBuildings(except = null, f = ui) {
   const on = (key) => key !== except;
   return store.allBuildings.filter((b) => {
     const rooms = store.roomsOf(b.id);
-    if (on('mine') && ui.mine !== 'all') {
+    if (on('mine') && f.mine !== 'all') {
       if (!rooms.length) return false;
-      if (ui.mine !== 'mine' && !rooms.some((r) => r.status === ui.mine)) return false;
+      if (f.mine !== 'mine' && !rooms.some((r) => r.status === f.mine)) return false;
     }
-    if (on('building') && ui.building !== 'all' && b.id !== ui.building) return false;
-    if (on('area') && ui.area !== 'all' && !stationsOf(b).includes(ui.area)) return false;
-    if (on('town') && ui.town !== 'all' && areaOf(b).town !== ui.town) return false;
+    if (on('building') && f.building !== 'all' && b.id !== f.building) return false;
+    if (on('area') && f.area !== 'all' && !stationsOf(b).includes(f.area)) return false;
+    if (on('town') && f.town !== 'all' && areaOf(b).town !== f.town) return false;
     for (const k of FIRM_KEYS) {
-      if (on(k) && ui[k] !== 'all' && (b[k] || '').trim() !== ui[k]) return false;
+      if (on(k) && f[k] !== 'all' && (b[k] || '').trim() !== f[k]) return false;
     }
-    if (on('age') && !inBand(ui.age, ageOf(b))) return false;
-    if (on('walk') && !inBand(ui.walk, walkOf(b))) return false;
+    if (on('age') && !inBand(f.age, ageOf(b))) return false;
+    if (on('walk') && !inBand(f.walk, walkOf(b))) return false;
     return true;
   });
 }
 
 /** 売り出しの行。期間・募集状況・間取り・広さで絞る。except は選択肢を作るとき用 */
-function saleRows(buildings, except = null) {
+function saleRows(buildings, except = null, f = ui) {
   const on = (key) => key !== except;
-  const from = ui.from === 'all' ? null : Number(ui.from);
-  const to = ui.to === 'all' ? null : Number(ui.to);
+  const from = f.from === 'all' ? null : Number(f.from);
+  const to = f.to === 'all' ? null : Number(f.to);
   const out = [];
   for (const b of buildings) {
     for (const x of store.listingsOf(b.id)) {
       const y = ymToNum(x.listedYM);
       if (on('year') && from != null && (y == null || y < from)) continue;
       if (on('year') && to != null && (y == null || y >= to + 1)) continue;
-      if (on('listing') && ui.listing === 'open' && !isOpen(x)) continue;
-      if (on('listing') && ui.listing === 'closed' && isOpen(x)) continue;
-      if (on('layout') && ui.layout !== 'all' && (x.layout || '') !== ui.layout) continue;
-      if (on('size') && !inBand(ui.size, x.area)) continue;
+      if (on('listing') && f.listing === 'open' && !isOpen(x)) continue;
+      if (on('listing') && f.listing === 'closed' && isOpen(x)) continue;
+      if (on('layout') && f.layout !== 'all' && (x.layout || '') !== f.layout) continue;
+      if (on('size') && !inRange(x.area, f.sizeMin, f.sizeMax)) continue;
       out.push(x);
     }
   }
@@ -150,15 +166,23 @@ function saleRows(buildings, except = null) {
 const buildingOf = (id) => store.building(id);
 
 function buildingFilter(targets, loaded, rows, rerender) {
+  const d = marketDraft;
   const pick = (key, list) =>
-    select(ui[key], [['all', 'すべて'], ...list], (v) => { ui[key] = v; rerender(); }, 'fsel');
+    select(d[key], [['all', 'すべて'], ...list], (v) => { d[key] = v; rerender(); }, 'fsel');
   const band = (key, list) =>
-    select(ui[key], list, (v) => { ui[key] = v; rerender(); }, 'fsel');
+    select(d[key], list, (v) => { d[key] = v; rerender(); }, 'fsel');
+  const range = (minKey, maxKey, unit) => el('div', { class: 'frange' },
+    numberInput({ value: d[minKey] ?? '', fkey: `m-${minKey}`, cls: 'fnum', placeholder: '下限',
+      onInput: (v) => { d[minKey] = v; } }),
+    el('span', {}, '〜'),
+    numberInput({ value: d[maxKey] ?? '', fkey: `m-${maxKey}`, cls: 'fnum', placeholder: '上限',
+      onInput: (v) => { d[maxKey] = v; } }),
+    el('span', { class: 'tiny muted' }, unit));
   const group = (label, ctrl) => el('div', { class: 'fgroup' }, el('label', {}, label), ctrl);
 
   // 選択肢は「その条件だけ外した結果」から作る。1つ選ぶと他の選択肢が連動して減る
-  const pool = (key) => targetBuildings(key);
-  const rowsFor = (key) => saleRows(loaded, key);
+  const pool = (key) => targetBuildings(key, marketDraft);
+  const rowsFor = (key) => saleRows(loaded, key, marketDraft);
   // 建物名は id で選ぶ。同じ名前の建物があっても取り違えない
   const buildingOptions = [...pool('building')]
     .sort((a, b) => a.name.localeCompare(b.name, 'ja'))
@@ -189,7 +213,7 @@ function buildingFilter(targets, loaded, rows, rerender) {
       group('建物', pick('building', buildingOptions)),
       FIRM_KEYS.map((k) => group(FIRM_LABEL[k], pick(k, firmOptions(k)))),
       group('間取り', pick('layout', layoutOptions)),
-      group('広さ', band('size', AREA_BANDS)),
+      group('広さ', range('sizeMin', 'sizeMax', '㎡')),
       group('売り出し年', el('div', { class: 'frange' },
         pick('from', yearOptions), el('span', {}, '〜'), pick('to', yearOptions))),
       group('募集状況', band('listing',
@@ -199,7 +223,28 @@ function buildingFilter(targets, loaded, rows, rerender) {
       loaded.length < targets.length
         ? el('span', { class: 'tiny muted' }, `${loaded.length}/${targets.length}棟`)
         : null,
+      searchButton(rerender),
     ));
+}
+
+/** 検索ボタン。条件を選んだ時点ではグラフを変えず、これを押して初めて効かせる */
+function searchButton(rerender) {
+  const dirty = marketDirty();
+  return el('div', { class: 'fsearch' },
+    dirty ? el('span', { class: 'tiny', style: 'color:var(--warn)' }, '条件が未反映') : null,
+    el('button', {
+      class: 'btn btn-sm' + (dirty ? ' btn-primary' : ''),
+      onclick: () => { copy(ui, marketDraft); rerender(); },
+    }, 'この条件で検索'),
+    el('button', {
+      class: 'btn btn-sm',
+      onclick: () => {
+        if (dirty) copy(marketDraft, ui);          // 直している途中なら元に戻す
+        else { copy(marketDraft, MARKET_DEFAULTS); copy(ui, MARKET_DEFAULTS); }
+        rerender();
+      },
+    }, dirty ? '戻す' : 'リセット'),
+  );
 }
 
 const cell = (k, v, sub = null) =>

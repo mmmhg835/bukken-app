@@ -15,7 +15,13 @@ import {
 const OWN_OPTIONS = [['all', 'すべて'], ['mine', '登録した部屋'],
   ...STATUSES.map((x) => [x, x])];
 
-/** 絞り込みの状態。画面をまたいで共有するので、一覧で絞れば比較にもそのまま効く */
+/**
+ * 絞り込みの状態。画面をまたいで共有するので、一覧で絞れば比較にもそのまま効く。
+ *
+ * unitUI は「いま効いている条件」、draft は「入力中の条件」。
+ * 選んだ瞬間に一覧が変わると、何を変えたのか分からなくなるため、
+ * 検索ボタンを押したときに draft を unitUI に写す。
+ */
 export const unitUI = {
   // 募集状況の既定は「募集中」。終わった部屋まで並べると、比較もライフプランも意味が薄れる
   listing: 'open',
@@ -28,6 +34,32 @@ export const unitUI = {
   priceMin: null, priceMax: null, areaMin: null, areaMax: null,
   more: false, equip: [],
 };
+
+/** 入力中の条件。検索を押すまで一覧には効かない */
+export const draft = {};
+
+const KEYS = () => Object.keys(unitUI).filter((k) => k !== 'more');
+// 「リセット」で戻す先。読み込み時の値をそのまま覚えておく
+const DEFAULTS = JSON.parse(JSON.stringify(unitUI));
+/** 入力中の条件を、いま効いている条件に戻す */
+export function resetDraft() {
+  for (const k of KEYS()) draft[k] = Array.isArray(unitUI[k]) ? [...unitUI[k]] : unitUI[k];
+}
+/** 入力中の条件を効かせる */
+export function applyDraft() {
+  for (const k of KEYS()) unitUI[k] = Array.isArray(draft[k]) ? [...draft[k]] : draft[k];
+}
+/** 条件をすべて外して効かせる */
+export function clearDraft() {
+  for (const k of KEYS()) draft[k] = Array.isArray(DEFAULTS[k]) ? [...DEFAULTS[k]] : DEFAULTS[k];
+  applyDraft();
+}
+
+/** 入力中の条件と、いま効いている条件が違うか */
+export function draftDirty() {
+  return KEYS().some((k) => String(unitUI[k]) !== String(draft[k]));
+}
+resetDraft();
 
 /** 下限〜上限に入るか。入れていない側は効かない。値が無い部屋は範囲を指定したら外す */
 export function inRange(v, min, max) {
@@ -42,33 +74,33 @@ export function inRange(v, min, max) {
  * 1部屋がいまの条件に合うか。
  * except を渡すとその条件だけ外して判定する（選択肢を連動させるために使う）。
  */
-export function unitMatches({ r, b }, except = null) {
+export function unitMatches({ r, b }, except = null, f = unitUI) {
   if (!b) return false;
   const on = (key) => key !== except;
-  if (on('own') && unitUI.own !== 'all') {
+  if (on('own') && f.own !== 'all') {
     // 売り出しの行そのままの部屋は、まだ「登録した部屋」ではない
     if (r.fromListing) return false;
-    if (unitUI.own !== 'mine' && r.status !== unitUI.own) return false;
+    if (f.own !== 'mine' && r.status !== f.own) return false;
   }
-  if (on('listing') && unitUI.listing !== 'all') {
+  if (on('listing') && f.listing !== 'all') {
     const closed = CLOSED_STATUS.includes(r.listingStatus);
-    if (unitUI.listing === 'open' && closed) return false;
-    if (unitUI.listing === 'closed' && !closed) return false;
+    if (f.listing === 'open' && closed) return false;
+    if (f.listing === 'closed' && !closed) return false;
   }
-  if (on('area') && unitUI.area !== 'all' && !stationsOf(b).includes(unitUI.area)) return false;
-  if (on('town') && unitUI.town !== 'all' && areaOf(b).town !== unitUI.town) return false;
+  if (on('area') && f.area !== 'all' && !stationsOf(b).includes(f.area)) return false;
+  if (on('town') && f.town !== 'all' && areaOf(b).town !== f.town) return false;
   for (const k of FIRM_KEYS) {
     if (on(k) && unitUI[k] !== 'all' && (b[k] || '').trim() !== unitUI[k]) return false;
   }
-  if (on('age') && !inBand(unitUI.age, ageOf(b))) return false;
-  if (on('walk') && !inBand(unitUI.walk, walkOf(b))) return false;
-  if (on('layout') && unitUI.layout !== 'all' && r.layout !== unitUI.layout) return false;
-  if (on('size') && !inRange(r.area, unitUI.areaMin, unitUI.areaMax)) return false;
-  if (on('price') && !inRange(r.price, unitUI.priceMin, unitUI.priceMax)) return false;
-  if (on('equip') && unitUI.equip.length) {
+  if (on('age') && !inBand(f.age, ageOf(b))) return false;
+  if (on('walk') && !inBand(f.walk, walkOf(b))) return false;
+  if (on('layout') && f.layout !== 'all' && r.layout !== f.layout) return false;
+  if (on('size') && !inRange(r.area, f.areaMin, f.areaMax)) return false;
+  if (on('price') && !inRange(r.price, f.priceMin, f.priceMax)) return false;
+  if (on('equip') && f.equip.length) {
     const tags = [...(r.roomEquipmentTags || []), ...(b.equipmentTags || []),
       ...(b.facilityTags || [])];
-    if (!unitUI.equip.every((t) => tags.includes(t))) return false;
+    if (!f.equip.every((t) => tags.includes(t))) return false;
   }
   return true;
 }
@@ -82,32 +114,25 @@ export function unitMatches({ r, b }, except = null) {
  */
 export function unitFilterBar(all, shown, rerender, { lead = null, trail = null, unit = '物件' } = {}) {
   const pick = (key, list) =>
-    select(unitUI[key], [['all', 'すべて'], ...list], (v) => { unitUI[key] = v; rerender(); }, 'fsel');
+    select(draft[key], [['all', 'すべて'], ...list], (v) => { draft[key] = v; rerender(); }, 'fsel');
   const band = (key, list) =>
-    select(unitUI[key], list, (v) => { unitUI[key] = v; rerender(); }, 'fsel');
+    select(draft[key], list, (v) => { draft[key] = v; rerender(); }, 'fsel');
   const group = (label, ctrl) => el('div', { class: 'fgroup' }, el('label', {}, label), ctrl);
   // 下限〜上限の入力。打つたびに描き直すと入力できないので、離れたときに効かせる
-  const range = (minKey, maxKey, unit, step) => el('div', { class: 'frange' },
+  const range = (minKey, maxKey, unit) => el('div', { class: 'frange' },
     numberInput({
-      value: unitUI[minKey] ?? '', fkey: minKey, cls: 'fnum', placeholder: '下限',
-      onInput: (v) => { unitUI[minKey] = v; },
+      value: draft[minKey] ?? '', fkey: minKey, cls: 'fnum', placeholder: '下限',
+      onInput: (v) => { draft[minKey] = v; },
     }),
     el('span', {}, '〜'),
     numberInput({
-      value: unitUI[maxKey] ?? '', fkey: maxKey, cls: 'fnum', placeholder: '上限',
-      onInput: (v) => { unitUI[maxKey] = v; },
+      value: draft[maxKey] ?? '', fkey: maxKey, cls: 'fnum', placeholder: '上限',
+      onInput: (v) => { draft[maxKey] = v; },
     }),
-    el('span', { class: 'tiny muted' }, unit),
-    el('button', { class: 'btn btn-sm', onclick: () => rerender() }, '絞る'),
-    (unitUI[minKey] != null || unitUI[maxKey] != null)
-      ? el('button', {
-        class: 'btn btn-sm',
-        onclick: () => { unitUI[minKey] = null; unitUI[maxKey] = null; rerender(); },
-      }, '解除')
-      : null);
+    el('span', { class: 'tiny muted' }, unit));
 
   // 選択肢は「その条件だけ外した結果」から作る。1つ選ぶと他の選択肢も連動して減る
-  const pool = (key) => all.filter((x) => unitMatches(x, key));
+  const pool = (key) => all.filter((x) => unitMatches(x, key, draft));
   const buildings = (key) => {
     const seen = new Map();
     for (const x of pool(key)) seen.set(x.b.id, x.b);
@@ -141,25 +166,46 @@ export function unitFilterBar(all, shown, rerender, { lead = null, trail = null,
         ? el('button', {
           class: 'btn btn-sm' + (unitUI.more ? ' btn-primary' : ''),
           onclick: () => { unitUI.more = !unitUI.more; rerender(); },
-        }, `設備で絞る${unitUI.equip.length ? ` (${unitUI.equip.length})` : ''}`)
+        }, `設備で絞る${draft.equip.length ? ` (${draft.equip.length})` : ''}`)
         : null,
+      searchButton(rerender),
       el('div', { class: 'spacer' }),
       trail,
     ),
     unitUI.more
       ? el('div', { class: 'filterbar-more' },
         el('div', { class: 'tagwrap' }, equipOptions.map((t) => el('button', {
-          class: 'tag' + (unitUI.equip.includes(t) ? ' is-on' : ''),
+          class: 'tag' + (draft.equip.includes(t) ? ' is-on' : ''),
           onclick: () => {
-            const i = unitUI.equip.indexOf(t);
-            if (i >= 0) unitUI.equip.splice(i, 1); else unitUI.equip.push(t);
+            const i = draft.equip.indexOf(t);
+            if (i >= 0) draft.equip.splice(i, 1); else draft.equip.push(t);
             rerender();
           },
         }, t))),
-        unitUI.equip.length
-          ? el('button', { class: 'btn btn-sm', onclick: () => { unitUI.equip = []; rerender(); } }, '解除')
+        draft.equip.length
+          ? el('button', { class: 'btn btn-sm', onclick: () => { draft.equip = []; rerender(); } }, '解除')
           : null)
       : null,
+  );
+}
+
+/**
+ * 検索ボタン。条件を選んだ時点では一覧を変えず、これを押して初めて効かせる。
+ * 選ぶそばから結果が入れ替わると、何を変えたのか分からなくなるため。
+ */
+function searchButton(rerender) {
+  const dirty = draftDirty();
+  return el('div', { class: 'fsearch' },
+    dirty ? el('span', { class: 'tiny', style: 'color:var(--warn)' }, '条件が未反映') : null,
+    el('button', {
+      class: 'btn btn-sm' + (dirty ? ' btn-primary' : ''),
+      onclick: () => { applyDraft(); rerender(); },
+    }, 'この条件で検索'),
+    el('button', {
+      class: 'btn btn-sm',
+      // 直している途中なら元に戻す、そうでなければ条件を全部外す
+      onclick: () => { if (dirty) resetDraft(); else clearDraft(); rerender(); },
+    }, dirty ? '戻す' : 'リセット'),
   );
 }
 

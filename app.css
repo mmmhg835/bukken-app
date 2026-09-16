@@ -388,6 +388,7 @@ table.cmp tr:hover td.lab{background:var(--surface-2)}
 /* 相場の絞り込みにある文字入力。ドロップダウンと高さをそろえる */
 .ftext{min-width:132px}
 /* 下限〜上限の数値欄。桁が少ないので細くてよい */
+.fsearch{display:flex;align-items:center;gap:8px;margin-left:auto}
 .fnum{width:84px;padding:7px 8px;border:1px solid var(--line);border-radius:var(--r-sm);
   background:var(--surface);color:var(--text);font:inherit;font-size:13px}
 /* 「◯年 〜 ◯年」を1行に収める */
