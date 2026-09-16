@@ -386,7 +386,23 @@ export function renderBuilding(root, id) {
     specSection(b, 'building'),
     ...forms,
     gallerySection(b, rerender, '建物の写真（外観・エントランス・共用部）'),
+    mrPhotos(b),
   );
+}
+
+/**
+ * マンションレビューに載っている写真。
+ * 画像そのものは取り込まない（第三者が権利を持つため、規約でも転載を断っている）。
+ * URL だけ持って、向こうから読んで出す。
+ */
+function mrPhotos(b) {
+  const list = b.photos || [];
+  if (!list.length) return null;
+  return el('div', { class: 'section' },
+    el('h3', {}, 'マンションレビューの写真'),
+    el('div', { class: 'mrpics' }, list.map((src) =>
+      el('a', { href: b.url || src, target: '_blank', rel: 'noreferrer' },
+        el('img', { src, alt: '', loading: 'lazy', referrerpolicy: 'no-referrer' })))));
 }
 
 /** 設備のチェックリスト。建物と部屋で対象グループを切り替える */

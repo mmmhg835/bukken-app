@@ -15,6 +15,9 @@ const DATA_PATH = 'properties.json';
 // GitHub Contents API が中身を返す上限（1MB）を超えて読めなくなる。
 const marketPath = (buildingId) => `market/${buildingId}.json`;
 const emptyMarket = () => ({ sale: [], rent: [], new: [] });
+// 相場だけ見る「参考建物」は properties.json に入れない。
+// 1棟2KBあり、駅ひとつで数百棟入るので、まとめると読み込みの上限（1MB）に当たる。
+const REFS_INDEX = 'refs/index.json';
 
 /**
  * 初期データ。項目を直接並べず migrate() に通して作る。
@@ -35,6 +38,9 @@ class Store extends EventTarget {
   #market = new Map();
   #marketLoading = new Set();
   marketDirty = new Set();
+  // 参考建物。相場タブを開いたときにまとめて読む
+  #refs = new Map();
+  #refsState = 'idle';   // idle | loading | ready
 
   emit() { this.dispatchEvent(new Event('change')); }
 
@@ -138,14 +144,64 @@ class Store extends EventTarget {
   }
 
   // ===== 建物 =====
+  // buildings は検討している建物（部屋があるか、手で作ったもの）。
+  // 相場だけ見る参考建物は refs 側にあり、相場タブでだけ混ぜる。
   get buildings() { return this.data.buildings; }
-  building(id) { return this.data.buildings.find((b) => b.id === id); }
+  get refs() { return [...this.#refs.values()]; }
+  get allBuildings() { return [...this.data.buildings, ...this.#refs.values()]; }
+  get refsReady() { return this.#refsState === 'ready'; }
+  building(id) { return this.data.buildings.find((b) => b.id === id) || this.#refs.get(id) || null; }
+
+  /** 読み込み済みとして参考建物を差し込む。取り込みと smoke から使う */
+  setRefs(list) {
+    for (const b of list) this.#refs.set(b.id, b);
+    this.#refsState = 'ready';
+    this.emit();
+  }
+
+  /** 参考建物をまとめて読む。相場タブを開いたときだけ呼ぶ */
+  ensureRefs() {
+    if (this.#refsState !== 'idle') return;
+    this.#refsState = 'loading';
+    (async () => {
+      const read = async (path, key) => {
+        let v = await idb.get('kv', key).catch(() => null);
+        if (this.configured) {
+          try {
+            const got = await this.repo.getJson(path);
+            v = got ? got.data : null;
+            await idb.set('kv', key, v);
+          } catch { /* 取れなければキャッシュのまま */ }
+        }
+        return v;
+      };
+      const idx = await read(REFS_INDEX, 'refs:index');
+      const files = idx?.files ?? [];
+      const lists = await Promise.all(files.map((f) => read(f, `refs:${f}`)));
+      for (const list of lists) for (const b of list ?? []) this.#refs.set(b.id, b);
+      this.#refsState = 'ready';
+      this.emit();
+    })();
+  }
+
+  /**
+   * 参考建物を検討中へ移す。部屋を足した建物は編集の対象になるので、
+   * 読み取り専用の refs から properties.json 側へ持ってくる。
+   */
+  #promote(buildingId) {
+    const b = this.#refs.get(buildingId);
+    if (!b) return;
+    this.#refs.delete(buildingId);
+    this.data.buildings.push(b);
+  }
 
   addBuilding(partial = {}) {
     const b = {
       id: uid('b'), ...buildingDefaults(),
       name: '新規の建物', lat: null, lng: null,
-      cover: null, coverThumb: null, images: [], ...partial,
+      cover: null, coverThumb: null, images: [],
+      photos: [],            // マンレビの写真のURL。画像そのものは持たない
+      ...partial,
     };
     this.data.buildings.push(b);
     this.markDirty();
@@ -327,6 +383,7 @@ class Store extends EventTarget {
   roomsOf(buildingId) { return this.data.rooms.filter((r) => r.buildingId === buildingId); }
 
   addRoom(buildingId, partial = {}) {
+    this.#promote(buildingId);
     const r = {
       id: uid('r'), buildingId, label: '新規の部屋', status: '検討中', rating: 0,
       listingStatus: '募集中', listedAt: null, closedAt: null, priceHistory: [],

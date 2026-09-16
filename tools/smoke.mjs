@@ -285,6 +285,8 @@ store.data = mods.migrate.migrate({
 });
 store.data.buildings[0].address = '東京都江東区東雲1-9-10';
 store.data.buildings[0].lat = 35.6; store.data.buildings[0].lng = 139.8;
+// マンレビの写真はURLだけ持つ。建物詳細で描く経路を通す
+store.data.buildings[0].photos = ['https://www.mansion-review.jp/image/mansion/1/2-600.jpg'];
 // 中身が空の部屋も1つ混ぜる。アプリで「部屋を追加」した直後がこの状態で、
 // 価格も面積も無いまま全画面が描かれる。坪単価などが null になる経路を通す。
 store.addRoom(store.data.buildings[0].id);
@@ -343,6 +345,13 @@ const screens = [
   ...marketTabs('相場（データなし）'),
   ['相場のデータを入れる', () => {
     const b = store.data.buildings[0];
+    // 参考建物（部屋が無く、相場だけ見る建物）。properties.json には入らない
+    store.setRefs([{ id: 'ref1', name: '参考タワー', address: '東京都江東区東雲2-1-1',
+      builtYM: '2015/06', totalUnits: 300, walk: '東雲4分', developer: '長谷工',
+      equipmentTags: [], structureTags: [], facilityTags: [] }]);
+    store.setMarket('ref1', { sale: [{ id: 'mr1', buildingId: 'ref1', listedYM: '2026-07',
+      closedYM: null, open: true, floor: 10, layout: '2LDK', area: 70, price: 9000,
+      priceHistory: [], kanrihi: 1.5, shuzen: 1.2 }], rent: [], new: [] });
     // 相場は建物ごとの別ファイル。読み込み済みとして差し込んでから足す
     store.setMarket(b.id, {});
     store.addListing(b.id, { listedYM: '2026-05', closedYM: '2026-08', floor: 4, layout: '3LDK',
@@ -394,6 +403,21 @@ const screens = [
         v.renderMarket(stubEl(), () => {}, tab);
       }
     }
+    Object.assign(u, saved);
+  }],
+  ['参考建物', () => {
+    const v = mods['market-view'];
+    const u = v.marketUI;
+    const saved = { ...u };
+    Object.assign(u, saved, { mine: false });
+    v.renderMarket(stubEl(), () => {}, 'overview');
+    v.renderMarket(stubEl(), () => {}, 'sale');
+    if (!store.allBuildings.some((b) => b.id === 'ref1')) throw new Error('参考建物が相場に出ていない');
+    if (store.buildings.some((b) => b.id === 'ref1')) throw new Error('参考建物が検討中に混ざっている');
+    // 部屋を足したら検討中へ移る
+    store.addRoom('ref1', { label: '10階' });
+    if (!store.buildings.some((b) => b.id === 'ref1')) throw new Error('部屋を足しても検討中へ移っていない');
+    if (store.refs.some((b) => b.id === 'ref1')) throw new Error('参考側に残っている');
     Object.assign(u, saved);
   }],
   ['指値（絞り込み）', () => {

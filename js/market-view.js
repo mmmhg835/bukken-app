@@ -43,6 +43,8 @@ const ui = {
 export const marketUI = ui;
 
 export function renderMarket(root, rerender, view = 'overview') {
+  // 参考建物（相場だけ見る建物）はここで初めて読む
+  store.ensureRefs();
   const targets = targetBuildings();
   const ids = targets.map((b) => b.id);
   if (ids.length && ids.length <= LOAD_LIMIT) store.ensureMarkets(ids);
@@ -54,8 +56,9 @@ export function renderMarket(root, rerender, view = 'overview') {
     buildingFilter(targets, loaded, rows, rerender),
   );
 
-  if (!store.buildings.length) {
-    mount(root, el('div', { class: 'empty' }, '建物を登録すると相場を貯められます'));
+  if (!store.allBuildings.length) {
+    mount(root, el('div', { class: 'empty' },
+      store.refsReady ? '建物を登録すると相場を貯められます' : '読み込み中'));
     return;
   }
   if (ids.length > LOAD_LIMIT) {
@@ -95,7 +98,7 @@ function subTabs(current) {
 /** 条件に合う建物。相場はここで決まった建物ぶんだけ読む */
 function targetBuildings() {
   const q = ui.q.trim(), dev = ui.dev.trim();
-  return store.buildings.filter((b) => {
+  return store.allBuildings.filter((b) => {
     const rooms = store.roomsOf(b.id);
     if ((ui.mine || ui.roomStatus !== 'all') && !rooms.length) return false;
     if (ui.roomStatus !== 'all' && !rooms.some((r) => r.status === ui.roomStatus)) return false;
@@ -143,8 +146,8 @@ const buildingOf = (id) => store.building(id);
 
 function buildingFilter(targets, loaded, rows, rerender) {
   const uniq = (list) => [...new Set(list.filter(Boolean))].sort();
-  const towns = uniq(store.buildings.map((b) => areaOf(b).town));
-  const years = uniq(store.buildings.flatMap((b) =>
+  const towns = uniq(store.allBuildings.map((b) => areaOf(b).town));
+  const years = uniq(store.allBuildings.flatMap((b) =>
     store.listingsOf(b.id).map((x) => {
       const y = ymToNum(x.listedYM);
       return y == null ? null : String(Math.floor(y));
@@ -172,7 +175,8 @@ function buildingFilter(targets, loaded, rows, rerender) {
       el('div', { class: 'fgroup' }, el('label', {}, '駅徒歩'), pick('walk', WALK_BANDS)),
       el('div', { class: 'spacer' }),
       el('span', { class: 'fcount' },
-        `${targets.length}棟${loading ? `（${loading}棟 読み込み中）` : ''}`),
+        `${targets.length}棟${loading ? `（${loading}棟 読み込み中）` : ''}`
+        + (store.refsReady ? '' : '（建物を読み込み中）')),
     ),
     el('div', { class: 'filterbar-row' },
       el('div', { class: 'fgroup' }, el('label', {}, '売り出し年'),

@@ -10,7 +10,9 @@ export const DEFAULT_PRESET = 'high';
 
 const THUMB_EDGE = 480;   // ギャラリー格子＆一覧カードの仮表示に使う
 const THUMB_QUALITY = 0.78;
-const COVER_EDGE = 320;   // properties.json に直接埋める極小サムネ（即描画用）
+// properties.json に base64 で直接埋める極小サムネ（即描画用）。
+// 320px・品質0.72 だと1枚48KBあり、35枚で1.4MBになって読み込みの上限に当たる。
+const COVER_EDGE = 200;
 
 async function loadBitmap(file) {
   if ('createImageBitmap' in window) {
@@ -62,7 +64,7 @@ export async function processImage(file, presetKey = DEFAULT_PRESET) {
   }
 
   const thumb = await toBlob(draw(bmp, THUMB_EDGE), THUMB_QUALITY);
-  const cover = draw(bmp, COVER_EDGE).toDataURL('image/jpeg', 0.72);
+  const cover = draw(bmp, COVER_EDGE).toDataURL('image/jpeg', 0.62);
   bmp.close?.();
   return { full, thumb, cover, width, height };
 }
@@ -70,7 +72,7 @@ export async function processImage(file, presetKey = DEFAULT_PRESET) {
 /** Blob から一覧カード用の極小 data URL を作り直す（カバー変更時に使う） */
 export async function coverDataUrl(blob) {
   const bmp = await loadBitmap(blob);
-  const url = draw(bmp, COVER_EDGE).toDataURL('image/jpeg', 0.72);
+  const url = draw(bmp, COVER_EDGE).toDataURL('image/jpeg', 0.62);
   bmp.close?.();
   return url;
 }
