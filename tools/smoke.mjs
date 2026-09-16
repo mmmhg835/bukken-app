@@ -303,7 +303,7 @@ room.priceHistory = [
 store.setOnsale({
   buildings: {
     b9: { name: '相場タワー', address: '東京都江東区東雲2-2-2', stations: '東雲 / 辰巳',
-      walk: '東雲5分・辰巳9分', builtYM: '2016/03', totalUnits: 200, url: '', photo: null,
+      walk: '東雲5分・辰巳9分', builtYM: '2016/03', totalUnits: 200, url: 'https://www.mansion-review.jp/mansion/999999.html', photo: null,
       brand: 'シティタワー', developer: '住友不動産', builder: '鹿島建設', designer: '鹿島建設' },
   },
   rows: [
@@ -314,6 +314,7 @@ store.setOnsale({
       kanrihi: 2, shuzen: 1.8 },
     // まだ登録していない売り出し。別の建物
     { id: 'os2', buildingId: 'b9', listedYM: '2026-09', open: true,
+      url: 'https://www.mansion-review.jp/chuko/1234567890123.html',
       floor: 15, layout: '2LDK', direction: '東', feature: '', area: 70, balcony: 9,
       price: 9800, priceHistory: [], kanrihi: 1.6, shuzen: 1.3 },
     // 階も面積も無い行。写し損ねでこの形になりうる
@@ -450,6 +451,11 @@ const screens = [
     if (store.data.rooms.length !== before + 1) throw new Error('部屋が作られていない');
     if (made.price !== 9800 || made.floor !== 15) throw new Error('売り出しの中身が移っていない');
     if (u.promote({ r: made, listing: null }) !== made) throw new Error('二重に作っている');
+    // カードから開くリンク。部屋の募集ページがあればそれ、無ければ建物のページ
+    const withUrl = u.allUnits().find((x) => x.listing?.id === 'os2');
+    if (!u.unitUrl(withUrl).includes('/chuko/')) throw new Error('部屋の募集ページが使われていない');
+    const noUrl = u.allUnits().find((x) => x.listing?.id === 'os3');
+    if (u.unitUrl(noUrl) !== store.building('b9').url) throw new Error('建物のページに落ちていない');
   }],
   ['募集状況をマンレビと突き合わせる', () => {
     const u = mods.units;

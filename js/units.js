@@ -49,6 +49,8 @@ export function listingAsRoom(x) {
     viewingAt: null, viewingChecks: {}, viewingNote: '',
     reform: '', viewNote: '', roomNote: '',
     imageRange: '', url: store.building(x.buildingId)?.url || '',
+    // マンレビの「この部屋の販売情報」ページ。階数・専有面積・価格が一致した行にだけ付く
+    listingUrl: x.url || null,
     memo: x.feature ? `マンレビの特徴：${x.feature}` : '',
     cover: null, coverThumb: null, images: [],
   };
@@ -140,6 +142,11 @@ export function options(values, label = (v) => v) {
   return [...count.entries()]
     .sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(b[0], 'ja'))
     .map(([v, n]) => [v, `${label(v)}（${n}）`]);
+}
+
+/** カードから開くリンク。部屋の募集ページがあればそれ、無ければ建物のページ */
+export function unitUrl({ r, b, listing }) {
+  return listing?.url || r?.listingUrl || b?.url || '';
 }
 
 /* ===== 募集状況の突き合わせ ===== */

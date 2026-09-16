@@ -12,7 +12,7 @@ import { SKINS, currentSkin, setSkin } from './skin.js';
 import { salesSection } from './sales.js';
 import { BUILDING_FORM, SPEC_GROUPS, RENOVATION } from './spec.js';
 import { areaOf } from './analysis.js';
-import { allUnits, promote, listingMismatches } from './units.js';
+import { allUnits, promote, listingMismatches, unitUrl } from './units.js';
 import { unitUI, unitMatches, unitFilterBar } from './unit-filter.js';
 import { analyze, LISTING_STATUS, CLOSED_STATUS, formatDate } from './price.js';
 import { stepChart, chartLegend, SERIES_COLORS } from './chart.js';
@@ -130,7 +130,7 @@ function filterBar(all, shown, byRoom) {
 function roomListing(shown) {
   const rooms = [...shown].sort(roomSorter(listUI.sort));
   if (!rooms.length) return el('div', { class: 'empty' }, '条件に合う部屋がありません');
-  return el('div', { class: 'grid' }, rooms.map(({ r, b }) => propertyCard(r, b)));
+  return el('div', { class: 'grid' }, rooms.map((x) => propertyCard(x.r, x.b, unitUrl(x))));
 }
 
 function roomSorter(key) {
@@ -226,7 +226,7 @@ function featureTag(icon, text) {
 }
 
 /** 部屋1室のカード。参考画面と同じ並びにしている */
-function propertyCard(r, b) {
+function propertyCard(r, b, url = null) {
   const c = derive(r, b, store.loanTerms);
   const t = { ...store.loanTerms, ...(r.loan || {}) };
 
@@ -236,7 +236,7 @@ function propertyCard(r, b) {
       statusBadge(r.status),
     ),
     el('div', { class: 'pcard-img' },
-      coverImage(r, r.label, '間取り', b.url),
+      coverImage(r, r.label, '間取り', url || b.url),
       r.images?.length ? el('span', { class: 'imgcount' }, `${r.images.length}枚`) : null,
     ),
     el('div', { class: 'pcard-body' },
