@@ -602,23 +602,35 @@ function thSub(title, sub) {
   return el('div', { class: 'thsub' }, el('b', {}, title), el('span', {}, sub));
 }
 
-/** 買える価格の上限まわり。諸費用を含む額と含まない額を混ぜない */
-function affordCards(afford) {
-  const t = store.loanTerms;
+/**
+ * 買える価格の上限まわり。
+ * 合算した額だけを出すと、そこに諸費用や管理費が入っているのか分からず
+ * 実態と突き合わせられない。足す前の額をすべて並べる。
+ */
+function affordCards(afford, room, building) {
+  const t = { ...store.loanTerms, ...(room?.loan || {}) };
   const price = Math.round(afford.price);
   const fees = (price * (Number(t.costRate) || 0)) / 100 + (Number(t.costFixed) || 0);
   const down = Number(t.downPayment) || 0;
   const principal = price + (t.includeFees ? fees : 0) - down;
   const cash = down + (t.includeFees ? 0 : fees);
+  const kanri = Number(room?.kanrihi) || 0;
+  const shuzen = Number(room?.shuzen) || 0;
+  const loan = derive({ price, kanrihi: 0, shuzen: 0 }, building, t).loan;
   const man = (v) => `${fmt.man1(Math.round(v))}万円`;
+  const base = room && building ? `${building.name} ${room.label} の実額` : '対象の部屋の実額';
 
   return el('div', { class: 'calcgrid calcgrid-3', style: 'margin-top:14px' },
     kv('住居費に回せる上限', `${fmt.n(afford.budget, 1)}万円`, '毎月の残りが0になる水準'),
-    kv('うちローンに回せる額', `${fmt.n(afford.loanBudget, 1)}万円`, '管理費・修繕を差し引いた額'),
+    kv('管理費', `${fmt.n(kanri, 2)}万円`, base),
+    kv('修繕積立金', `${fmt.n(shuzen, 2)}万円`, base),
+    kv('うちローンに回せる額', `${fmt.n(afford.loanBudget, 1)}万円`, '上限から管理費と修繕を引いた額'),
     kv('買える価格の上限', man(price), `物件価格のみ・${t.rate}% ${t.years}年`),
     kv('諸費用', man(fees), `価格の${t.costRate}%${t.costFixed ? ` ＋ ${t.costFixed}万円` : ''}`),
     kv('借入額', man(principal), t.includeFees ? '物件価格＋諸費用−頭金' : '物件価格−頭金'),
     kv('購入時の現金', man(cash), t.includeFees ? '頭金のみ' : '頭金＋諸費用'),
+    kv('総返済額', man(loan?.totalPayment ?? 0),
+      `うち利息 ${man(loan?.totalInterest ?? 0)}`),
   );
 }
 
@@ -925,8 +937,8 @@ function scenarioSection(plan, currentRoom, currentBuilding) {
           el('td', {}, `${fmt.n(res.totalLeft, 1)}万`),
         ))),
       )),
-    // 上限が物件価格なのか諸費用込みなのかが分からないと使えないので、
-    // 価格・諸費用・借入額・購入時の現金まで分けて出す
-    affordCards(afford),
+    // 上限の額が何を含んでいるのか分からないと使えないので、
+    // 月々と購入時の内訳を、合算する前の額のまま並べる
+    affordCards(afford, currentRoom || rows[0].r, currentBuilding || rows[0].b),
   );
 }
