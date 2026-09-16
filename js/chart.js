@@ -239,38 +239,40 @@ export function scatterChart(series, opts = {}) {
   // 点にさわると出る吹き出し。既定の title は出るまで遅く、指では出ない。
   // クリックすると留まるので、名前が重なって出せなかった点もここで読める。
   const tip = n('g', { class: 'chart-tip', visibility: 'hidden' });
+  const tipSh = n('rect', { rx: 7, class: 'chart-tip-sh' });
   const tipBg = n('rect', { rx: 7, class: 'chart-tip-bg' });
   const tipName = n('text', { class: 'chart-tip-n' });
   const tipLines = [0, 1, 2].map(() => n('text', { class: 'chart-tip-v' }));
-  tip.append(tipBg, tipName, ...tipLines);
+  tip.append(tipSh, tipBg, tipName, ...tipLines);
   svg.append(tip);
   let pinned = null;
 
   const showTip = (d) => {
     const info = d.p.info?.length ? d.p.info : [`${xLabel} ${trim(d.p.x)}　${yLabel} ${trim(d.p.y)}`];
     tipName.textContent = d.text;
-    tipLines.forEach((t, i) => {
-      t.textContent = info[i] || '';
-      t.setAttribute('visibility', info[i] ? 'visible' : 'hidden');
-    });
+    // 行ごとに visibility を付けない。子の visible は親の hidden に勝つため、
+    // 閉じても本文だけが残って「枠のない文字」が画面に残る
+    tipLines.forEach((t, i) => { t.textContent = info[i] || ''; });
     const shown = tipLines.filter((t) => t.textContent);
-    const PX = 10, PY = 8, LH = 15;
+    const PX = 10, PY = 8, LH = 14;
     const tw = Math.max(tipName.getComputedTextLength(),
       ...shown.map((t) => t.getComputedTextLength())) + PX * 2;
-    const th = 13 + LH * shown.length + PY * 2;
+    const th = 12 + LH * shown.length + PY * 2;
     let bx = d.x + 13, by = d.y - th - 10;
     if (bx + tw > W - 3) bx = d.x - 13 - tw;     // 右端では左に開く
     if (by < 3) by = d.y + 14;                   // 上端では下に開く
     // それでも収まらない場合は枠の中へ押し込む。はみ出すと外側で切られて読めなくなる
     bx = Math.max(3, Math.min(bx, W - tw - 3));
     by = Math.max(3, Math.min(by, H - th - 3));
-    tipBg.setAttribute('x', bx); tipBg.setAttribute('y', by);
-    tipBg.setAttribute('width', tw); tipBg.setAttribute('height', th);
+    for (const [r, dx, dy] of [[tipSh, 0, 2], [tipBg, 0, 0]]) {
+      r.setAttribute('x', bx + dx); r.setAttribute('y', by + dy);
+      r.setAttribute('width', tw); r.setAttribute('height', th);
+    }
     tipName.setAttribute('x', bx + PX);
-    tipName.setAttribute('y', by + PY + 11);
+    tipName.setAttribute('y', by + PY + 10);
     shown.forEach((t, i) => {
       t.setAttribute('x', bx + PX);
-      t.setAttribute('y', by + PY + 13 + LH * (i + 1));
+      t.setAttribute('y', by + PY + 12 + LH * (i + 1));
     });
     for (const q of dots) {
       q.el.classList.toggle('is-hot', q === d);
