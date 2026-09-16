@@ -6,7 +6,7 @@ import { buildingDefaults, SPEC_GROUPS, BUILDING_EQUIPMENT } from './spec.js';
 import { defaultLifeplan, categoryOf } from './lifeplan.js';
 import { DEFAULT_SALE } from './sale.js';
 
-export const CURRENT_SCHEMA = 23;
+export const CURRENT_SCHEMA = 24;
 
 export function migrate(data) {
   let d = structuredClone(data);
@@ -32,6 +32,7 @@ export function migrate(data) {
   if (d.schemaVersion < 21) d = v20ToV21(d);
   if (d.schemaVersion < 22) d = v21ToV22(d);
   if (d.schemaVersion < 23) d = v22ToV23(d);
+  if (d.schemaVersion < 24) d = v23ToV24(d);
   d.settings ||= {};
   d.settings.loan = { ...DEFAULT_TERMS, ...(d.settings.loan || {}) };
   d.settings.places ||= [];   // 職場・駅など、地図上の参照地点
@@ -359,6 +360,18 @@ function v22ToV23(d) {
   delete d.rentListings;
   delete d.newPrices;
   d.schemaVersion = 23;
+  return d;
+}
+
+/**
+ * 「申込検討」を「本命」にまとめる。
+ * 申し込むかどうか考えている部屋＝本命で、2つに分けても使い分けようがなかった。
+ */
+function v23ToV24(d) {
+  for (const r of d.rooms || []) {
+    if (r.status === '申込検討') r.status = '本命';
+  }
+  d.schemaVersion = 24;
   return d;
 }
 

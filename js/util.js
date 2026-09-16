@@ -2,10 +2,12 @@
 import { calcLoan, DEFAULT_TERMS } from './loan.js';
 
 /** 表示用の版数。更新が届いているかを設定画面で確認できるようにしている */
-export const APP_VERSION = 'v116';
+export const APP_VERSION = 'v117';
 
 export const TSUBO_SQM = 3.305785;          // 1坪 = 3.305785㎡
-export const STATUSES = ['検討中', '内見済', '本命', '申込検討', '見送り'];
+// 検討の段階。「本命」と「申込検討」は実際には同じ状態で、どちらを付ければ
+// いいのか迷うだけだったので「本命」に寄せた（移行は migrate.js の v23→v24）
+export const STATUSES = ['検討中', '内見済', '本命', '見送り'];
 export const CATEGORIES = ['概要', '間取り', '眺望', 'LDK・居室', '水回り', '収納', 'その他'];
 
 export const $  = (sel, root = document) => root.querySelector(sel);

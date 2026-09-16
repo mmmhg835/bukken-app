@@ -33,7 +33,7 @@ Claude と ChatGPT で交互に開発しています。相手に最初にこれ�
 |---|---|
 | 現在の版 | アプリ v72 / データスキーマ v23 |
 | 規模 | JS 約7,400行・28モジュール |
-| 画面 | 一覧 / 比較 / 相場 / ライフプラン / 内見 / 地図 / 設定。ライフプランは ライフプラン・返済負担比率・金利と価格・グラフ・売却 の5サブタブ、内見は チェックポイント・内見の記録・指値 の3サブタブ、相場は 概況・売出・推移・分布・建物別・賃貸・新築 の7サブタブ。一覧の配下に 建物詳細・部屋詳細・取り込み |
+| 画面 | 一覧 / 比較 / 相場 / ライフプラン / 内見 / 地図 / 設定。ライフプランは ライフプラン・返済負担比率・金利と価格・グラフ・指値・売却 の6サブタブ、内見はサブタブ無しの1画面、相場は 概況・売出・推移・供給・分布・建物別・賃貸・新築 の8サブタブ。一覧の配下に 建物詳細・部屋詳細・取り込み |
 | デザイン | 新デザイン（既定）とクラシックを設定で切替。`skin-v2.css` に新案を隔離 |
 
 ## 守ってほしいこと
@@ -58,7 +58,7 @@ Claude と ChatGPT で交互に開発しています。相手に最初にこれ�
 12. **画面の状態を変えるだけの操作で `store.markDirty()` を呼ばない**。
     表示の切り替えで保存が走り、中身の変わらないコミットが積もる
 13. **入力のたびに並び替わる表を作らない**。1文字ごとに行が動いて打てなくなる。
-    `viewing-view.js` は入力中だけ直前の並びを保持している
+    指値の表（`lifeplan-view.js` の `offerView()`）は入力中だけ直前の並びを保持している
 14. **配色の変数を足したら `skin-v2.css` にも定義する**。`app.css` の `:root` だけに
     足すと、新デザイン（暖色）の上にクラシックの寒色が乗る。実際に `--line-2` で起きた
 15. **`store.addRoom` / `addBuilding` にも新しい項目の器を足す**。
@@ -148,7 +148,7 @@ node tools/serve.mjs 8765     # 画面確認
 | 絞り込みの条件を追加 | `js/unit-filter.js`（一覧・比較・ライフプラン）と `js/market-view.js` |
 | 家計の項目・計算 | `js/lifeplan.js`（変更後は `verify-lifeplan.mjs`） |
 | 数値の入力欄 | `js/ui.js` の `numberInput()` |
-| ライフプランの画面 | `js/lifeplan-view.js`（サブタブ plan / burden / graph / sale） |
+| ライフプランの画面 | `js/lifeplan-view.js`（サブタブ plan / burden / matrix / graph / offer / sale） |
 | 売却の計算 | `js/sale.js`（変更後は `verify-sale.mjs`）／画面は `js/sale-view.js` |
 | ローン計算 | `js/loan.js`（変更後は必ず `verify-loan.mjs`） |
 | 販売活動の指標 | `js/price.js` の `analyze()` |
@@ -157,7 +157,7 @@ node tools/serve.mjs 8765     # 画面確認
 | 配色・テーマ | `js/theme.js` と `app.css` の `:root` |
 | 新デザインの調整 | `skin-v2.css` のみ（`app.css` を触るとクラシックも変わる） |
 | 内見のチェック項目 | `js/spec.js` の `VIEWING_SECTIONS` |
-| 内見の画面 | `js/viewing-view.js`（サブタブ check / note / offer） |
+| 内見の画面 | `js/viewing-view.js`（サブタブ無し。指値はライフプランへ移した） |
 | 金利と価格のマトリクス | `js/lifeplan-view.js` の `matrixView()` |
 | 試算金利の上乗せ | `js/lifeplan-view.js` の `planTerms()` |
 | 分析の軸 | `js/analysis.js` の `METRICS` / `ATTRS` |

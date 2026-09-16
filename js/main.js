@@ -15,10 +15,15 @@ import { applySkin } from './skin.js';
 
 const main = $('#main');
 
-function parseHash() {
+/** 画面の割り当て。古いリンクの付け替えを smoke から確かめられるように出している */
+export function parseHash() {
   const [view = 'list', id = null] = location.hash.replace(/^#\/?/, '').split('/');
   // 分析タブは相場に統合した。古いリンクを踏んでも迷子にならないようにする
   if (view === 'analysis') return { view: 'market', id: null };
+  // 指値は内見からライフプランへ移した。古いリンクはそのまま指値に飛ばす
+  if (view === 'viewing' && id === 'offer') return { view: 'plan', id: 'offer' };
+  // 内見のサブタブ（チェック・記録）は1画面にまとめた
+  if (view === 'viewing') return { view: 'viewing', id: null };
   const known = ['list', 'b', 'r', 'compare', 'plan', 'viewing', 'market', 'map', 'settings', 'setup'];
   return { view: known.includes(view) ? view : 'list', id };
 }
@@ -46,7 +51,7 @@ function render() {
   }
   else if (route.view === 'compare') renderCompare(main);
   else if (route.view === 'plan') renderLifeplan(main, render, route.id || 'plan');
-  else if (route.view === 'viewing') renderViewing(main, render, route.id || 'check');
+  else if (route.view === 'viewing') renderViewing(main, render);
   else if (route.view === 'market') renderMarket(main, render, route.id || 'overview');
   else if (route.view === 'map') renderMap(main);
   else if (route.view === 'settings') renderSettings(main);

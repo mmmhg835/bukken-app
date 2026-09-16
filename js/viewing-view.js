@@ -1,34 +1,20 @@
 /**
- * 内見タブ。
+ * 内見タブ。1つの部屋について、現地で潰すチェックポイントと、見た結果の記録を
+ * 1枚にまとめて出す。
  *
- * チェックポイント（現地で潰す）／記録（見た結果）／指値（いくらで出すか）の3段。
- * 別タブに切り出さずサブタブにしているのは、対象の部屋という前提を共有するため。
- *
- * 指値の表は、価格・面積・階・築年数・管理費・修繕積立金をすべて登録済みの
- * 部屋から引く。売り出し価格が動いたときに直す場所を2か所にしないため、
- * ここで手入力するのは指値と相場坪単価（掲載サイトの外から持ってくる値）だけ。
+ * もとはチェックポイント／記録／指値の3つのサブタブに分けていた。
+ * チェックと記録は現地で行き来しながら書くもので、タブを跨ぐ意味がなかった。
+ * 指値は「いくらなら返せるか」の話なので、ライフプランに移してある。
  */
-import { el, mount, fmt, derive, preserveFocus, STATUSES } from './util.js';
+import { el, mount, preserveFocus } from './util.js';
 import { store } from './store.js';
-import { numberInput, select, toggle } from './ui.js';
+import { select } from './ui.js';
 import { VIEWING_SECTIONS } from './spec.js';
-// 比較対象の選択は一覧・比較タブと同じものを使う。
-// ここだけ別に持つと、選び直しが要るうえ比較の中身も二重になる。
-import { isPicked, togglePick } from './views.js';
 // 絞り込みは一覧・比較・相場と同じもの。タブごとに別の絞り方があると探せない
 import { unitFilterBar, unitMatches } from './unit-filter.js';
 
-const SUBTABS = [['check', 'チェックポイント'], ['note', '内見の記録'], ['offer', '指値']];
-
 /** 選んでいる部屋と並び順。保存する値ではないので画面の状態として持つ */
-const ui = {
-  roomId: null,
-  sort: { key: 'offer', dir: 'asc' },
-  // 物件が増えると全室を並べても読めないので、見る範囲を絞れるようにする
-  filter: { status: '', offerOnly: false },
-  // 直前に描いたときの並び。入力中は並び替えを止めるために覚えておく
-  lastOrder: null,
-};
+const ui = { roomId: null };
 
 /**
  * 画面の状態。保存する値ではない。
@@ -37,7 +23,7 @@ const ui = {
  */
 export const viewingUI = ui;
 
-export function renderViewing(root, rerender, view = 'check') {
+export function renderViewing(root, rerender) {
   const rooms = matching();
   if (!rooms.some((r) => r.id === ui.roomId)) ui.roomId = rooms[0]?.id ?? null;
   const room = ui.roomId ? store.room(ui.roomId) : null;
@@ -46,15 +32,11 @@ export function renderViewing(root, rerender, view = 'check') {
   const mark = () => { store.markDirty(); preserveFocus(rerender); };
 
   mount(root,
-    subTabs(view),
     unitFilterBar(units(), rooms, rerender, { unit: '部屋' }),
-    view === 'offer'
-      ? offerSection(mark, rerender, rooms)
-      : el('div', {},
-        roomPicker(room, rerender),
-        room
-          ? (view === 'note' ? noteSection(room, building) : checkSection(room, mark))
-          : el('div', { class: 'empty' }, '部屋を登録すると内見の記録を残せます')),
+    roomPicker(room, rerender),
+    room
+      ? viewingSection(room, building, mark)
+      : el('div', { class: 'empty' }, '部屋を登録すると内見の記録を残せます'),
   );
 }
 
@@ -64,14 +46,6 @@ export function renderViewing(root, rerender, view = 'check') {
  */
 const units = () => store.rooms.map((r) => ({ r, b: store.building(r.buildingId) }));
 const matching = () => units().filter((x) => x.b && unitMatches(x)).map((x) => x.r);
-
-function subTabs(current) {
-  return el('nav', { class: 'subtabs' }, SUBTABS.map(([key, label]) =>
-    el('button', {
-      class: 'subtab' + (key === current ? ' is-active' : ''),
-      onclick: () => { location.hash = key === 'check' ? '#/viewing' : `#/viewing/${key}`; },
-    }, label)));
-}
 
 function roomPicker(room, rerender) {
   const options = matching().map((r) =>
@@ -93,15 +67,23 @@ function roomPicker(room, rerender) {
               : null)))));
 }
 
-/* ===== チェックポイント ===== */
+/* ===== 内見（チェックポイントと記録） ===== */
 
 /** 未確認 → 良い → 気になる → 未確認 の順に回す。現地では押す回数が少ないほうがいい */
 const NEXT = { undefined: 'ok', ok: 'bad', bad: null };
 
-function checkSection(room, mark) {
+/**
+ * 内見の1画面。上に日付と所感、その下に進み具合、いちばん下にチェックの一覧。
+ *
+ * 現地では「見て・付けて・書く」を行き来するので、チェックと所感を別の画面に
+ * 置くと毎回タブを往復することになる。同じ画面に並べておく。
+ */
+function viewingSection(room, building, mark) {
   const state = (key) => room.viewingChecks?.[key];
   const counts = { ok: 0, bad: 0 };
   for (const v of Object.values(room.viewingChecks || {})) if (counts[v] != null) counts[v] += 1;
+  const bad = Object.entries(room.viewingChecks || {})
+    .filter(([, v]) => v === 'bad').map(([k]) => k);
 
   const item = (key) => {
     const v = state(key);
@@ -121,32 +103,7 @@ function checkSection(room, mark) {
 
   return el('div', {},
     el('div', { class: 'section' },
-      el('div', { class: 'calcgrid calcgrid-3' },
-        kvNum('良い', counts.ok),
-        kvNum('気になる', counts.bad),
-        kvNum('未確認', totalChecks() - counts.ok - counts.bad))),
-    VIEWING_SECTIONS.map(([name, list]) => el('div', { class: 'section' },
-      el('h3', {}, name),
-      el('div', { class: 'vchklist' }, list.map(item)))),
-  );
-}
-
-function totalChecks() {
-  return VIEWING_SECTIONS.reduce((s, [, list]) => s + list.length, 0);
-}
-
-function kvNum(k, n) {
-  return el('div', {}, el('div', { class: 'k' }, k), el('div', { class: 'v' }, String(n)));
-}
-
-/* ===== 内見の記録 ===== */
-function noteSection(room, building) {
-  const bad = Object.entries(room.viewingChecks || {})
-    .filter(([, v]) => v === 'bad').map(([k]) => k);
-
-  return el('div', {},
-    el('div', { class: 'section' },
-      el('h3', {}, `${building?.name ?? ''} ${room.label}`),
+      el('h3', {}, `${building?.name ?? ''} ${room.label} の内見`),
       el('div', { class: 'card', style: 'padding:14px' },
         el('div', { class: 'field' },
           el('label', {}, '内見した日'),
@@ -160,191 +117,27 @@ function noteSection(room, building) {
             oninput: (e) => { room.viewingNote = e.target.value; store.markDirty(); },
           }, room.viewingNote ?? '')))),
     el('div', { class: 'section' },
-      el('h3', {}, '気になった点'),
+      el('div', { class: 'calcgrid calcgrid-3' },
+        kvNum('良い', counts.ok),
+        kvNum('気になる', counts.bad),
+        kvNum('未確認', totalChecks() - counts.ok - counts.bad)),
+      // 気になった点は所感を書くときに見返すので、チェックの一覧より上に出す
       bad.length
-        ? el('div', { class: 'vchklist' },
+        ? el('div', { class: 'vchklist', style: 'margin-top:12px' },
           bad.map((k) => el('span', { class: 'vchk is-bad', style: 'cursor:default' },
             el('span', { class: 'vchk-mark' }, '△'),
             el('span', { class: 'vchk-label' }, k))))
-        : el('div', { class: 'empty' }, 'チェックポイントで「気になる」を付けるとここに集まります')),
+        : null),
+    VIEWING_SECTIONS.map(([name, list]) => el('div', { class: 'section' },
+      el('h3', {}, name),
+      el('div', { class: 'vchklist' }, list.map(item)))),
   );
 }
 
-/* ===== 指値 ===== */
-
-/**
- * 相場の出どころ。同じ住戸でもサイトによって値が違うので、どちらと比べたのかを
- * 残せるように枠を分けている。持つのは坪単価だけで、グロスは坪数から都度出す。
- */
-const MARKET_SOURCES = [['marketIsoge', 'ISOGE'], ['marketMrev', 'マンレビ']];
-
-function offerSection(mark, rerender, all = store.rooms) {
-  const terms = store.loanTerms;
-  const shown = all.filter((r) =>
-    (!ui.filter.status || r.status === ui.filter.status)
-    && (!ui.filter.offerOnly || r.offerPrice != null));
-  const rows = shown.map((r) => {
-    const b = store.building(r.buildingId);
-    const d = derive(r, b, terms);
-    const t = { ...terms, ...(r.loan || {}) };
-    const offer = r.offerPrice ?? null;
-    const base = offer ?? r.price ?? null;
-    return {
-      r, b, d, t, offer,
-      offerTsubo: offer != null && d.tsubo ? offer / d.tsubo : null,
-      // 諸費用は指値に対して出す。指値がまだ無い部屋は売り出し価格で見る
-      fees: base == null ? null : (base * (Number(t.costRate) || 0)) / 100 + (Number(t.costFixed) || 0),
-      feesOnOffer: offer != null,
-    };
-  });
-  // 並び替え。空の項目は向きに関わらず末尾に送る。
-  // 相場や指値が入っていない部屋が上に来ると、比べたい行が押し下げられるため。
-  const value = (x, key) => {
-    if (key === 'name') return `${x.b?.name ?? ''} ${x.r.label}`;
-    if (key === 'age') return x.d.ageYears;
-    if (key === 'floor') return x.r.floor;
-    if (key === 'area') return x.r.area;
-    if (key === 'price') return x.r.price;
-    if (key === 'offer') return x.offer ?? x.r.price;
-    if (key === 'tsubo') return x.d.tsuboPrice;
-    if (key === 'offerTsubo') return x.offerTsubo;
-    if (key === 'fees') return x.fees;
-    if (key === 'running') return x.d.kanriShuzen;
-    for (const [mk] of MARKET_SOURCES) {
-      const m = x.r[mk] ?? null;
-      if (key === mk) return m;
-      if (key === `${mk}:gross`) return m != null && x.d.tsubo ? m * x.d.tsubo : null;
-      // 差で並べるときは、売出より指値のほうが判断に使う数字なので指値側を見る
-      if (key === `${mk}:gap`) return m != null && x.offerTsubo != null ? m - x.offerTsubo : null;
-    }
-    return null;
-  };
-  const { key: sortKey, dir } = ui.sort;
-  // 指値や相場を打っている最中は並びを固定する。1文字ごとに並び替えると、
-  // 入力中の行が表の中で動いてしまい、どこを打っているのか分からなくなる。
-  const typing = /^(offer|market)/.test(document.activeElement?.dataset?.fkey ?? '');
-  if (typing && ui.lastOrder) {
-    const at = new Map(ui.lastOrder.map((id, i) => [id, i]));
-    rows.sort((a, b) => (at.get(a.r.id) ?? 1e9) - (at.get(b.r.id) ?? 1e9));
-  } else {
-    rows.sort((a, b) => {
-      const va = value(a, sortKey); const vb = value(b, sortKey);
-      const ea = va == null || Number.isNaN(va); const eb = vb == null || Number.isNaN(vb);
-      if (ea || eb) return ea && eb ? 0 : (ea ? 1 : -1);
-      if (typeof va === 'string') return dir === 'asc' ? va.localeCompare(vb, 'ja') : vb.localeCompare(va, 'ja');
-      return dir === 'asc' ? va - vb : vb - va;
-    });
-    ui.lastOrder = rows.map((x) => x.r.id);
-  }
-
-  // 名前と「安いほうが良い」項目は昇順から、相場や差は大きいほうから見たい
-  const ASC_FIRST = new Set(['name', 'age', 'floor', 'price', 'offer', 'tsubo', 'offerTsubo', 'fees', 'running']);
-  const sortTh = (key, title, sub, cls = null) => el('th', {
-    class: [cls, 'sortable', sortKey === key ? 'is-sorted' : null].filter(Boolean).join(' '),
-    onclick: () => {
-      ui.sort = sortKey === key
-        ? { key, dir: dir === 'asc' ? 'desc' : 'asc' }
-        : { key, dir: ASC_FIRST.has(key) ? 'asc' : 'desc' };
-      rerender();
-    },
-  }, el('div', { class: 'thsub' },
-    el('b', {}, title, el('span', { class: 'sortmark' },
-      sortKey === key ? (dir === 'asc' ? '▲' : '▼') : '')),
-    el('span', {}, sub)));
-
-  const oku = (v) => (v == null ? '—' : `${(v / 10000).toFixed(3)}億`);
-  const man = (v) => (v == null ? '—' : `${fmt.man1(Math.round(v))}万`);
-  const signed = (v) => (v == null
-    ? el('span', { class: 'muted' }, '—')
-    : el('span', { class: v >= 0 ? 'pos' : 'neg' }, `${v >= 0 ? '+' : '▲'}${fmt.n(Math.abs(v), 0)}`));
-
-  /** 相場1つ分のセル3つ。坪単価・グロス・差（売出と指値）を並べる */
-  const marketCells = ({ r, d, offerTsubo }, key) => {
-    const m = r[key] ?? null;
-    const gross = m != null && d.tsubo ? m * d.tsubo : null;
-    return [
-      el('td', { class: 'inputcell' }, numberInput({
-        value: m == null ? null : Number(m.toFixed(1)),
-        cls: 'lpitem-input', fkey: `${key}-${r.id}`,
-        onInput: (num) => { r[key] = num; mark(); },
-      })),
-      el('td', { class: 'inputcell' }, d.tsubo
-        ? numberInput({
-          value: gross == null ? null : Math.round(gross),
-          cls: 'lpitem-input', fkey: `${key}g-${r.id}`,
-          onInput: (num) => { r[key] = num == null ? null : num / d.tsubo; mark(); },
-        })
-        : el('span', { class: 'muted' }, '—')),
-      el('td', {},
-        el('div', { class: 'diffline' }, el('span', { class: 'dk' }, '売出'),
-          signed(m != null && d.tsuboPrice != null ? m - d.tsuboPrice : null)),
-        el('div', { class: 'diffline' }, el('span', { class: 'dk' }, '指値'),
-          signed(m != null && offerTsubo != null ? m - offerTsubo : null))),
-    ];
-  };
-
-  const body = el('tbody', {}, rows.map((row) => {
-    const { r, b, d, t, offer, offerTsubo, fees, feesOnOffer } = row;
-    return el('tr', {},
-      el('td', { class: 'lab' },
-        el('label', { class: 'pickcell' },
-          el('input', {
-            type: 'checkbox', checked: isPicked(r.id) ? '' : null,
-            onchange: (e) => { togglePick(r.id, e.target.checked); rerender(); },
-          }),
-          el('span', {}, `${b?.name ?? ''} ${r.label}`))),
-      el('td', {}, d.ageYears != null ? `築${d.ageYears}年` : '—'),
-      el('td', {}, r.floor != null ? `${r.floor}F` : '—'),
-      el('td', {}, r.area != null ? `${r.area}㎡` : '—'),
-      el('td', {}, oku(r.price)),
-      el('td', { class: 'inputcell' }, numberInput({
-        value: offer, cls: 'lpitem-input', fkey: `offer-${r.id}`,
-        onInput: (num) => { r.offerPrice = num; mark(); },
-      })),
-      el('td', { class: 'muted' }, man(d.tsuboPrice)),
-      el('td', { class: offerTsubo != null ? 'best' : 'muted' }, man(offerTsubo)),
-      ...MARKET_SOURCES.flatMap(([key]) => marketCells(row, key)),
-      el('td', { class: feesOnOffer ? null : 'muted' }, man(fees)),
-      el('td', {}, d.kanriShuzen != null ? `${fmt.n(d.kanriShuzen, 2)}万` : '—'),
-    );
-  }));
-
-  const t0 = store.loanTerms;
-  return el('div', {},
-    el('div', { class: 'section' },
-      el('h3', {}, '指値の検討'),
-    el('div', { class: 'toolbar' },
-      select(ui.filter.status, [['', 'すべての状態'], ...STATUSES.map((v) => [v, v])],
-        (v) => { ui.filter.status = v; rerender(); }),
-      toggle('指値を入れた部屋だけ', ui.filter.offerOnly,
-        (v) => { ui.filter.offerOnly = v; rerender(); }),
-      el('span', { class: 'tiny muted' },
-        rows.length === all.length ? `${all.length}室` : `${rows.length} / ${all.length}室`)),
-    el('div', { class: 'tablewrap' },
-      el('table', { class: 'cmp offertbl' },
-        el('thead', {}, el('tr', {},
-          sortTh('name', '物件', '', 'lab'),
-          sortTh('age', '築年数', ''),
-          sortTh('floor', '階', ''),
-          sortTh('area', '広さ', ''),
-          sortTh('price', '現価格', '売り出し'),
-          sortTh('offer', '指値', '万円'),
-          sortTh('tsubo', '元坪', '現価格 ÷ 坪'),
-          sortTh('offerTsubo', '指値坪', '指値 ÷ 坪'),
-          ...MARKET_SOURCES.flatMap(([mk, label]) => [
-            sortTh(mk, `${label} 坪`, '万円/坪'),
-            sortTh(`${mk}:gross`, `${label} 価格`, '相場坪 × 坪数'),
-            sortTh(`${mk}:gap`, `${label}との差`, '＋ほど相場より安い'),
-          ]),
-          sortTh('fees', '諸費用', `指値の${t0.costRate}%${t0.costFixed ? ` ＋ ${t0.costFixed}万` : ''}`),
-          sortTh('running', '管理＋修繕', '月額'),
-        )),
-        body))),
-    el('div', { class: 'toolbar', style: 'margin-top:12px' },
-      el('button', {
-        class: 'btn btn-sm',
-        onclick: () => { location.hash = '#/compare'; },
-      }, '選んだ部屋を比較で見る')),
-  );
+function totalChecks() {
+  return VIEWING_SECTIONS.reduce((s, [, list]) => s + list.length, 0);
 }
 
+function kvNum(k, n) {
+  return el('div', {}, el('div', { class: 'k' }, k), el('div', { class: 'v' }, String(n)));
+}

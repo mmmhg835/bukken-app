@@ -1,7 +1,9 @@
 // ライフプランタブ。項目を編集しながら、物件ごとの月次収支を試算する。
 import { store } from './store.js';
-import { el, fmt, mount, toast, uid, preserveFocus } from './util.js';
+import { el, fmt, mount, toast, uid, preserveFocus, STATUSES } from './util.js';
 import { kv, select, toggle, segmented, numberInput } from './ui.js';
+// 指値の表から比較に送れるようにする。選択は一覧・比較と同じものを使う
+import { isPicked, togglePick } from './views.js';
 import {
   calcPlan, housingCost, affordablePrice, waterfall,
   CATEGORIES, isOn, categoryOf, incomePatterns, project, milestones,
@@ -24,6 +26,13 @@ const ui = {
   // 設定そのものを書き換えずに「上がったらどうなるか」を全サブタブで見るための値で、
   // 保存はしない。一覧・比較・分析は設定の金利のままにしてある。
   rateBump: 0,
+  // 指値の表の状態。並び順と絞り込み（保存しない）
+  offer: {
+    sort: { key: 'offer', dir: 'asc' },
+    filter: { status: '', offerOnly: false },
+    // 打っている最中は並びを止めるため、直前の並びを覚えておく
+    lastOrder: null,
+  },
 };
 
 /**
@@ -41,7 +50,7 @@ function planTerms() {
 }
 
 const SUBTABS = [['plan', 'ライフプラン'], ['burden', '返済負担比率'], ['matrix', '金利と価格'],
-  ['graph', 'グラフ'], ['sale', '売却']];
+  ['graph', 'グラフ'], ['offer', '指値'], ['sale', '売却']];
 
 /**
  * @param {string} sub 'plan' | 'burden'。物件と収入の前提を共有したまま切り替える
@@ -64,6 +73,11 @@ export function renderLifeplan(root, rerender, sub = 'plan') {
   rerenderOffer = rerender;
   // 金額を打つたびに再描画されるため、フォーカスを保ったまま描き直す
   const mark = () => { store.markDirty(); preserveFocus(rerender); };
+
+  if (view === 'offer') {
+    mount(root, subTabs(view), offerView(mark, rerender));
+    return;
+  }
 
   mount(root,
     subTabs(view),
@@ -1011,3 +1025,190 @@ function scenarioSection(plan, currentRoom, currentBuilding) {
     affordCards(afford, currentRoom || rows[0].r, currentBuilding || rows[0].b),
   );
 }
+
+/* =========================================================
+   指値
+   ========================================================= */
+/**
+ * 指値の検討。登録した部屋を1枚の表に並べて、いくらで出すかを決める。
+ *
+ * もとは内見タブに置いていたが、指値は「いくらなら返せるか」の話なので、
+ * 試算金利・諸費用・返済とひと続きで見られるライフプランに移した。
+ * 表の数字は部屋の登録内容から引く。ここで打つのは指値と相場坪単価だけ。
+ */
+/**
+ * 相場の出どころ。同じ住戸でもサイトによって値が違うので、どちらと比べたのかを
+ * 残せるように枠を分けている。持つのは坪単価だけで、グロスは坪数から都度出す。
+ */
+const MARKET_SOURCES = [['marketIsoge', 'ISOGE'], ['marketMrev', 'マンレビ']];
+
+function offerView(mark, rerender, all = store.rooms) {
+  const terms = planTerms();
+  const shown = all.filter((r) =>
+    (!ui.offer.filter.status || r.status === ui.offer.filter.status)
+    && (!ui.offer.filter.offerOnly || r.offerPrice != null));
+  const rows = shown.map((r) => {
+    const b = store.building(r.buildingId);
+    const d = derive(r, b, terms);
+    const t = { ...terms, ...(r.loan || {}) };
+    const offer = r.offerPrice ?? null;
+    const base = offer ?? r.price ?? null;
+    return {
+      r, b, d, t, offer,
+      offerTsubo: offer != null && d.tsubo ? offer / d.tsubo : null,
+      // 諸費用は指値に対して出す。指値がまだ無い部屋は売り出し価格で見る
+      fees: base == null ? null : (base * (Number(t.costRate) || 0)) / 100 + (Number(t.costFixed) || 0),
+      feesOnOffer: offer != null,
+    };
+  });
+  // 並び替え。空の項目は向きに関わらず末尾に送る。
+  // 相場や指値が入っていない部屋が上に来ると、比べたい行が押し下げられるため。
+  const value = (x, key) => {
+    if (key === 'name') return `${x.b?.name ?? ''} ${x.r.label}`;
+    if (key === 'age') return x.d.ageYears;
+    if (key === 'floor') return x.r.floor;
+    if (key === 'area') return x.r.area;
+    if (key === 'price') return x.r.price;
+    if (key === 'offer') return x.offer ?? x.r.price;
+    if (key === 'tsubo') return x.d.tsuboPrice;
+    if (key === 'offerTsubo') return x.offerTsubo;
+    if (key === 'fees') return x.fees;
+    if (key === 'running') return x.d.kanriShuzen;
+    for (const [mk] of MARKET_SOURCES) {
+      const m = x.r[mk] ?? null;
+      if (key === mk) return m;
+      if (key === `${mk}:gross`) return m != null && x.d.tsubo ? m * x.d.tsubo : null;
+      // 差で並べるときは、売出より指値のほうが判断に使う数字なので指値側を見る
+      if (key === `${mk}:gap`) return m != null && x.offerTsubo != null ? m - x.offerTsubo : null;
+    }
+    return null;
+  };
+  const { key: sortKey, dir } = ui.offer.sort;
+  // 指値や相場を打っている最中は並びを固定する。1文字ごとに並び替えると、
+  // 入力中の行が表の中で動いてしまい、どこを打っているのか分からなくなる。
+  const typing = /^(offer|market)/.test(document.activeElement?.dataset?.fkey ?? '');
+  if (typing && ui.offer.lastOrder) {
+    const at = new Map(ui.offer.lastOrder.map((id, i) => [id, i]));
+    rows.sort((a, b) => (at.get(a.r.id) ?? 1e9) - (at.get(b.r.id) ?? 1e9));
+  } else {
+    rows.sort((a, b) => {
+      const va = value(a, sortKey); const vb = value(b, sortKey);
+      const ea = va == null || Number.isNaN(va); const eb = vb == null || Number.isNaN(vb);
+      if (ea || eb) return ea && eb ? 0 : (ea ? 1 : -1);
+      if (typeof va === 'string') return dir === 'asc' ? va.localeCompare(vb, 'ja') : vb.localeCompare(va, 'ja');
+      return dir === 'asc' ? va - vb : vb - va;
+    });
+    ui.offer.lastOrder = rows.map((x) => x.r.id);
+  }
+
+  // 名前と「安いほうが良い」項目は昇順から、相場や差は大きいほうから見たい
+  const ASC_FIRST = new Set(['name', 'age', 'floor', 'price', 'offer', 'tsubo', 'offerTsubo', 'fees', 'running']);
+  const sortTh = (key, title, sub, cls = null) => el('th', {
+    class: [cls, 'sortable', sortKey === key ? 'is-sorted' : null].filter(Boolean).join(' '),
+    onclick: () => {
+      ui.offer.sort = sortKey === key
+        ? { key, dir: dir === 'asc' ? 'desc' : 'asc' }
+        : { key, dir: ASC_FIRST.has(key) ? 'asc' : 'desc' };
+      rerender();
+    },
+  }, el('div', { class: 'thsub' },
+    el('b', {}, title, el('span', { class: 'sortmark' },
+      sortKey === key ? (dir === 'asc' ? '▲' : '▼') : '')),
+    el('span', {}, sub)));
+
+  const oku = (v) => (v == null ? '—' : `${(v / 10000).toFixed(3)}億`);
+  const man = (v) => (v == null ? '—' : `${fmt.man1(Math.round(v))}万`);
+  const signed = (v) => (v == null
+    ? el('span', { class: 'muted' }, '—')
+    : el('span', { class: v >= 0 ? 'pos' : 'neg' }, `${v >= 0 ? '+' : '▲'}${fmt.n(Math.abs(v), 0)}`));
+
+  /** 相場1つ分のセル3つ。坪単価・グロス・差（売出と指値）を並べる */
+  const marketCells = ({ r, d, offerTsubo }, key) => {
+    const m = r[key] ?? null;
+    const gross = m != null && d.tsubo ? m * d.tsubo : null;
+    return [
+      el('td', { class: 'inputcell' }, numberInput({
+        value: m == null ? null : Number(m.toFixed(1)),
+        cls: 'lpitem-input', fkey: `${key}-${r.id}`,
+        onInput: (num) => { r[key] = num; mark(); },
+      })),
+      el('td', { class: 'inputcell' }, d.tsubo
+        ? numberInput({
+          value: gross == null ? null : Math.round(gross),
+          cls: 'lpitem-input', fkey: `${key}g-${r.id}`,
+          onInput: (num) => { r[key] = num == null ? null : num / d.tsubo; mark(); },
+        })
+        : el('span', { class: 'muted' }, '—')),
+      el('td', {},
+        el('div', { class: 'diffline' }, el('span', { class: 'dk' }, '売出'),
+          signed(m != null && d.tsuboPrice != null ? m - d.tsuboPrice : null)),
+        el('div', { class: 'diffline' }, el('span', { class: 'dk' }, '指値'),
+          signed(m != null && offerTsubo != null ? m - offerTsubo : null))),
+    ];
+  };
+
+  const body = el('tbody', {}, rows.map((row) => {
+    const { r, b, d, t, offer, offerTsubo, fees, feesOnOffer } = row;
+    return el('tr', {},
+      el('td', { class: 'lab' },
+        el('label', { class: 'pickcell' },
+          el('input', {
+            type: 'checkbox', checked: isPicked(r.id) ? '' : null,
+            onchange: (e) => { togglePick(r.id, e.target.checked); rerender(); },
+          }),
+          el('span', {}, `${b?.name ?? ''} ${r.label}`))),
+      el('td', {}, d.ageYears != null ? `築${d.ageYears}年` : '—'),
+      el('td', {}, r.floor != null ? `${r.floor}F` : '—'),
+      el('td', {}, r.area != null ? `${r.area}㎡` : '—'),
+      el('td', {}, oku(r.price)),
+      el('td', { class: 'inputcell' }, numberInput({
+        value: offer, cls: 'lpitem-input', fkey: `offer-${r.id}`,
+        onInput: (num) => { r.offerPrice = num; mark(); },
+      })),
+      el('td', { class: 'muted' }, man(d.tsuboPrice)),
+      el('td', { class: offerTsubo != null ? 'best' : 'muted' }, man(offerTsubo)),
+      ...MARKET_SOURCES.flatMap(([key]) => marketCells(row, key)),
+      el('td', { class: feesOnOffer ? null : 'muted' }, man(fees)),
+      el('td', {}, d.kanriShuzen != null ? `${fmt.n(d.kanriShuzen, 2)}万` : '—'),
+    );
+  }));
+
+  const t0 = terms;   // 見出しに出す諸費用の条件。試算金利の上乗せと同じものを使う
+  return el('div', {},
+    el('div', { class: 'section' },
+      el('h3', {}, '指値の検討'),
+    el('div', { class: 'toolbar' },
+      select(ui.offer.filter.status, [['', 'すべての状態'], ...STATUSES.map((v) => [v, v])],
+        (v) => { ui.offer.filter.status = v; rerender(); }),
+      toggle('指値を入れた部屋だけ', ui.offer.filter.offerOnly,
+        (v) => { ui.offer.filter.offerOnly = v; rerender(); }),
+      el('span', { class: 'tiny muted' },
+        rows.length === all.length ? `${all.length}室` : `${rows.length} / ${all.length}室`)),
+    el('div', { class: 'tablewrap' },
+      el('table', { class: 'cmp offertbl' },
+        el('thead', {}, el('tr', {},
+          sortTh('name', '物件', '', 'lab'),
+          sortTh('age', '築年数', ''),
+          sortTh('floor', '階', ''),
+          sortTh('area', '広さ', ''),
+          sortTh('price', '現価格', '売り出し'),
+          sortTh('offer', '指値', '万円'),
+          sortTh('tsubo', '元坪', '現価格 ÷ 坪'),
+          sortTh('offerTsubo', '指値坪', '指値 ÷ 坪'),
+          ...MARKET_SOURCES.flatMap(([mk, label]) => [
+            sortTh(mk, `${label} 坪`, '万円/坪'),
+            sortTh(`${mk}:gross`, `${label} 価格`, '相場坪 × 坪数'),
+            sortTh(`${mk}:gap`, `${label}との差`, '＋ほど相場より安い'),
+          ]),
+          sortTh('fees', '諸費用', `指値の${t0.costRate}%${t0.costFixed ? ` ＋ ${t0.costFixed}万` : ''}`),
+          sortTh('running', '管理＋修繕', '月額'),
+        )),
+        body))),
+    el('div', { class: 'toolbar', style: 'margin-top:12px' },
+      el('button', {
+        class: 'btn btn-sm',
+        onclick: () => { location.hash = '#/compare'; },
+      }, '選んだ部屋を比較で見る')),
+  );
+}
+

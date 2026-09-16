@@ -332,12 +332,11 @@ const screens = [
   }],
   ['グラフ（指値あり）', lp('graph')],
   ['売却（指値あり）', () => { lp('sale')(); room.offerPrice = null; }],
-  ['内見チェック', () => mods['viewing-view'].renderViewing(stubEl(), () => {}, 'check')],
-  ['内見の記録', () => mods['viewing-view'].renderViewing(stubEl(), () => {}, 'note')],
-  ['指値', () => mods['viewing-view'].renderViewing(stubEl(), () => {}, 'offer')],
+  ['内見（チェックと記録）', () => mods['viewing-view'].renderViewing(stubEl(), () => {})],
+  ['指値', lp('offer')],
   ['指値（部屋を選んだ状態）', () => {
     for (const x of store.data.rooms.slice(0, 2)) mods.views.togglePick(x.r?.id ?? x.id, true);
-    mods['viewing-view'].renderViewing(stubEl(), () => {}, 'offer');
+    lp('offer')();
   }],
   ['比較（指値・相場つき）', () => mods.views.renderCompare(stubEl())],
   // 相場タブ。3種類とも0件の状態と、入っている状態の両方を通す
@@ -703,12 +702,11 @@ const screens = [
       // 条件を変えると、内見と地図の中身も一緒に絞られる
       Object.assign(f.unitUI, saved, { listing: 'all', own: '検討中', area: '存在しない駅' });
       f.resetDraft();
-      mods['viewing-view'].renderViewing(stubEl(), () => {}, 'check');
-      mods['viewing-view'].renderViewing(stubEl(), () => {}, 'offer');
+      mods['viewing-view'].renderViewing(stubEl(), () => {});
       mods.views.renderMap(stubEl());
       Object.assign(f.unitUI, saved, { listing: 'all', own: 'all' });
       f.resetDraft();
-      mods['viewing-view'].renderViewing(stubEl(), () => {}, 'offer');
+      mods['viewing-view'].renderViewing(stubEl(), () => {});
       mods.views.renderMap(stubEl());
     } finally {
       Object.assign(f.unitUI, saved);
@@ -839,10 +837,34 @@ const screens = [
     Object.assign(u, saved);
   }],
   ['指値（絞り込み）', () => {
-    const v = mods['viewing-view'];
-    v.viewingUI.filter = { status: '検討中', offerOnly: true };
-    v.renderViewing(stubEl(), () => {}, 'offer');
-    v.viewingUI.filter = { status: '', offerOnly: false };
+    const v = mods['lifeplan-view'];
+    v.lifeplanUI.offer.filter = { status: '検討中', offerOnly: true };
+    lp('offer')();
+    v.lifeplanUI.offer.filter = { status: '', offerOnly: false };
+  }],
+  ['申込検討は本命にまとまっている', () => {
+    const { STATUSES } = mods.util;
+    if (STATUSES.includes('申込検討')) throw new Error('申込検討が残っている');
+    const { migrate } = mods.migrate;
+    const out = migrate({ schemaVersion: 23, rooms: [{ status: '申込検討' }] });
+    if (out.rooms[0].status !== '本命') throw new Error('申込検討が本命に移っていない');
+    if (store.rooms.some((r) => !STATUSES.includes(r.status))) {
+      throw new Error('選択肢に無いステータスの部屋が残っている');
+    }
+  }],
+  ['古いリンクを踏んでも迷子にならない', () => {
+    const { parseHash } = mods.main;
+    const at = (hash) => { location.hash = hash; return parseHash(); };
+    const offer = at('#/viewing/offer');
+    if (offer.view !== 'plan' || offer.id !== 'offer') {
+      throw new Error(`指値が ${offer.view}/${offer.id} に行っている`);
+    }
+    for (const hash of ['#/viewing/check', '#/viewing/note', '#/viewing']) {
+      const r = at(hash);
+      if (r.view !== 'viewing' || r.id !== null) throw new Error(`${hash} が ${r.view}/${r.id}`);
+    }
+    if (at('#/analysis').view !== 'market') throw new Error('分析が相場に飛んでいない');
+    location.hash = '';
   }],
 ];
 
