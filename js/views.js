@@ -176,22 +176,43 @@ function buildingSorter(key) {
 }
 
 /**
- * この部屋の売り出し履歴。建物・階・専有面積が同じ行を並べる。
- * 売買では部屋番号が出ないので、同じ部屋かどうかはこの3つで決める。
+ * この部屋の売り出し履歴。建物・階・専有面積が同じ行を、向きごとに分けて並べる。
+ *
+ * 売買では部屋番号が出ないので、同じ部屋かどうかは階と専有面積で見るしかない。
+ * ただしタワーは同じ階に同じ広さの部屋が複数あるので、それだけだと別の部屋が
+ * 混ざり、「途中で値上げした」ように見えてしまう。向きで分けて、どれが自分の
+ * 部屋かは向き・間取り・特徴を見て判断してもらう。
  */
 function unitHistorySection(r, b) {
-  const rows = unitHistory(r, b);
-  if (!rows.length) {
+  const groups = unitHistory(r);
+  if (!groups.length) {
     return section('この部屋の売り出し履歴',
       el('p', { class: 'tiny muted' },
         store.marketOf(r.buildingId)
-          ? '同じ階・同じ専有面積の売り出しは記録にありません。'
-            + '（階数と専有面積が入っていないと突き合わせできません）'
+          ? `同じ階・同じ専有面積（${r.floor ?? '—'}階・${fmt.sqm(r.area)}）の売り出しは記録にありません。`
+            + '階数と専有面積が入っていないと突き合わせできません。'
           : '読み込み中…'));
   }
+  const many = groups.length > 1;
+  return section('この部屋の売り出し履歴',
+    el('p', { class: 'tiny muted' },
+      `${r.floor ?? '—'}階・${fmt.sqm(r.area)} の売り出しを集めています。`,
+      many
+        ? '同じ階に同じ広さの部屋が複数あるため、向きで分けています。'
+          + 'どれが自分の部屋かは、向き・間取り・特徴で確かめてください。'
+        : ''),
+    groups.map(({ direction, rows }) => unitHistoryTable(direction, rows, r, many)));
+}
+
+function unitHistoryTable(direction, rows, r, showHead) {
   const prices = rows.map((x) => x.price).filter(Number.isFinite);
   const last = rows.find((x) => !isOpenRow(x));
-  return section('この部屋の売り出し履歴',
+  return el('div', { style: 'margin-top:10px' },
+    showHead
+      ? el('div', { class: 'bgroup-head' },
+        el('span', { class: 'bgroup-name' }, `${direction}向き`),
+        el('span', { class: 'tiny muted' }, `${rows.length}件`))
+      : null,
     el('div', { class: 'chart-foot' },
       el('span', {}, '記録 ', el('b', {}, `${rows.length}件`)),
       prices.length ? el('span', {}, `最高 ${fmt.man(Math.max(...prices))}`) : null,
@@ -204,7 +225,8 @@ function unitHistorySection(r, b) {
       el('table', { class: 'cmp valuetable' },
         el('thead', {}, el('tr', {},
           el('th', { class: 'lab' }, '掲載'), el('th', {}, '価格'), el('th', {}, '坪単価'),
-          el('th', {}, '値動き'), el('th', {}, '期間'), el('th', {}, '状態'))),
+          el('th', {}, '値動き'), el('th', {}, '間取り'), el('th', {}, '特徴'),
+          el('th', {}, '期間'), el('th', {}, '状態'))),
         el('tbody', {}, rows.map((x) => el('tr', {},
           el('td', { class: 'lab' }, ymLabel(x.listedYM)),
           el('td', {}, fmt.man(x.price)),
@@ -212,6 +234,8 @@ function unitHistorySection(r, b) {
           el('td', {}, (x.priceHistory || []).length
             ? (x.priceHistory || []).map((h) => `${ymLabel(h.ym)} ${fmt.n(h.price, 0)}`).join(' → ')
             : '—'),
+          el('td', {}, x.layout || '—'),
+          el('td', {}, x.feature || '—'),
           el('td', {}, monthsOf(x) != null ? `${fmt.n(monthsOf(x), 0)}か月` : '—'),
           el('td', {}, isOpenRow(x) ? '売出中' : `${ymLabel(x.closedYM)} 終了`),
         ))))));

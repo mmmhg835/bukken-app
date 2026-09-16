@@ -461,13 +461,20 @@ const screens = [
     const u = mods.units;
     const b = store.data.buildings[0];
     const room = store.addRoom(b.id, { label: '4階', floor: 4, area: 75.67 });
-    const hist = u.unitHistory(room);
+    const groups = u.unitHistory(room);
+    const hist = groups.flatMap((g) => g.rows);
     if (!hist.length) throw new Error('同じ部屋の履歴が拾えていない');
     if (!hist.every((x) => x.floor === 4)) throw new Error('別の階が混ざっている');
     if (!hist.some((x) => (x.priceHistory || []).length)) throw new Error('値動きが残っていない');
+    // 向きが違う行は別の部屋として分ける（同じ階に同じ広さの部屋が複数あるため）
+    if (new Set(hist.map((x) => x.direction || '')).size !== groups.length) {
+      throw new Error('向きで分けられていない');
+    }
     // 階か面積が違えば別の部屋
     const other = store.addRoom(b.id, { label: '9階', floor: 9, area: 75.67 });
-    if (u.unitHistory(other).some((x) => x.floor === 4)) throw new Error('別の部屋を混ぜている');
+    if (u.unitHistory(other).flatMap((g) => g.rows).some((x) => x.floor === 4)) {
+      throw new Error('別の部屋を混ぜている');
+    }
     // 部屋ページが履歴つきで描けること
     mods.views.renderRoom(stubEl(), room.id);
     store.data.rooms = store.data.rooms.filter((x) => x.id !== room.id && x.id !== other.id);
