@@ -144,24 +144,27 @@ function noteSection(room, building) {
 }
 
 /* ===== 指値 ===== */
+
+/**
+ * 相場の出どころ。同じ住戸でもサイトによって値が違うので、どちらと比べたのかを
+ * 残せるように枠を分けている。持つのは坪単価だけで、グロスは坪数から都度出す。
+ */
+const MARKET_SOURCES = [['marketIsoge', 'ISOGE'], ['marketMrev', 'マンレビ']];
+
 function offerSection(mark) {
   const terms = store.loanTerms;
   const rows = store.rooms.map((r) => {
     const b = store.building(r.buildingId);
     const d = derive(r, b, terms);
+    const t = { ...terms, ...(r.loan || {}) };
     const offer = r.offerPrice ?? null;
-    const offerTsubo = offer != null && d.tsubo ? offer / d.tsubo : null;
-    const market = r.marketTsubo ?? null;
-    // 相場はグロスでも坪単価でも入れられるようにするが、持つのは坪単価だけ。
-    // 両方を保存すると、面積を直したときに片方だけ古いままになる。
-    const marketGross = market != null && d.tsubo ? market * d.tsubo : null;
-    // どちらの差も「相場 − こちらの値」で揃える。＋ほど相場より安く買えるという向き。
-    // 売出のほうの差が無いと、値引き率が大きいのに相場より高いという見え方の
-    // 理由（売出価格がそもそも相場から離れている）が読み取れない。
+    const base = offer ?? r.price ?? null;
     return {
-      r, b, d, offer, offerTsubo, market, marketGross,
-      askGap: market != null && d.tsuboPrice != null ? market - d.tsuboPrice : null,
-      gap: market != null && offerTsubo != null ? market - offerTsubo : null,
+      r, b, d, t, offer,
+      offerTsubo: offer != null && d.tsubo ? offer / d.tsubo : null,
+      // 諸費用は指値に対して出す。指値がまだ無い部屋は売り出し価格で見る
+      fees: base == null ? null : (base * (Number(t.costRate) || 0)) / 100 + (Number(t.costFixed) || 0),
+      feesOnOffer: offer != null,
     };
   });
   // 指値（無ければ売り出し価格）の安い順。いくらで出すかを上から並べて見る
@@ -169,39 +172,56 @@ function offerSection(mark) {
 
   const oku = (v) => (v == null ? '—' : `${(v / 10000).toFixed(3)}億`);
   const man = (v) => (v == null ? '—' : `${fmt.man1(Math.round(v))}万`);
+  const signed = (v) => (v == null
+    ? el('span', { class: 'muted' }, '—')
+    : el('span', { class: v >= 0 ? 'pos' : 'neg' }, `${v >= 0 ? '+' : '▲'}${fmt.n(Math.abs(v), 0)}`));
 
-  const diffCell = (v) => el('td', { class: v == null ? 'muted' : v >= 0 ? 'pos' : 'neg' },
-    v == null ? '—' : `${v >= 0 ? '+' : '▲'}${fmt.n(Math.abs(v), 0)}万/坪`);
+  /** 相場1つ分のセル3つ。坪単価・グロス・差（売出と指値）を並べる */
+  const marketCells = ({ r, d, offerTsubo }, key) => {
+    const m = r[key] ?? null;
+    const gross = m != null && d.tsubo ? m * d.tsubo : null;
+    return [
+      el('td', { class: 'inputcell' }, numberInput({
+        value: m == null ? null : Number(m.toFixed(1)),
+        cls: 'lpitem-input', fkey: `${key}-${r.id}`,
+        onInput: (num) => { r[key] = num; mark(); },
+      })),
+      el('td', { class: 'inputcell' }, d.tsubo
+        ? numberInput({
+          value: gross == null ? null : Math.round(gross),
+          cls: 'lpitem-input', fkey: `${key}g-${r.id}`,
+          onInput: (num) => { r[key] = num == null ? null : num / d.tsubo; mark(); },
+        })
+        : el('span', { class: 'muted' }, '—')),
+      el('td', {},
+        el('div', { class: 'diffline' }, el('span', { class: 'dk' }, '売出'),
+          signed(m != null && d.tsuboPrice != null ? m - d.tsuboPrice : null)),
+        el('div', { class: 'diffline' }, el('span', { class: 'dk' }, '指値'),
+          signed(m != null && offerTsubo != null ? m - offerTsubo : null))),
+    ];
+  };
 
-  const body = el('tbody', {}, rows.map(({ r, b, d, offer, offerTsubo, market, marketGross, askGap, gap }) => el('tr', {},
-    el('td', { class: 'lab' }, `${b?.name ?? ''} ${r.label}`),
-    el('td', {}, d.ageYears != null ? `築${d.ageYears}年` : '—'),
-    el('td', {}, r.floor != null ? `${r.floor}F` : '—'),
-    el('td', {}, r.area != null ? `${r.area}㎡` : '—'),
-    el('td', {}, oku(r.price)),
-    el('td', { class: 'inputcell' }, numberInput({
-      value: offer, cls: 'lpitem-input', fkey: `offer-${r.id}`,
-      onInput: (num) => { r.offerPrice = num; mark(); },
-    })),
-    el('td', { class: 'muted' }, man(d.tsuboPrice)),
-    el('td', { class: offerTsubo != null ? 'best' : 'muted' }, man(offerTsubo)),
-    el('td', { class: 'inputcell' }, numberInput({
-      value: market == null ? null : Number(market.toFixed(1)),
-      cls: 'lpitem-input', fkey: `market-${r.id}`,
-      onInput: (num) => { r.marketTsubo = num; mark(); },
-    })),
-    el('td', { class: 'inputcell' }, d.tsubo
-      ? numberInput({
-        value: marketGross == null ? null : Math.round(marketGross),
-        cls: 'lpitem-input', fkey: `mgross-${r.id}`,
-        onInput: (num) => { r.marketTsubo = num == null ? null : num / d.tsubo; mark(); },
-      })
-      : el('span', { class: 'muted' }, '—')),
-    diffCell(askGap),
-    diffCell(gap),
-    el('td', {}, d.kanriShuzen != null ? `${fmt.n(d.kanriShuzen, 2)}万` : '—'),
-  )));
+  const body = el('tbody', {}, rows.map((row) => {
+    const { r, b, d, t, offer, offerTsubo, fees, feesOnOffer } = row;
+    return el('tr', {},
+      el('td', { class: 'lab' }, `${b?.name ?? ''} ${r.label}`),
+      el('td', {}, d.ageYears != null ? `築${d.ageYears}年` : '—'),
+      el('td', {}, r.floor != null ? `${r.floor}F` : '—'),
+      el('td', {}, r.area != null ? `${r.area}㎡` : '—'),
+      el('td', {}, oku(r.price)),
+      el('td', { class: 'inputcell' }, numberInput({
+        value: offer, cls: 'lpitem-input', fkey: `offer-${r.id}`,
+        onInput: (num) => { r.offerPrice = num; mark(); },
+      })),
+      el('td', { class: 'muted' }, man(d.tsuboPrice)),
+      el('td', { class: offerTsubo != null ? 'best' : 'muted' }, man(offerTsubo)),
+      ...MARKET_SOURCES.flatMap(([key]) => marketCells(row, key)),
+      el('td', { class: feesOnOffer ? null : 'muted' }, man(fees)),
+      el('td', {}, d.kanriShuzen != null ? `${fmt.n(d.kanriShuzen, 2)}万` : '—'),
+    );
+  }));
 
+  const t0 = store.loanTerms;
   return el('div', { class: 'section' },
     el('h3', {}, '指値の検討'),
     el('div', { class: 'tablewrap' },
@@ -215,10 +235,12 @@ function offerSection(mark) {
           el('th', {}, thSub('指値', '万円')),
           el('th', {}, thSub('元坪', '現価格 ÷ 坪')),
           el('th', {}, thSub('指値坪', '指値 ÷ 坪')),
-          el('th', {}, thSub('相場坪', '万円/坪')),
-          el('th', {}, thSub('相場価格', '相場坪 × 坪数')),
-          el('th', {}, thSub('売出と相場', '＋ほど相場より安い')),
-          el('th', {}, thSub('指値と相場', '＋ほど相場より安い')),
+          ...MARKET_SOURCES.flatMap(([, label]) => [
+            el('th', {}, thSub(`${label} 坪`, '万円/坪')),
+            el('th', {}, thSub(`${label} 価格`, '相場坪 × 坪数')),
+            el('th', {}, thSub(`${label}との差`, '＋ほど相場より安い')),
+          ]),
+          el('th', {}, thSub('諸費用', `指値の${t0.costRate}%${t0.costFixed ? ` ＋ ${t0.costFixed}万` : ''}`)),
           el('th', {}, thSub('管理＋修繕', '月額')),
         )),
         body)),

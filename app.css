@@ -632,3 +632,7 @@ table.cmp tr.is-current td.lab{background:var(--accent-soft)}
 /* 表の中の入力欄は、数字の列と同じ右寄せで並べる */
 .offertbl td.inputcell{padding:5px 8px}
 .offertbl td.inputcell input{width:92px;text-align:right}
+/* 相場との差は、売出と指値の2本を1つのセルに縦に並べる。
+   出どころが2つあるので、差を列に分けると表が横に伸びすぎるため */
+.diffline{display:flex;gap:6px;justify-content:flex-end;align-items:baseline;white-space:nowrap}
+.diffline .dk{font-size:10.5px;color:var(--text-3);font-weight:600}

@@ -6,7 +6,7 @@ import { buildingDefaults, SPEC_GROUPS, BUILDING_EQUIPMENT } from './spec.js';
 import { defaultLifeplan, categoryOf } from './lifeplan.js';
 import { DEFAULT_SALE } from './sale.js';
 
-export const CURRENT_SCHEMA = 18;
+export const CURRENT_SCHEMA = 19;
 
 export function migrate(data) {
   let d = structuredClone(data);
@@ -27,6 +27,7 @@ export function migrate(data) {
   if (d.schemaVersion < 16) d = v15ToV16(d);
   if (d.schemaVersion < 17) d = v16ToV17(d);
   if (d.schemaVersion < 18) d = v17ToV18(d);
+  if (d.schemaVersion < 19) d = v18ToV19(d);
   d.settings ||= {};
   d.settings.loan = { ...DEFAULT_TERMS, ...(d.settings.loan || {}) };
   d.settings.places ||= [];   // 職場・駅など、地図上の参照地点
@@ -280,13 +281,30 @@ function v16ToV17(d) {
  */
 function v17ToV18(d) {
   for (const r of d.rooms || []) {
-    r.marketTsubo ??= null;    // 相場の坪単価（万円/坪）
-    r.marketSource ??= '';     // どこの相場か（マンションレビュー・ISOGE など）
+    r.marketTsubo ??= null;    // 相場の坪単価（v19 で出どころ別に分ける）
+    r.marketSource ??= '';
     r.viewingAt ??= null;      // 内見した日
     r.viewingChecks ??= {};    // 項目名 → 'ok' | 'bad'
     r.viewingNote ??= '';      // 内見の所感
   }
   d.schemaVersion = 18;
+  return d;
+}
+
+/**
+ * v19: 相場坪単価を出どころごとに分ける。
+ * ISOGE とマンションレビューでは同じ住戸でも相場が食い違うため、
+ * 1つの枠に入れると「どちらの相場と比べているのか」が分からなくなる。
+ * v18 までの marketTsubo は ISOGE の値として入れていたので、そのまま移す。
+ */
+function v18ToV19(d) {
+  for (const r of d.rooms || []) {
+    r.marketIsoge ??= r.marketTsubo ?? null;
+    r.marketMrev ??= null;
+    delete r.marketTsubo;
+    delete r.marketSource;
+  }
+  d.schemaVersion = 19;
   return d;
 }
 
