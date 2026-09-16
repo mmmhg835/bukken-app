@@ -565,6 +565,41 @@ const screens = [
       Object.assign(u, saved);
     }
   }],
+  ['売出：同じ部屋の出し直しを1件にまとめる', () => {
+    const v = mods['market-view'];
+    const u = v.marketUI;
+    const saved = { ...u };
+    try {
+      for (const attr of ['year', 'area', 'floor', 'age']) {
+        Object.assign(u, saved, { attr, latestOnly: true });
+        v.renderMarket(stubEl(), () => {}, 'sale');
+        Object.assign(u, saved, { attr, latestOnly: false });
+        v.renderMarket(stubEl(), () => {}, 'sale');
+      }
+      // まとめたあとの件数が、まとめる前より増えることはない
+      const rows = store.allBuildings.flatMap((b) => store.listingsOf(b.id));
+      const key = (x) => [x.buildingId, x.floor ?? '',
+        x.area == null ? '' : x.area.toFixed(2), x.direction || '',
+        mods.units.layoutLabel(x.layout)].join('|');
+      const keys = new Set(rows.map(key));
+      if (keys.size > rows.length) throw new Error('まとめたのに件数が増えている');
+      // 同じ鍵の行は、いちばん新しい掲載だけが残る
+      const groups = new Map();
+      for (const x of rows) {
+        const k = key(x);
+        if (!groups.has(k)) groups.set(k, []);
+        groups.get(k).push(x);
+      }
+      const many = [...groups.values()].find((g) => g.length > 1);
+      if (!many) return;   // 出し直しが1件も無いデータなら見るものが無い
+      const newest = many.reduce((a, b) => (String(a.listedYM) > String(b.listedYM) ? a : b));
+      if (many.some((x) => String(x.listedYM) > String(newest.listedYM))) {
+        throw new Error('残した行がいちばん新しくない');
+      }
+    } finally {
+      Object.assign(u, saved);
+    }
+  }],
   ['相場（絞り込み）', () => {
     const v = mods['market-view'];
     const u = v.marketUI;

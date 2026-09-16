@@ -203,6 +203,7 @@ export function scatterChart(series, opts = {}) {
     maxPoints = MAX_POINTS,
     line = false,        // 点を線でつなぐ（推移を追うとき）
     onPick = null,       // 点を押したときに呼ぶ。押した点の中身を画面側で使う
+    onOpen = null,       // 点を2回押したときに呼ぶ。その部屋を開くのに使う
   } = opts;
   // 多すぎる系列は等間隔で間引く。近似直線は呼ぶ側が全件で出しているので影響しない
   const total = series.reduce((s, x) => s + x.points.length, 0);
@@ -397,6 +398,14 @@ export function scatterChart(series, opts = {}) {
       if (pinned) showTip(d); else hideTip();
       if (onPick) onPick(pinned ? d.p : null, pinned ? d.name : null);
     });
+    // 2回押したらその部屋を開く。吹き出しで中身を見て、そのまま入れるように
+    if (onOpen) {
+      hit.addEventListener('dblclick', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        onOpen(d.p, d.name);
+      });
+    }
   }
   svg.addEventListener('pointerleave', () => { if (!pinned) hideTip(); });
   svg.addEventListener('click', () => { pinned = null; hideTip(); });

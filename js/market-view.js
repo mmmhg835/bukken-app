@@ -4,7 +4,7 @@
 // 売り出しに対して同じことをするほうが、相場の話としては筋が通るため。
 // 単位は売買が万円、賃貸が円。混ぜないこと。
 import { store } from './store.js';
-import { el, mount, fmt, derive } from './util.js';
+import { el, mount, fmt, derive, toast } from './util.js';
 import { select, segmented, toggle, controlRow, numberInput } from './ui.js';
 import {
   scatterChart, chartLegend, histogramChart, thin,
@@ -18,6 +18,7 @@ import {
 import {
   AGE_BANDS, WALK_BANDS, FIRM_KEYS, FIRM_LABEL,
   stationsOf, ageOf, walkOf, inBand, options, layoutLabel, nameHit,
+  allUnits, promote,
 } from './units.js';
 import { RENOVATION } from './spec.js';
 import {
@@ -45,6 +46,8 @@ const ui = {
   building: 'all', from: 'all', to: 'all', listing: 'all',
   metric: 'tsubo', attr: 'year', group: 'ageBand', group2: 'none',
   fit: true, names: true, more: false,
+  // 同じ部屋が出し直されるたびに点が増えるので、既定では最新の1件だけ描く
+  latestOnly: true,
   // 推移の粒度と、点にまとめる下限の件数。押した点は pick に覚える
   step: 'month', minCount: 3, pick: null, span: 7,
   // 凡例を押して消した分類。線が重なって読めないときに落とす
@@ -508,7 +511,10 @@ function axisControls(rerender, { attr = false, group = false, groupLabel = '色
           select(ui.group2, group2Options(),
             (k) => { ui.group2 = k; ui.hide = []; rerender(); }, 'picksel'),
           fit ? toggle('近似直線と相場の幅', ui.fit, (v) => { ui.fit = v; rerender(); }) : null,
-          fit ? toggle('物件名を出す', ui.names, (v) => { ui.names = v; rerender(); }) : null)) : null,
+          fit ? toggle('物件名を出す', ui.names, (v) => { ui.names = v; rerender(); }) : null,
+          // 出し直した分まで並べると、同じ部屋が何個も点になる
+          fit ? toggle('同じ部屋は最新だけ', ui.latestOnly,
+            (v) => { ui.latestOnly = v; rerender(); }) : null)) : null,
     ));
 }
 
@@ -555,11 +561,57 @@ function colorOf(names, group = null) {
   return map;
 }
 
+/**
+ * 点を2回押したときに、その部屋を開く。
+ *
+ * グラフで見つけた部屋をそのまま検討に載せたい、という流れを繋ぐ。
+ * 登録済みならその部屋へ。まだなら、いま売り出しに出ている行から登録して開く。
+ * 売り出しが終わっている過去の行は登録しても中身が古いだけなので、建物を開く。
+ */
+function openRoomFromRow(row, b) {
+  if (!b) return;
+  const same = (r) => r.floor === row.floor
+    && r.area != null && row.area != null && Math.abs(r.area - row.area) < 0.05;
+  const unit = allUnits().find((x) => x.b?.id === b.id && same(x.r));
+  if (!unit) {
+    toast(`${b.name} のこの部屋はいま売り出しに出ていません。建物を開きます`);
+    location.hash = `#/b/${b.id}`;
+    return;
+  }
+  const r = unit.r.fromListing ? promote(unit) : unit.r;
+  if (unit.r.fromListing) toast(`${b.name} ${r.label} を登録しました`);
+  location.hash = `#/r/${r.id}`;
+}
+
+/**
+ * 同じ部屋の売り出しを、いちばん新しい1件にまとめる。
+ *
+ * 売れずに引っ込めて出し直すと、そのたびに別の行になる。ガレリアグランデの
+ * 20階は7回出し直していて、点が7つ並んでいた。同じ階に別の部屋があるように
+ * 見えるうえ、近似直線も1部屋を7回数えてしまう。
+ *
+ * 同じ部屋かどうかは、建物・階・専有面積・向き・間取りで見る。間取りまで見るのは、
+ * この5つが揃っていて別の部屋ということはまず無い一方、向きまでしか見ないと
+ * 同じ階・同じ広さ・同じ向きで間取りの違う部屋（1,533組あった）を1つに潰して
+ * しまうため。掲載ごとの 2SLDK / 2LDK のような書き方の揺れは layoutLabel が均す。
+ */
+function latestPerRoom(rows) {
+  const best = new Map();
+  for (const x of rows) {
+    const key = [x.buildingId, x.floor ?? '', x.area == null ? '' : x.area.toFixed(2),
+      x.direction || '', layoutLabel(x.layout)].join('|');
+    const cur = best.get(key);
+    if (!cur || String(x.listedYM || '') > String(cur.listedYM || '')) best.set(key, x);
+  }
+  return [...best.values()];
+}
+
 function scatterSection(rows, buildings, rerender) {
   const metric = MARKET_METRICS[ui.metric], attr = MARKET_ATTRS[ui.attr];
   const group = activeGroup();
+  const plotted = ui.latestOnly ? latestPerRoom(rows) : rows;
   const pts = [];
-  for (const x of rows) {
+  for (const x of plotted) {
     const b = buildingOf(x.buildingId);
     const xv = attr.get(x, b), yv = metric.get(x, b);
     if (!Number.isFinite(xv) || !Number.isFinite(yv)) continue;
@@ -580,7 +632,7 @@ function scatterSection(rows, buildings, rerender) {
     const k = colors.get(p.key) ? p.key : OTHER;
     if (!byKey.has(k)) byKey.set(k, []);
     byKey.get(k).push({
-      x: p.x, y: p.y,
+      x: p.x, y: p.y, row: p.row, b: p.b,
       label: `${p.b?.name ?? ''} ${p.row.floor != null ? `${p.row.floor}階` : ''}`.trim(),
       info: [
         [p.row.layout, p.row.area ? fmt.sqm(p.row.area) : null, p.row.feature || null]
@@ -613,6 +665,7 @@ function scatterSection(rows, buildings, rerender) {
   const chart = scatterChart(series, {
     xLabel: `${attr.label}（${attr.unit}）`, yLabel: `${metric.label}（${metric.unit}）`,
     xTick: attr.tick, height: 360, fit, labels: ui.names,
+    onOpen: (p) => openRoomFromRow(p.row, p.b),
   });
   return el('div', { class: 'section' },
     el('div', { class: 'panel-chart-head' },
@@ -629,11 +682,12 @@ function scatterSection(rows, buildings, rerender) {
         chartLegend(allSeries, chart, { hidden, onToggle: (name) => toggleSeries(name, rerender) }),
         showAllButton(rerender))
       : null,
-    scatterFoot(pts, shownPts.length));
+    el('p', { class: 'tiny muted' }, '点を2回押すと、その部屋を開きます'),
+    scatterFoot(pts, shownPts.length, rows.length));
 }
 
 /** グラフの下に出す要約。点の散らばりを字面でも押さえられるようにする */
-function scatterFoot(pts, drawn = pts.length) {
+function scatterFoot(pts, drawn = pts.length, total = pts.length) {
   const rows = pts.map((p) => p.row);
   // 全件（数万件）を相手にするので、Math.min(...配列) は使えない（引数として展開されて落ちる）
   const range = (vals, f) => {
@@ -648,6 +702,10 @@ function scatterFoot(pts, drawn = pts.length) {
   const tsubo = range(rows.map((r) => tsuboOf(r)), (x) => fmt.n(x, 0));
   return el('div', { class: 'chart-foot' },
     el('span', {}, '表示中 ', el('b', {}, `${pts.length.toLocaleString('ja-JP')}件`)),
+    ui.latestOnly && total > pts.length
+      ? el('span', { class: 'tiny muted' },
+        `同じ部屋の出し直し ${(total - pts.length).toLocaleString('ja-JP')}件をまとめています`)
+      : null,
     drawn < pts.length
       ? el('span', { class: 'tiny muted' },
         `点は${drawn.toLocaleString('ja-JP')}件に間引き（数字は全件）`)
