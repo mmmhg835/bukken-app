@@ -984,7 +984,12 @@ function compareTable(rows) {
       el('button', { class: 'btn btn-sm', onclick: () => go('settings') }, 'ローン条件'),
     ),
 
-    el('div', { class: 'tablewrap' }, el('table', { class: 'cmp' }, thead, body)),
+    // 2〜3件しか選んでいないと、幅いっぱいに引き伸ばされて数字どうしが
+    // 離れ、間に何も無い帯ができる。列数に見合う幅で頭打ちにする。
+    el('div', {
+      class: 'tablewrap',
+      style: `max-width:${190 + rows.length * 215}px`,
+    }, el('table', { class: 'cmp' }, thead, body)),
   );
 }
 
