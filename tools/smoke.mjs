@@ -23,6 +23,8 @@ globalThis.document = {
 globalThis.window = {
   matchMedia: () => ({ matches: false, addEventListener() {} }),
   addEventListener() {}, scrollTo() {}, scrollY: 0,
+  // 一括出力は描き終わってから印刷を呼ぶ。テストでは呼ばれても何もしない
+  print() {},
 };
 globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
 globalThis.indexedDB = { open: () => ({}) };
@@ -365,6 +367,22 @@ const screens = [
   }],
   ...marketTabs('相場'),
   // 相場の絞り込み。条件を変えると通る経路が変わるので、代表的な組み合わせを通す
+  ['一括出力：条件のままレポートを組み立てる', () => {
+    const v = mods['market-view'];
+    const u = v.marketUI;
+    const saved = { ...u };
+    try {
+      // 一括出力から来たとき（描き終わってから印刷を呼ぶ）
+      Object.assign(u, saved, { mine: 'all', autoPrint: true });
+      v.renderMarket(stubEl(), () => {}, 'report');
+      if (u.autoPrint) throw new Error('印刷の予約が消えていない（何度も出てしまう）');
+      // 条件を付けた状態でも組み立てられる
+      Object.assign(u, saved, { mine: 'all', layout: '3LDK', age: '-20', sizeMin: 60, sizeMax: 90 });
+      v.renderMarket(stubEl(), () => {}, 'report');
+    } finally {
+      Object.assign(u, saved);
+    }
+  }],
   ['供給：棒を押してその期間の売り出しを見る', () => {
     const v = mods['market-view'];
     const u = v.marketUI;

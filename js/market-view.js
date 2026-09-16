@@ -54,6 +54,8 @@ const ui = {
   metric: 'tsubo', attr: 'year', group: 'building', fit: true, names: true, more: false,
   // 推移の粒度と、点にまとめる下限の件数。押した点は pick に覚える
   step: 'month', minCount: 3, pick: null, span: 7,
+  // 一括出力から来たときは、描き終わってから保存の画面を出す
+  autoPrint: false,
   // 上限を超えていても読み込むか。押したときだけ立てる
   loadAll: false,
 };
@@ -240,9 +242,10 @@ function buildingFilter(targets, loaded, rows, rerender, hitBuildings = null) {
       searchButton(rerender),
       el('button', {
         class: 'btn btn-sm',
-        title: 'いまの条件のまま、すべての画面を1枚に並べます（印刷からPDFに保存できます）',
-        onclick: () => { location.hash = '#/market/report'; },
-      }, '一括出力'),
+        title: 'いまの条件のまま、すべての画面を並べてPDFにします',
+        // 押したらレポートを組み立て、そのまま保存の画面まで出す
+        onclick: () => { ui.autoPrint = true; location.hash = '#/market/report'; },
+      }, '一括出力（PDF）'),
     ),
     el('div', { class: 'filterbar-row' },
       group('売り出し年', el('div', { class: 'frange' },
@@ -838,6 +841,11 @@ function reportView(rows, buildings, rerender) {
     ['新築', () => newView(buildings)],
   ];
 
+  // グラフを描き終えてから保存の画面を出す。すぐ呼ぶと白いまま印刷される
+  if (ui.autoPrint) {
+    ui.autoPrint = false;
+    setTimeout(() => window.print(), 400);
+  }
   return el('div', { class: 'report' },
     el('div', { class: 'report-head' },
       el('div', {},
@@ -846,7 +854,9 @@ function reportView(rows, buildings, rerender) {
           `${stamp}　対象 ${buildings.length.toLocaleString('ja-JP')}棟`
           + `　売り出し ${rows.length.toLocaleString('ja-JP')}件`)),
       el('div', { class: 'spacer' }),
-      el('button', { class: 'btn btn-primary noprint', onclick: () => window.print() }, 'PDFにする'),
+      el('button', {
+        class: 'btn btn-primary noprint', onclick: () => window.print(),
+      }, 'PDFとして保存'),
       el('button', {
         class: 'btn noprint',
         onclick: () => { location.hash = '#/market'; },
@@ -857,7 +867,8 @@ function reportView(rows, buildings, rerender) {
         ? cond.map(([k, v]) => el('span', { class: 'fchip' }, `${k}：${v}`))
         : el('span', { class: 'tiny muted' }, '指定なし（すべて）')),
     el('p', { class: 'tiny muted noprint' },
-      '「PDFにする」を押すと印刷の画面が出ます。送信先で「PDFに保存」を選んでください。'),
+      '保存の画面が出たら、送信先（プリンター）で「PDFに保存」を選んでください。'
+      + 'タブ1つが1ページになります。'),
     sections.map(([name, build]) => el('div', { class: 'report-sec' },
       el('h3', { class: 'report-sectitle' }, name),
       trimTables(build()))),
