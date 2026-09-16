@@ -155,8 +155,12 @@ function offerSection(mark) {
     // 相場はグロスでも坪単価でも入れられるようにするが、持つのは坪単価だけ。
     // 両方を保存すると、面積を直したときに片方だけ古いままになる。
     const marketGross = market != null && d.tsubo ? market * d.tsubo : null;
+    // どちらの差も「相場 − こちらの値」で揃える。＋ほど相場より安く買えるという向き。
+    // 売出のほうの差が無いと、値引き率が大きいのに相場より高いという見え方の
+    // 理由（売出価格がそもそも相場から離れている）が読み取れない。
     return {
       r, b, d, offer, offerTsubo, market, marketGross,
+      askGap: market != null && d.tsuboPrice != null ? market - d.tsuboPrice : null,
       gap: market != null && offerTsubo != null ? market - offerTsubo : null,
     };
   });
@@ -166,7 +170,10 @@ function offerSection(mark) {
   const oku = (v) => (v == null ? '—' : `${(v / 10000).toFixed(3)}億`);
   const man = (v) => (v == null ? '—' : `${fmt.man1(Math.round(v))}万`);
 
-  const body = el('tbody', {}, rows.map(({ r, b, d, offer, offerTsubo, market, marketGross, gap }) => el('tr', {},
+  const diffCell = (v) => el('td', { class: v == null ? 'muted' : v >= 0 ? 'pos' : 'neg' },
+    v == null ? '—' : `${v >= 0 ? '+' : '▲'}${fmt.n(Math.abs(v), 0)}万/坪`);
+
+  const body = el('tbody', {}, rows.map(({ r, b, d, offer, offerTsubo, market, marketGross, askGap, gap }) => el('tr', {},
     el('td', { class: 'lab' }, `${b?.name ?? ''} ${r.label}`),
     el('td', {}, d.ageYears != null ? `築${d.ageYears}年` : '—'),
     el('td', {}, r.floor != null ? `${r.floor}F` : '—'),
@@ -190,8 +197,8 @@ function offerSection(mark) {
         onInput: (num) => { r.marketTsubo = num == null ? null : num / d.tsubo; mark(); },
       })
       : el('span', { class: 'muted' }, '—')),
-    el('td', { class: gap == null ? 'muted' : gap >= 0 ? 'pos' : 'neg' },
-      gap == null ? '—' : `${gap >= 0 ? '+' : '▲'}${fmt.n(Math.abs(gap), 0)}万/坪`),
+    diffCell(askGap),
+    diffCell(gap),
     el('td', {}, d.kanriShuzen != null ? `${fmt.n(d.kanriShuzen, 2)}万` : '—'),
   )));
 
@@ -210,7 +217,8 @@ function offerSection(mark) {
           el('th', {}, thSub('指値坪', '指値 ÷ 坪')),
           el('th', {}, thSub('相場坪', '万円/坪')),
           el('th', {}, thSub('相場価格', '相場坪 × 坪数')),
-          el('th', {}, thSub('相場との差', '相場坪 − 指値坪')),
+          el('th', {}, thSub('売出と相場', '＋ほど相場より安い')),
+          el('th', {}, thSub('指値と相場', '＋ほど相場より安い')),
           el('th', {}, thSub('管理＋修繕', '月額')),
         )),
         body)),
