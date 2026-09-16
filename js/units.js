@@ -97,9 +97,8 @@ export const AGE_BANDS = [['all', 'すべて'], ...[5, 10, 15, 20, 25, 30, 35, 4
   .map((n) => [`-${n}`, `築${n}年以内`]), ['40-', '築40年超']];
 export const WALK_BANDS = [['all', 'すべて'], ['-5', '5分以内'], ['-10', '10分以内'],
   ['-15', '15分以内'], ['15-', '15分超']];
-/** 最寄駅。「有明テニスの森 / 有明 / 国際展示場」を配列にする */
-export const stationsOf = (b) =>
-  String(b?.stations || '').split('/').map((x) => x.trim()).filter(Boolean);
+// 最寄駅の読み取りは、相場（market.js）からも使うので analysis.js に置いている
+export { stationsOf } from './analysis.js';
 
 // 事業者の4項目。ブランド（プラウド等）と会社は別物なので、選択肢も別に出す
 export const FIRM_KEYS = ['brand', 'developer', 'builder', 'designer'];

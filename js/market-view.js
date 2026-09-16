@@ -685,6 +685,7 @@ function trendView(rows, rerender) {
           ? `${ui.minCount}件以上まとまる期間が無いため、${floor}件以上で描いています。`
           : '',
         'グラフの点を押すと、その期間の売り出しが下に並びます')),
+    ui.group === 'none' || series.length < 2 ? null : growthSection(target, series, metric),
     picked
       ? el('div', { class: 'section' },
         el('div', { class: 'pickhead' },
@@ -710,6 +711,82 @@ function trendView(rows, rerender) {
             el('td', {}, fmt.n(r.avg, 1)),
             el('td', {}, fmt.n(r.min, 0)),
             el('td', {}, fmt.n(r.max, 0)))))))));
+}
+
+/**
+ * 分類ごとの伸び。エリア別に並べて、どこがいちばん上がったかを字面で見る。
+ *
+ * 線の高さ（いくらか）はグラフで分かるが、傾きの差（どれだけ上がったか）は
+ * 目では比べにくい。同じ期間・同じ表示単位で、年平均の伸びを並べて出す。
+ * グラフは線が多いと読めないので8本までだが、表はその外の分類も載せる。
+ */
+const GROWTH_MIN = 10;     // これ未満の件数は、伸び率が跳ねるので順位づけに使わない
+const GROWTH_ROWS = 30;
+
+function growthSection(target, series, metric) {
+  const group = MARKET_GROUPS[ui.group];
+  const byKey = new Map();
+  for (const x of target) {
+    const k = group.get(x, buildingOf(x.buildingId)) ?? '不明';
+    if (!byKey.has(k)) byKey.set(k, []);
+    byKey.get(k).push(x);
+  }
+  const drawn = new Map(series.map((x) => [x.name, x.color]));
+  const all = [...byKey.entries()].map(([name, rows]) => {
+    const { list: years, cagr } = yearly(rows, ui.metric);
+    const first = years[0] || null;
+    const last = years.length > 1 ? years[years.length - 1] : null;
+    return {
+      name, rows: rows.length, cagr, first, last,
+      color: drawn.get(name) || null,
+      times: first && last && first.median ? last.median / first.median : null,
+    };
+  }).sort((a, b) => (b.cagr ?? -Infinity) - (a.cagr ?? -Infinity));
+
+  const list = all.slice(0, GROWTH_ROWS);
+  // 件数の少ない分類は伸び率が跳ねるので、いちばん上／下の判定からは外す
+  const rated = all.filter((r) => r.cagr != null && r.rows >= GROWTH_MIN);
+  const top = rated[0], bottom = rated[rated.length - 1];
+  const pct = (v) => `${v > 0 ? '+' : ''}${fmt.n(v, 2)}%`;
+
+  return el('div', { class: 'section' },
+    el('h3', {}, `${group.label}ごとの伸び`),
+    rated.length > 1
+      ? el('div', { class: 'chart-foot' },
+        el('span', {}, 'いちばん上がった ', el('b', {}, top.name), ' ', pct(top.cagr)),
+        el('span', {}, 'いちばん低い ', el('b', {}, bottom.name), ' ', pct(bottom.cagr)),
+        el('span', {}, '差 ', el('b', {}, `${fmt.n(top.cagr - bottom.cagr, 2)}ポイント`)),
+        el('span', { class: 'tiny muted' },
+          `${ui.span === 'all' ? '全期間' : `直近${ui.span}年`}・${metric.label}の中央値`
+          + `　${GROWTH_MIN}件以上の${group.label} ${rated.length}件から`))
+      : null,
+    el('div', { class: 'tablewrap' },
+      el('table', { class: 'cmp markettbl' },
+        el('thead', {}, el('tr', {},
+          ['', group.label, '件数', '期間', `最初（${metric.unit}）`, `最後（${metric.unit}）`,
+            '年平均の伸び', '倍率'].map((c, i) =>
+            el('th', { class: i === 1 ? 'lab' : null }, c)))),
+        el('tbody', {}, list.map((r) => el('tr', {},
+          el('td', {}, el('i', {
+            class: 'seriesdot' + (r.color ? '' : ' is-off'),
+            style: r.color ? `background:${r.color}` : null,
+          })),
+          el('td', { class: 'lab' }, r.name),
+          el('td', {}, r.rows.toLocaleString('ja-JP')),
+          el('td', {}, r.first ? `${r.first.year}年〜${(r.last || r.first).year}年` : '—'),
+          el('td', {}, r.first ? fmt.n(r.first.median, 1) : '—'),
+          el('td', {}, r.last ? fmt.n(r.last.median, 1) : '—'),
+          el('td', { class: r.cagr == null ? null : r.cagr >= 0 ? 'up' : 'down' },
+            r.cagr == null ? '—' : pct(r.cagr)),
+          el('td', {}, r.times == null ? '—' : `${fmt.n(r.times, 2)}倍`),
+        ))))),
+    el('p', { class: 'tiny muted' },
+      '年平均の伸びは、最初の年と最後の年の中央値から出した複利の伸び率です。'
+      + '1年ぶんしか記録が無い分類は「—」になります。'
+      + `色が付いているのがグラフに出ている${group.label}です。`
+      + (all.length > list.length
+        ? `　${all.length.toLocaleString('ja-JP')}件のうち伸びの高い順に${GROWTH_ROWS}件を出しています。`
+        : '')));
 }
 
 /** 売り出した月（または年）を小数年で返す */

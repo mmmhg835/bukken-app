@@ -3,7 +3,7 @@
 // 手持ちの部屋（rooms）は検討中の物件そのもの、こちらは同じ建物で過去に売りに出た
 // 別の部屋。過去いくらで出ていたか・いくら値下げして・何か月で終わったかを見るための、
 // 建物側のデータとして持つ。
-import { walkMinutesOf } from './analysis.js';
+import { walkMinutesOf, stationsOf, areaOf } from './analysis.js';
 import { TSUBO_SQM } from './util.js';
 
 /** 「2026-08」を 2026.58 のような小数年にする。並べ替えと横軸に使う */
@@ -258,6 +258,9 @@ export const MARKET_ATTRS = {
 export const MARKET_GROUPS = {
   none:      { label: '指定なし', get: () => 'すべて' },
   building:  { label: '建物', get: (x, b) => b?.name || '不明' },
+  // エリアは最寄駅で見る。駅が複数ある建物は先頭（いちばん近い駅）に寄せる
+  area:      { label: 'エリア（最寄駅）', get: (x, b) => stationsOf(b)[0] || '不明' },
+  town:      { label: '住所', get: (x, b) => areaOf(b).town || '不明' },
   layout:    { label: '間取り', get: (x) => x.layout || '不明' },
   direction: { label: '向き', get: (x) => x.direction || '不明' },
   feature:   { label: '特徴', get: (x) => x.feature || 'なし' },

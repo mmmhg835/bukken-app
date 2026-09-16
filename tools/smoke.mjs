@@ -495,7 +495,8 @@ const screens = [
     const u = v.marketUI;
     const saved = { ...u };
     try {
-      for (const group of ['layout', 'ageBand', 'building', 'none']) {
+      // 分類はどれを選んでも描ける（エリア別・住所別を足したときに落ちた経験がある）
+      for (const group of Object.keys(mods.market.MARKET_GROUPS)) {
         for (const step of ['year', 'month']) {
           Object.assign(u, saved, { mine: 'all', group, step, minCount: 1, pick: null });
           v.renderMarket(stubEl(), () => {}, 'trend');

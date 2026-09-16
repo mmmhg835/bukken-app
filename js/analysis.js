@@ -13,6 +13,10 @@ export function walkMinutesOf(building) {
 }
 
 /** 「2007/02」を 2007.08 のような小数年にする。年内の差も傾きに反映させるため */
+/** 最寄駅。「有明テニスの森 / 有明 / 国際展示場」を配列にする */
+export const stationsOf = (b) =>
+  String(b?.stations || '').split('/').map((x) => x.trim()).filter(Boolean);
+
 export function builtYearOf(building) {
   const m = String(building?.builtYM || '').match(/(\d{4})[/\-.年]?\s*(\d{1,2})?/);
   if (!m) return null;

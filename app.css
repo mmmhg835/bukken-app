@@ -414,6 +414,10 @@ table.cmp tr:hover td.lab{background:var(--surface-2)}
 .markettbl td,.markettbl th{padding:7px 10px}
 .openmark{color:var(--warn)}
 .cutmark{color:var(--good);font-weight:700}
+/* 分類ごとの伸びの表で、グラフの線と同じ色を頭に置く */
+.seriesdot{width:11px;height:11px;border-radius:3px;display:inline-block;vertical-align:middle}
+/* グラフに線が出ていない分類（8本を超えたぶん） */
+.seriesdot.is-off{background:none;border:1px dashed var(--line)}
 /* 相場の前年比。値下げ（cutmark）とは意味が違うので別に持つ */
 .markettbl td.up{color:var(--bad);font-weight:700}
 .markettbl td.down{color:var(--good);font-weight:700}
