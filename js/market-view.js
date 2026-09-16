@@ -6,7 +6,10 @@
 import { store } from './store.js';
 import { el, mount, fmt, derive, STATUSES } from './util.js';
 import { select, segmented, toggle, controlRow, numberInput } from './ui.js';
-import { scatterChart, chartLegend, histogramChart, SERIES_COLORS, SERIES_MUTED, BAND_COLORS } from './chart.js';
+import {
+  scatterChart, chartLegend, histogramChart, thin,
+  SERIES_COLORS, SERIES_MUTED, BAND_COLORS,
+} from './chart.js';
 import { linearFit, areaOf } from './analysis.js';
 import { inRange } from './unit-filter.js';
 import {
@@ -31,9 +34,6 @@ const SUBTABS = [
 // 2回目からは手元の控えから出るので、この数はあくまで初回の目安。
 const LOAD_LIMIT = 400;
 
-// 散布図に描く点の上限。これを超えると1点ずつの描画で画面が固まる
-// （66,768点で20秒かかっていた）。近似直線と下の要約は間引く前の全件で出す
-const MAX_POINTS = 4000;
 
 // 検討の軸。「自分の物件」ではなく、部屋を登録して検討しているかどうかで見る
 const MINE_OPTIONS = [['all', 'すべて'], ['mine', '検討している建物'],
@@ -160,7 +160,10 @@ function targetBuildings(except = null, f = ui) {
   });
 }
 
-/** 売り出しの行。期間・募集状況・間取り・広さで絞る。except は選択肢を作るとき用 */
+/**
+ * 売り出しの行。期間・募集状況・間取り・広さで絞る。except は選択肢を作るとき用。
+ * 並べ替えはしない（数万件を選択肢の数だけ並べ直すのは無駄なので、必要な画面で行う）。
+ */
 function saleRows(buildings, except = null, f = ui) {
   const on = (key) => key !== except;
   const from = f.from === 'all' ? null : Number(f.from);
@@ -178,7 +181,7 @@ function saleRows(buildings, except = null, f = ui) {
       out.push(x);
     }
   }
-  return sortRows(out);
+  return out;
 }
 
 const buildingOf = (id) => store.building(id);
@@ -396,7 +399,7 @@ function saleView(rows, buildings, rerender) {
       )),
     axisControls(rerender, { attr: true, group: true, fit: true }),
     scatterSection(rows, buildings),
-    saleTable(rows.slice(0, 400), rows.length, rerender),
+    saleTable(sortRows(rows).slice(0, 400), rows.length, rerender),
   );
 }
 
@@ -448,10 +451,8 @@ function scatterSection(rows, buildings) {
   }
   if (!pts.length) return el('div', { class: 'empty' }, `${attr.label} と ${metric.label} が揃った行がありません`);
 
-  // 点が多すぎるときは等間隔で間引く。並びは売り出し順なので、偏らない
-  const step = Math.ceil(pts.length / MAX_POINTS);
-  const shownPts = step > 1 ? pts.filter((_, i) => i % step === 0) : pts;
-
+  // 点の中身（建物名や価格の文字列）を組み立てる前に間引く
+  const shownPts = thin(pts);
   const order = [...new Set(shownPts.map((p) => p.key))];
   const colors = colorOf(order, group);
   const OTHER = 'その他';
@@ -734,7 +735,7 @@ function rentView(buildings) {
   const r = rentSummary(rows);
   const span = r.span ? `${ymLabel(r.span.from)}〜${ymLabel(r.span.to)}` : '—';
 
-  const pts = rows.filter((x) => rentTsuboOf(x) != null && ymToNum(x.ym) != null).map((x) => ({
+  const pts = thin(rows.filter((x) => rentTsuboOf(x) != null && ymToNum(x.ym) != null)).map((x) => ({
     x: ymToNum(x.ym), y: rentTsuboOf(x),
     label: `${buildingOf(x.buildingId)?.name ?? ''} ${x.floor != null ? `${x.floor}階` : ''}`.trim(),
     info: [
@@ -800,7 +801,7 @@ function newView(buildings) {
   const n = newSummary(rows);
 
   // 横軸を階にする。新築時は同じ時点で一斉に売られたので、年で見ても意味がない
-  const pts = rows.filter((x) => newTsuboOf(x) != null && x.floor != null).map((x) => ({
+  const pts = thin(rows.filter((x) => newTsuboOf(x) != null && x.floor != null)).map((x) => ({
     x: x.floor, y: newTsuboOf(x),
     label: `${buildingOf(x.buildingId)?.name ?? ''} ${x.floor}階`.trim(),
     info: [
@@ -815,7 +816,9 @@ function newView(buildings) {
   });
 
   const cols = ['建物', '階', '向き', '間取り', '専有', 'バルコニー', '新築時価格', '坪単価'];
-  const body = el('tbody', {}, rows.map((x) => el('tr', {},
+  // 全部並べると数千行になり、それだけで表示が止まる。上から400行に絞る
+  const shown = rows.slice(0, 400);
+  const body = el('tbody', {}, shown.map((x) => el('tr', {},
     el('td', { class: 'lab' }, buildingOf(x.buildingId)?.name ?? '—'),
     el('td', { class: 'lab' }, x.floor != null ? `${x.floor}階` : '—'),
     el('td', { class: 'lab' }, x.direction || '—'),
@@ -837,6 +840,10 @@ function newView(buildings) {
     el('div', { class: 'section' },
       el('div', { class: 'chartwrap' }, chart)),
     el('div', { class: 'section' },
+      rows.length > shown.length
+        ? el('p', { class: 'tiny muted' },
+          `${rows.length.toLocaleString('ja-JP')}件のうち階の高い ${shown.length} 件`)
+        : null,
       el('div', { class: 'tablewrap' },
         el('table', { class: 'cmp markettbl' },
           el('thead', {}, el('tr', {}, cols.map((c, i) =>

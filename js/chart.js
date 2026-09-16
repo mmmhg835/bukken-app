@@ -162,8 +162,28 @@ export function chartLegend(series, chart = null) {
  *   fit は linearFit() の結果。渡すと近似直線と±1σの帯を描く
  * @returns {SVGElement} focusSeries(name) で系列を絞れる
  */
+// 1つの図に描く点の上限。超えると点を1つずつ作る時間で画面が固まる
+// （27,000点で4秒かかっていた）。間引いても散らばりの形は変わらない
+export const MAX_POINTS = 4000;
+
+/**
+ * 等間隔に間引く。呼ぶ側が「点の中身を組み立てる前」に使う。
+ * 組み立ててから間引くと、捨てる分の文字列を作る時間が丸ごと無駄になる。
+ */
+export function thin(list, max = MAX_POINTS) {
+  const step = Math.ceil(list.length / max);
+  return step > 1 ? list.filter((_, i) => i % step === 0) : list;
+}
+
 export function scatterChart(series, opts = {}) {
-  const { xLabel = '', yLabel = '', fit = null, height = 320, xTick = null, labels = false } = opts;
+  const { xLabel = '', yLabel = '', fit = null, height = 320, xTick = null, labels = false,
+    maxPoints = MAX_POINTS } = opts;
+  // 多すぎる系列は等間隔で間引く。近似直線は呼ぶ側が全件で出しているので影響しない
+  const total = series.reduce((s, x) => s + x.points.length, 0);
+  if (total > maxPoints) {
+    const step = Math.ceil(total / maxPoints);
+    series = series.map((s) => ({ ...s, points: s.points.filter((_, i) => i % step === 0) }));
+  }
   const pts = series.flatMap((s) => s.points);
   if (!pts.length) return n('svg', { viewBox: '0 0 10 10' });
 

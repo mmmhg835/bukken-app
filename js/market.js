@@ -27,15 +27,27 @@ export const tsuboOf = (x) =>
 export const sqmOf = (x) => (x.price && x.area ? x.price / x.area : null);
 
 /**
+ * いまの年月を小数年で。数万件を数えるときに毎回 new Date() を作ると
+ * それだけで時間を食うので、1分だけ使い回す。
+ */
+let nowCache = { at: 0, v: 0 };
+export function nowYear() {
+  const t = Date.now();
+  if (t - nowCache.at > 60000) {
+    const d = new Date(t);
+    nowCache = { at: t, v: d.getFullYear() + d.getMonth() / 12 };
+  }
+  return nowCache.v;
+}
+
+/**
  * 販売にかかった月数。販売中は今月までで数える。
  * 終了年月も販売中の印も無い行（マンレビの「ー」）は分からないので null を返す。
  */
 export function monthsOf(x) {
   const from = ymToNum(x.listedYM);
   if (from == null) return null;
-  const now = new Date();
-  const to = x.closedYM ? ymToNum(x.closedYM)
-    : (isOpen(x) ? now.getFullYear() + now.getMonth() / 12 : null);
+  const to = x.closedYM ? ymToNum(x.closedYM) : (isOpen(x) ? nowYear() : null);
   return to == null ? null : Math.max(0, Math.round((to - from) * 12));
 }
 
@@ -50,12 +62,36 @@ export function cutOf(x) {
 /** 販売中か。open が無い古いデータは終了年月の有無で見る */
 export const isOpen = (x) => (x.open != null ? !!x.open : !x.closedYM);
 
-/** 新しい順。同じ月なら価格の高い順で安定させる */
+/**
+ * 新しい順。同じ月なら価格の高い順で安定させる。
+ * 並べ替えの比較のたびに年月を読み直すと、6万件で比較が200万回走る。
+ * 先に1回だけ数値にしてから並べる。
+ */
 export function sortRows(rows) {
-  return [...rows].sort((a, b) =>
-    (ymToNum(b.listedYM) ?? -Infinity) - (ymToNum(a.listedYM) ?? -Infinity)
-    || (b.price ?? 0) - (a.price ?? 0));
+  return rows
+    .map((x) => [ymToNum(x.listedYM) ?? -Infinity, x.price ?? 0, x])
+    .sort((a, b) => b[0] - a[0] || b[1] - a[1])
+    .map((pair) => pair[2]);
 }
+
+/**
+ * いちばん古いものと、いちばん新しいものの年月。
+ *
+ * 以前は行ごとに Math.min(...全件) を計算し直していたため、件数の2乗に比例し、
+ * 66,768行で16.7秒かかっていた。1回なめて求める。
+ */
+function spanBy(rows, ymOf) {
+  let lo = null, hi = null, loV = Infinity, hiV = -Infinity;
+  for (const x of rows) {
+    const y = ymToNum(ymOf(x));
+    if (!Number.isFinite(y)) continue;
+    if (y < loV) { loV = y; lo = x; }
+    if (y > hiV) { hiV = y; hi = x; }
+  }
+  return lo || hi ? { from: ymOf(lo) ?? null, to: ymOf(hi) ?? null } : null;
+}
+
+const spanOf = (rows) => spanBy(rows, (x) => x.listedYM);
 
 /** 建物1棟ぶんのまとめ */
 export function summary(rows) {
@@ -65,9 +101,9 @@ export function summary(rows) {
   return {
     count: rows.length,
     open: rows.filter(isOpen).length,
-    tsuboMin: tsubo.length ? Math.min(...tsubo) : null,
+    tsuboMin: minMax(tsubo)[0],
     tsuboMed: median(tsubo),
-    tsuboMax: tsubo.length ? Math.max(...tsubo) : null,
+    tsuboMax: minMax(tsubo)[1],
     monthsMed: median(months),
     cutRate: rows.length ? (cuts.length / rows.length) * 100 : null,
     cutAvg: cuts.length ? cuts.reduce((s, v) => s + v, 0) / cuts.length : null,
@@ -75,21 +111,11 @@ export function summary(rows) {
   };
 }
 
-/** 貯まっている期間。データの厚みが分かるようにする */
-/**
- * いちばん古い売り出しと、いちばん新しい売り出しの年月。
- * 以前は行ごとに Math.min(...全件) を計算し直していたため、
- * 66,768行で17秒かかっていた（件数の2乗に比例する）。1回なめて求める。
- */
-function spanOf(rows) {
-  let lo = null, hi = null, loV = Infinity, hiV = -Infinity;
-  for (const x of rows) {
-    const y = ymToNum(x.listedYM);
-    if (!Number.isFinite(y)) continue;
-    if (y < loV) { loV = y; lo = x; }
-    if (y > hiV) { hiV = y; hi = x; }
-  }
-  return lo || hi ? { from: lo?.listedYM ?? null, to: hi?.listedYM ?? null } : null;
+/** 最小と最大。Math.min(...配列) は件数が多いと詰まるので使わない */
+export function minMax(vals) {
+  let lo = Infinity, hi = -Infinity;
+  for (const v of vals) { if (v < lo) lo = v; if (v > hi) hi = v; }
+  return vals.length ? [lo, hi] : [null, null];
 }
 
 export function median(vals) {
@@ -128,26 +154,24 @@ export const rentTsuboOf = (x) => (x.rent && x.area ? x.rent / (x.area / TSUBO_S
 /** 賃料の㎡単価（円/㎡・月） */
 export const rentSqmOf = (x) => (x.rent && x.area ? x.rent / x.area : null);
 
-/** 新しい順 */
+/** 新しい順。売り出しと同じく、年月は先に1回だけ数値にする */
 export function sortRents(rows) {
-  return [...rows].sort((a, b) =>
-    (ymToNum(b.ym) ?? -Infinity) - (ymToNum(a.ym) ?? -Infinity) || (b.rent ?? 0) - (a.rent ?? 0));
+  return rows
+    .map((x) => [ymToNum(x.ym) ?? -Infinity, x.rent ?? 0, x])
+    .sort((a, b) => b[0] - a[0] || b[1] - a[1])
+    .map((pair) => pair[2]);
 }
 
 export function rentSummary(rows) {
   const tsubo = rows.map(rentTsuboOf).filter(Number.isFinite);
   const rents = rows.map((x) => x.rent).filter(Number.isFinite);
-  const ys = rows.map((x) => ymToNum(x.ym)).filter(Number.isFinite);
   return {
     count: rows.length,
     rentMed: median(rents),
-    tsuboMin: tsubo.length ? Math.min(...tsubo) : null,
+    tsuboMin: minMax(tsubo)[0],
     tsuboMed: median(tsubo),
-    tsuboMax: tsubo.length ? Math.max(...tsubo) : null,
-    span: ys.length ? {
-      from: rows.find((x) => ymToNum(x.ym) === Math.min(...ys))?.ym ?? null,
-      to: rows.find((x) => ymToNum(x.ym) === Math.max(...ys))?.ym ?? null,
-    } : null,
+    tsuboMax: minMax(tsubo)[1],
+    span: spanBy(rows, (x) => x.ym),
   };
 }
 
@@ -166,9 +190,9 @@ export function newSummary(rows) {
   const tsubo = rows.map(newTsuboOf).filter(Number.isFinite);
   return {
     count: rows.length,
-    tsuboMin: tsubo.length ? Math.min(...tsubo) : null,
+    tsuboMin: minMax(tsubo)[0],
     tsuboMed: median(tsubo),
-    tsuboMax: tsubo.length ? Math.max(...tsubo) : null,
+    tsuboMax: minMax(tsubo)[1],
   };
 }
 
@@ -197,8 +221,7 @@ export function vsNew(saleTsuboMan, newTsuboMan) {
  * （2009年の212万/坪まで混ざる）。突き合わせには直近だけを使う。
  */
 export function recent(rows, years = 1, key = 'listedYM') {
-  const now = new Date();
-  const from = now.getFullYear() + now.getMonth() / 12 - years;
+  const from = nowYear() - years;
   const hit = rows.filter((x) => (ymToNum(x[key]) ?? -Infinity) >= from);
   return hit.length ? hit : rows;   // 直近に1件も無ければ全部で見る
 }
@@ -249,7 +272,7 @@ export const MARKET_GROUPS = {
     get: (x, b) => {
       const built = ymToNum(String(b?.builtYM || '').replace('/', '-'));
       if (built == null) return '不明';
-      const age = new Date().getFullYear() + new Date().getMonth() / 12 - built;
+      const age = nowYear() - built;
       return age <= 10 ? '築10年以内' : age <= 20 ? '築20年以内'
         : age <= 30 ? '築30年以内' : '築30年超';
     },

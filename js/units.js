@@ -8,6 +8,7 @@
 import { store } from './store.js';
 import { RENOVATION } from './spec.js';
 import { builtYearOf, walkMinutesOf } from './analysis.js';
+import { nowYear } from './market.js';
 
 
 /** 「リフォーム・リノベーション」からリノベ区分を決める */
@@ -113,9 +114,7 @@ export const FIRM_LABEL = {
 /** 築年数。竣工年そのものではなく、いま何年たっているかで見る */
 export function ageOf(b) {
   const y = builtYearOf(b);
-  if (y == null) return null;
-  const now = new Date();
-  return now.getFullYear() + now.getMonth() / 12 - y;
+  return y == null ? null : nowYear() - y;
 }
 
 export const walkOf = (b) => walkMinutesOf(b);
