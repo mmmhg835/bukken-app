@@ -365,6 +365,27 @@ const screens = [
   }],
   ...marketTabs('相場'),
   // 相場の絞り込み。条件を変えると通る経路が変わるので、代表的な組み合わせを通す
+  ['供給：棒を押してその期間の売り出しを見る', () => {
+    const v = mods['market-view'];
+    const u = v.marketUI;
+    const saved = { ...u };
+    try {
+      for (const step of ['year', 'month']) {
+        for (const span of [3, 'all']) {
+          Object.assign(u, saved, { mine: 'all', step, span, pick: null });
+          v.renderMarket(stubEl(), () => {}, 'supply');
+        }
+      }
+      // 棒を押した状態でも描ける
+      Object.assign(u, saved, { mine: 'all', step: 'year', span: 'all' });
+      u.pick = { key: '供給', period: 2026 };
+      v.renderMarket(stubEl(), () => {}, 'supply');
+      u.pick = { key: '供給', period: 1990 };      // 該当なしでも落ちない
+      v.renderMarket(stubEl(), () => {}, 'supply');
+    } finally {
+      Object.assign(u, saved);
+    }
+  }],
   ['推移：分類ごとの線と、点を押して中身を見る', () => {
     const v = mods['market-view'];
     const u = v.marketUI;
@@ -418,7 +439,7 @@ const screens = [
       { building: '該当しないid' },
     ]) {
       Object.assign(u, saved, patch);
-      for (const tab of ['overview', 'sale', 'trend', 'dist', 'group']) {
+      for (const tab of ['overview', 'sale', 'trend', 'supply', 'dist', 'group']) {
         v.renderMarket(stubEl(), () => {}, tab);
       }
     }

@@ -396,7 +396,10 @@ export function scatterChart(series, opts = {}) {
  *   a = 手前の色で積む件数、b = 奥の色で積む件数
  */
 export function histogramChart(bins, opts = {}) {
-  const { xLabel = '', height = 260, fmt: fmtX = trim, legend = ['募集中', '募集終了'] } = opts;
+  const {
+    xLabel = '', height = 260, fmt: fmtX = trim, legend = ['募集中', '募集終了'],
+    onPick = null,       // 棒を押したときに呼ぶ。その区間の中身を画面側で使う
+  } = opts;
   if (!bins.length) return n('svg', { viewBox: '0 0 10 10' });
 
   const W = 780, H = height;
@@ -423,8 +426,10 @@ export function histogramChart(bins, opts = {}) {
     const hA = (b.a / maxN) * ih, hB = (b.b / maxN) * ih;
     if (hB) svg.append(n('rect', { x, y: Y(b.a + b.b), width: w, height: hB, fill: 'var(--text-3)', opacity: '.75', rx: 2 }));
     if (hA) svg.append(n('rect', { x, y: Y(b.a), width: w, height: hA, fill: SERIES_COLORS[0], rx: 2 }));
-    const rect = n('rect', { x, y: pad.t, width: w, height: ih, fill: 'transparent' });
+    const rect = n('rect', { x, y: pad.t, width: w, height: ih, fill: 'transparent',
+      class: onPick ? 'dothit' : null });
     rect.append(n('title', {}, `${fmtX(b.from)} 〜 ${fmtX(b.to)}\n${legend[0]} ${b.a}件 / ${legend[1]} ${b.b}件`));
+    if (onPick) rect.addEventListener('click', () => onPick(b));
     svg.append(rect);
     if (i % every === 0) {
       svg.append(n('text', {

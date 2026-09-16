@@ -25,8 +25,8 @@ import {
 } from './market.js';
 
 const SUBTABS = [
-  ['overview', '概況'], ['sale', '売出'], ['trend', '推移'], ['dist', '分布'],
-  ['group', '建物別'], ['rent', '賃貸'], ['new', '新築'],
+  ['overview', '概況'], ['sale', '売出'], ['trend', '推移'], ['supply', '供給'],
+  ['dist', '分布'], ['group', '建物別'], ['rent', '賃貸'], ['new', '新築'],
 ];
 
 /** 一度に読みに行く建物の上限。これを超えたら条件を絞ってもらう */
@@ -117,10 +117,11 @@ export function renderMarket(root, rerender, view = 'overview') {
   const body = view === 'rent' ? rentView(loaded)
     : view === 'new' ? newView(loaded)
       : view === 'trend' ? trendView(rows, rerender)
-        : view === 'dist' ? distView(rows, rerender)
-          : view === 'group' ? groupView(rows, rerender)
-            : view === 'sale' ? saleView(rows, loaded, rerender)
-              : overview(rows, loaded);
+        : view === 'supply' ? supplyView(rows, loaded, rerender)
+          : view === 'dist' ? distView(rows, rerender)
+            : view === 'group' ? groupView(rows, rerender)
+              : view === 'sale' ? saleView(rows, loaded, rerender)
+                : overview(rows, loaded);
 
   mount(root, head, body);
 }
@@ -680,6 +681,118 @@ function trendControls(rerender) {
             select(String(ui.minCount), [['1', '1件'], ['3', '3件'], ['5', '5件'], ['10', '10件']],
               (v) => { ui.minCount = Number(v); rerender(); }, 'fsel')),
           toggle('トレンドライン', ui.fit, (v) => { ui.fit = v; rerender(); }))),
+    ));
+}
+
+/* =========================================================
+   供給（募集戸数の推移）
+   ========================================================= */
+/**
+ * その建物（または条件に合う建物）から、いつ何件売りに出たか。
+ *
+ * 相場が上がっていても、同時に10件出ていれば買い手が選べる。
+ * 逆に何年も1〜2件しか出ない建物は、出たときに動かないと買えない。
+ * 棒を押すと、その月に出た部屋が下に並ぶ。
+ */
+function supplyView(rows, buildings, rerender) {
+  if (!rows.length) return el('div', { class: 'empty' }, '条件に合う売り出しがありません');
+
+  const from = ui.span === 'all' ? -Infinity : nowYear() - Number(ui.span);
+  const period = (ym) => {
+    const y = ymToNum(ym);
+    if (y == null || y < from) return null;
+    return ui.step === 'month' ? Math.round(y * 12) / 12 : Math.floor(y);
+  };
+
+  // 区間ごとに、始まった募集と終わった募集を数える
+  const bins = new Map();
+  const at = (p) => {
+    if (!bins.has(p)) bins.set(p, { from: p, to: p, a: 0, b: 0, rows: [], closed: [] });
+    return bins.get(p);
+  };
+  for (const x of rows) {
+    const s = period(x.listedYM);
+    if (s != null) { const c = at(s); c.a++; c.rows.push(x); }
+    const e = period(x.closedYM);
+    if (e != null) { const c = at(e); c.b++; c.closed.push(x); }
+  }
+  const list = [...bins.values()].sort((a, b) => a.from - b.from);
+  if (!list.length) return el('div', {}, supplyControls(rerender),
+    el('div', { class: 'empty' }, 'この期間に売り出しがありません'));
+
+  // 総戸数に対してどれだけ出ているか。1棟に絞っているときがいちばん読みやすい
+  const units = buildings.reduce((s, b) => s + (Number(b.totalUnits) || 0), 0);
+  const open = rows.filter(isOpen);
+  const lastYear = list.filter((c) => c.from >= nowYear() - 1);
+  const started = lastYear.reduce((s, c) => s + c.a, 0);
+  const ended = lastYear.reduce((s, c) => s + c.b, 0);
+
+  const chart = histogramChart(list, {
+    // 目盛りが「2019/09」の形なので、軸の名前は出さない（斜めの目盛りと重なる）
+    xLabel: '', height: 300, fmt: (v) => periodLabel(v, true),
+    legend: ['売り出し開始', '掲載終了'],
+    onPick: (b) => { ui.pick = { key: '供給', period: b.from }; rerender(); },
+  });
+  const picked = ui.pick ? list.find((c) => c.from === ui.pick.period) : null;
+
+  return el('div', {},
+    el('div', { class: 'section' },
+      el('div', { class: 'calcgrid calcgrid-4' },
+        cell('いま出ている数', `${open.length.toLocaleString('ja-JP')}件`,
+          `${buildings.length.toLocaleString('ja-JP')}棟`),
+        cell('総戸数に対して', units ? `${fmt.n((open.length / units) * 100, 1)}%` : '—',
+          units ? `総戸数 ${units.toLocaleString('ja-JP')}戸` : '総戸数が未登録'),
+        cell('直近1年に出た数', `${started.toLocaleString('ja-JP')}件`,
+          units ? `総戸数の ${fmt.n((started / units) * 100, 1)}%` : null),
+        cell('直近1年に終わった数', `${ended.toLocaleString('ja-JP')}件`,
+          started ? `出た数の ${fmt.n((ended / started) * 100, 0)}%` : null),
+      )),
+    supplyControls(rerender),
+    el('div', { class: 'section' },
+      el('div', { class: 'chartwrap' }, chart),
+      el('div', { class: 'chart-foot' },
+        el('span', {}, el('b', { style: `color:${SERIES_COLORS[0]}` }, '■'), ' 売り出し開始'),
+        el('span', {}, el('b', { style: 'color:var(--text-3)' }, '■'), ' 掲載終了'),
+        el('span', { class: 'tiny muted' }, '棒を押すと、その期間に売り出した部屋が下に並びます')),),
+    picked
+      ? el('div', { class: 'section' },
+        el('div', { class: 'pickhead' },
+          el('b', {}, periodLabel(picked.from)),
+          el('span', { class: 'tiny muted' },
+            `売り出し ${picked.rows.length}件　掲載終了 ${picked.closed.length}件`),
+          el('div', { class: 'spacer' }),
+          el('button', { class: 'btn btn-sm', onclick: () => { ui.pick = null; rerender(); } }, 'クリア')),
+        picked.rows.length
+          ? saleTable(sortRows(picked.rows).slice(0, 200), picked.rows.length, rerender)
+          : el('div', { class: 'empty' }, 'この期間に売り出した部屋はありません（終了のみ）'))
+      : null,
+    el('div', { class: 'section' },
+      el('h3', {}, '期間ごとの数字'),
+      el('div', { class: 'tablewrap' },
+        el('table', { class: 'cmp markettbl' },
+          el('thead', {}, el('tr', {},
+            ['期間', '売り出し', '掲載終了', '差引'].map((c, i) =>
+              el('th', { class: i === 0 ? 'lab' : null }, c)))),
+          el('tbody', {}, [...list].reverse().slice(0, 120).map((c) => el('tr', {},
+            el('td', { class: 'lab' }, periodLabel(c.from)),
+            el('td', {}, c.a || '—'),
+            el('td', {}, c.b || '—'),
+            el('td', { class: c.a - c.b > 0 ? 'up' : c.a - c.b < 0 ? 'down' : null },
+              c.a - c.b > 0 ? `+${c.a - c.b}` : String(c.a - c.b)))))))));
+}
+
+/** 供給の操作。粒度と期間だけ。表示単位は件数なので出さない */
+function supplyControls(rerender) {
+  return el('div', { class: 'panel' },
+    el('div', { class: 'panel-controls' },
+      controlRow('◍', 'まとめ方',
+        el('div', { style: 'display:flex;align-items:center;gap:18px;flex-wrap:wrap' },
+          segmented(ui.step, [['year', '年ごと'], ['month', '月ごと']],
+            (k) => { ui.step = k; ui.pick = null; rerender(); }),
+          el('label', { class: 'tiny muted' }, '期間　',
+            select(String(ui.span),
+              [['3', '直近3年'], ['5', '直近5年'], ['7', '直近7年'], ['10', '直近10年'], ['all', 'すべて']],
+              (v) => { ui.span = v === 'all' ? 'all' : Number(v); ui.pick = null; rerender(); }, 'fsel')))),
     ));
 }
 
