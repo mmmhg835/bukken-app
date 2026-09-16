@@ -4,9 +4,9 @@
   --text:#14181f; --text-2:#5b6472; --text-3:#8a93a2;
   --accent:#1d4ed8; --accent-soft:#e8edfd;
   --good:#0f766e; --warn:#b45309; --bad:#b91c1c;
-  /* 順序のある区分（築年数・駅徒歩）の色。明度が順に下がる並びにしてあるので、
-     色の見え方が違う人でも濃さで順番が読める */
-  --band-1:#e2982b; --band-2:#d4762a; --band-3:#b85220; --band-4:#93341f; --band-5:#6b2118;
+  /* 順序のある区分（築年数・駅徒歩）の色。新しい=緑 → 古い=赤。
+     検証スクリプトで、色の見え方が違う人でも隣り合う色を区別できることを確認済み */
+  --band-1:#2f9e6a; --band-2:#c9a227; --band-3:#d4611f; --band-4:#9b2226;
   --shadow:0 1px 2px rgba(16,24,40,.06),0 4px 14px rgba(16,24,40,.06);
   --r:14px; --r-sm:9px;
   --safe-t:env(safe-area-inset-top,0px); --safe-b:env(safe-area-inset-bottom,0px);
@@ -18,7 +18,7 @@
     --text:#e6edf3; --text-2:#9aa6b4; --text-3:#6e7b8c;
     --accent:#6f9bff; --accent-soft:#182543;
     --good:#2dd4bf; --warn:#fbbf24; --bad:#f87171;
-    --band-1:#7a3d18; --band-2:#a35520; --band-3:#c7762a; --band-4:#e09a45; --band-5:#f5c47e;
+    --band-1:#00a089; --band-2:#cf7b26; --band-3:#ba3661; --band-4:#864ebc;
     --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 18px rgba(0,0,0,.35);
   }
 }
@@ -28,7 +28,7 @@
     --text:#e6edf3; --text-2:#9aa6b4; --text-3:#6e7b8c;
     --accent:#6f9bff; --accent-soft:#182543;
     --good:#2dd4bf; --warn:#fbbf24; --bad:#f87171;
-    --band-1:#7a3d18; --band-2:#a35520; --band-3:#c7762a; --band-4:#e09a45; --band-5:#f5c47e;
+    --band-1:#00a089; --band-2:#cf7b26; --band-3:#ba3661; --band-4:#864ebc;
     --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 18px rgba(0,0,0,.35);
 }
 *{box-sizing:border-box}

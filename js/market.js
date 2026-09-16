@@ -237,12 +237,12 @@ export const MARKET_GROUPS = {
   } },
   // 順序のある区分。並び順が決まっているので、色も濃さが順に変わるものを当てる
   ageBand: {
-    label: '築年数', order: ['築5年以内', '築10年以内', '築20年以内', '築30年以内', '築30年超'],
+    label: '築年数', order: ['築10年以内', '築20年以内', '築30年以内', '築30年超'],
     get: (x, b) => {
       const built = ymToNum(String(b?.builtYM || '').replace('/', '-'));
       if (built == null) return '不明';
       const age = new Date().getFullYear() + new Date().getMonth() / 12 - built;
-      return age <= 5 ? '築5年以内' : age <= 10 ? '築10年以内' : age <= 20 ? '築20年以内'
+      return age <= 10 ? '築10年以内' : age <= 20 ? '築20年以内'
         : age <= 30 ? '築30年以内' : '築30年超';
     },
   },

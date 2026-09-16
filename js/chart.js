@@ -13,7 +13,7 @@ export const SERIES_MUTED = '#7d7a72';
  * 色相ではなく明度が順に変わるので、色の見え方が違う人でも濃さで順番が読める。
  * 実際の色は app.css 側（ライト・ダークで向きを変えている）。
  */
-export const BAND_COLORS = [1, 2, 3, 4, 5].map((i) => `var(--band-${i})`);
+export const BAND_COLORS = [1, 2, 3, 4].map((i) => `var(--band-${i})`);
 
 function n(tag, attrs = {}, ...kids) {
   const e = document.createElementNS(NS, tag);
@@ -243,21 +243,33 @@ export function scatterChart(series, opts = {}) {
   // 点の下に物件名を出す。重なったものは出さない（読めない字を重ねても意味がない）。
   // 自分自身とは当たり判定しないよう、置いた箱だけを相手にする。
   if (labels) {
-    const placed = [];
     const overlap = (a, b) =>
       a.x0 < b.x1 && a.x1 > b.x0 && a.y0 < b.y1 && a.y1 > b.y0;
+    // 点そのものも避ける。名前が点にかぶると、どちらも読めなくなる
+    const placed = dots.map((d) => ({
+      x0: d.x - R - 1, x1: d.x + R + 1, y0: d.y - R - 1, y1: d.y + R + 1,
+    }));
     const layer = n('g', {});
     // 上にあるものから置く。同じ場所を争ったら、値の大きい方を残す
     for (const d of [...dots].sort((a, b) => a.y - b.y)) {
-      const text = d.text;
+      const text = d.text.length > 14 ? `${d.text.slice(0, 13)}…` : d.text;
       if (!text) continue;
-      const half = text.length * 4.6 / 2 + 2;         // 9.5px の日本語のおおよその幅
-      const box = { x0: d.x - half, x1: d.x + half, y0: d.y + R + 1, y1: d.y + R + 12 };
-      if (box.x0 < 2 || box.x1 > W - 2) continue;      // 枠からはみ出すものは出さない
-      if (placed.some((q) => overlap(box, q))) continue;
-      placed.push(box);
+      // 日本語は1文字ほぼ全角、英数字はその半分。見積もりを誤ると重なりを見逃す
+      const wide = (text.match(/[^\x00-\xff]/g) || []).length;
+      const half = (wide * 9.5 + (text.length - wide) * 5.2) / 2 + 2;
+      // 下に置けなければ上に回す。名前が出せる点をできるだけ増やすため
+      const spots = [d.y + R + 1, d.y - R - 12];
+      const free = spots.find((top) => {
+        const box = { x0: d.x - half, x1: d.x + half, y0: top, y1: top + 11 };
+        // 目盛りの外に出た名前は読みにくいので、グラフの中に収まるものだけ出す
+        if (box.x0 < pad.l || box.x1 > W - pad.r) return false;
+        if (box.y0 < pad.t || box.y1 > pad.t + ih) return false;
+        return !placed.some((q) => overlap(box, q));
+      });
+      if (free === undefined) continue;
+      placed.push({ x0: d.x - half, x1: d.x + half, y0: free, y1: free + 11 });
       layer.append(n('text', {
-        x: d.x, y: d.y + R + 10, class: 'chart-name', 'text-anchor': 'middle',
+        x: d.x, y: free + 9, class: 'chart-name', 'text-anchor': 'middle',
       }, text));
     }
     svg.append(layer);
