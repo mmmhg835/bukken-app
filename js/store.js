@@ -297,8 +297,11 @@ class Store extends EventTarget {
   }
 
   /**
-   * 複数の建物の相場をまとめて読む。1棟ずつ ensureMarket を呼ぶと
-   * 読めるたびに描き直しが走るので、全部そろってから1回だけ知らせる。
+   * 複数の建物の相場をまとめて読む。
+   *
+   * まず手元の控え（IndexedDB）を全部読んで1回描き直す。開いた瞬間に前回の
+   * 中身が出るので、待たされない。そのあと取り直しを少しずつ流す。
+   * 何百件も一度に投げると GitHub 側に止められるため、6件ずつにしている。
    */
   ensureMarkets(buildingIds) {
     const todo = buildingIds.filter((id) =>
@@ -306,19 +309,42 @@ class Store extends EventTarget {
     if (!todo.length) return;
     for (const id of todo) this.#marketLoading.add(id);
     (async () => {
+      // 1) 控えから先に出す
+      let hit = 0;
       await Promise.all(todo.map(async (id) => {
-        const key = `market:${id}`;
-        let m = await idb.get('kv', key).catch(() => null);
-        if (this.configured) {
+        const m = await idb.get('kv', `market:${id}`).catch(() => null);
+        if (m) { this.#market.set(id, m); hit++; }
+      }));
+      if (hit) this.emit();
+
+      // 2) 取り直し。6件ずつ流し、25件ごとに描き直して進み具合を見せる
+      if (!this.configured) {
+        for (const id of todo) {
+          if (!this.#market.has(id)) this.#market.set(id, { ...emptyMarket(), sha: null });
+          this.#marketLoading.delete(id);
+        }
+        this.emit();
+        return;
+      }
+      let i = 0, done = 0;
+      const worker = async () => {
+        while (i < todo.length) {
+          const id = todo[i++];
           try {
             const got = await this.repo.getJson(marketPath(id));
-            m = got ? { ...emptyMarket(), ...got.data, sha: got.sha } : { ...emptyMarket(), sha: null };
-            await idb.set('kv', key, m);
-          } catch { /* 取れなければキャッシュのまま */ }
+            const m = got ? { ...emptyMarket(), ...got.data, sha: got.sha }
+              : { ...emptyMarket(), sha: null };
+            this.#market.set(id, m);
+            await idb.set('kv', `market:${id}`, m);
+          } catch {
+            // 取れなければ控えのまま。控えも無ければ空で置く（読み込み中のままにしない）
+            if (!this.#market.has(id)) this.#market.set(id, { ...emptyMarket(), sha: null });
+          }
+          this.#marketLoading.delete(id);
+          if (++done % 25 === 0) this.emit();
         }
-        this.#market.set(id, m || { ...emptyMarket(), sha: null });
-        this.#marketLoading.delete(id);
-      }));
+      };
+      await Promise.all(Array.from({ length: 6 }, worker));
       this.emit();
     })();
   }

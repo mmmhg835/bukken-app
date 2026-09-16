@@ -27,7 +27,13 @@ const SUBTABS = [
 ];
 
 /** 一度に読みに行く建物の上限。これを超えたら条件を絞ってもらう */
-const LOAD_LIMIT = 60;
+// 一度に読む建物の上限。1棟ずつ別ファイルなので、増やすほど待ち時間が伸びる。
+// 2回目からは手元の控えから出るので、この数はあくまで初回の目安。
+const LOAD_LIMIT = 400;
+
+// 散布図に描く点の上限。これを超えると1点ずつの描画で画面が固まる
+// （66,768点で20秒かかっていた）。近似直線と下の要約は間引く前の全件で出す
+const MAX_POINTS = 4000;
 
 // 検討の軸。「自分の物件」ではなく、部屋を登録して検討しているかどうかで見る
 const MINE_OPTIONS = [['all', 'すべて'], ['mine', '検討している建物'],
@@ -46,6 +52,8 @@ const ui = {
   // 売り出しの行の条件
   from: 'all', to: 'all', listing: 'all', layout: 'all', sizeMin: null, sizeMax: null,
   metric: 'tsubo', attr: 'year', group: 'building', fit: true, names: true, more: false,
+  // 上限を超えていても読み込むか。押したときだけ立てる
+  loadAll: false,
 };
 export const marketUI = ui;
 
@@ -69,13 +77,16 @@ export function renderMarket(root, rerender, view = 'overview') {
   store.ensureRefs();
   const targets = targetBuildings();
   const ids = targets.map((b) => b.id);
-  if (ids.length && ids.length <= LOAD_LIMIT) store.ensureMarkets(ids);
+  if (ids.length && (ids.length <= LOAD_LIMIT || ui.loadAll)) store.ensureMarkets(ids);
   const loaded = targets.filter((b) => store.marketOf(b.id));
   const rows = saleRows(loaded);
+  // 間取りや広さは部屋の条件なので、相場を読むまで建物は減らない。
+  // 読み終わった分については、実際に該当する部屋がある建物だけを数える
+  const hitBuildings = loaded.filter((b) => saleRows([b]).length);
 
   const head = el('div', {},
     subTabs(view),
-    buildingFilter(targets, loaded, rows, rerender),
+    buildingFilter(targets, loaded, rows, rerender, hitBuildings),
   );
 
   if (!store.allBuildings.length) {
@@ -83,9 +94,16 @@ export function renderMarket(root, rerender, view = 'overview') {
       store.refsReady ? '建物を登録すると相場を貯められます' : '読み込み中'));
     return;
   }
-  if (ids.length > LOAD_LIMIT) {
+  if (ids.length > LOAD_LIMIT && !ui.loadAll) {
     mount(root, head, el('div', { class: 'empty' },
-      `${ids.length}棟が条件に合っています。${LOAD_LIMIT}棟までに絞ってください`));
+      el('p', {}, `${ids.length.toLocaleString('ja-JP')}棟が条件に合っています。`),
+      el('p', { class: 'tiny muted' },
+        '相場は建物ごとに別のファイルなので、読み込みに時間がかかります。'
+        + '条件を絞るか、このまま全部読み込んでください（2回目からは手元の控えから出ます）。'),
+      el('button', {
+        class: 'btn btn-primary',
+        onclick: () => { ui.loadAll = true; rerender(); },
+      }, `${ids.length.toLocaleString('ja-JP')}棟をすべて読み込む`)));
     return;
   }
   if (!loaded.length) {
@@ -165,7 +183,7 @@ function saleRows(buildings, except = null, f = ui) {
 
 const buildingOf = (id) => store.building(id);
 
-function buildingFilter(targets, loaded, rows, rerender) {
+function buildingFilter(targets, loaded, rows, rerender, hitBuildings = null) {
   const d = marketDraft;
   const pick = (key, list) =>
     select(d[key], [['all', 'すべて'], ...list], (v) => { d[key] = v; rerender(); }, 'fsel');
@@ -221,12 +239,13 @@ function buildingFilter(targets, loaded, rows, rerender) {
         [['all', 'すべて'], ['open', '販売中'], ['closed', '終了']])),
       el('div', { class: 'spacer' }),
       el('span', { class: 'fcount' },
-        `${targets.length}棟${loading ? `（${loading}棟 読み込み中）` : ''}`
-        + (store.refsReady ? '' : '（建物を読み込み中）')),
-      el('span', { class: 'fcount' }, `売り出し ${rows.length.toLocaleString('ja-JP')}件`),
-      loaded.length < targets.length
-        ? el('span', { class: 'tiny muted' }, `${loaded.length}/${targets.length}棟`)
+        `${(hitBuildings ? hitBuildings.length : targets.length).toLocaleString('ja-JP')}棟`
+        + `　売り出し ${rows.length.toLocaleString('ja-JP')}件`),
+      loading
+        ? el('span', { class: 'tiny muted' },
+          `${targets.length - loading}/${targets.length}棟 読み込み中…`)
         : null,
+      store.refsReady ? null : el('span', { class: 'tiny muted' }, '建物を読み込み中'),
     ),
     open
       ? el('div', { class: 'filterbar-row is-more' },
@@ -429,11 +448,15 @@ function scatterSection(rows, buildings) {
   }
   if (!pts.length) return el('div', { class: 'empty' }, `${attr.label} と ${metric.label} が揃った行がありません`);
 
-  const order = [...new Set(pts.map((p) => p.key))];
+  // 点が多すぎるときは等間隔で間引く。並びは売り出し順なので、偏らない
+  const step = Math.ceil(pts.length / MAX_POINTS);
+  const shownPts = step > 1 ? pts.filter((_, i) => i % step === 0) : pts;
+
+  const order = [...new Set(shownPts.map((p) => p.key))];
   const colors = colorOf(order, group);
   const OTHER = 'その他';
   const byKey = new Map();
-  for (const p of pts) {
+  for (const p of shownPts) {
     const k = colors.get(p.key) ? p.key : OTHER;
     if (!byKey.has(k)) byKey.set(k, []);
     byKey.get(k).push({
@@ -472,11 +495,11 @@ function scatterSection(rows, buildings) {
       ) : null),
     el('div', { class: 'chartwrap' }, chart),
     series.length > 1 ? chartLegend(series, chart) : null,
-    scatterFoot(pts));
+    scatterFoot(pts, shownPts.length));
 }
 
 /** グラフの下に出す要約。点の散らばりを字面でも押さえられるようにする */
-function scatterFoot(pts) {
+function scatterFoot(pts, drawn = pts.length) {
   const rows = pts.map((p) => p.row);
   const range = (vals, f) => {
     const v = vals.filter(Number.isFinite);
@@ -489,6 +512,10 @@ function scatterFoot(pts) {
   const tsubo = range(rows.map((r) => tsuboOf(r)), (x) => fmt.n(x, 0));
   return el('div', { class: 'chart-foot' },
     el('span', {}, '表示中 ', el('b', {}, `${pts.length.toLocaleString('ja-JP')}件`)),
+    drawn < pts.length
+      ? el('span', { class: 'tiny muted' },
+        `点は${drawn.toLocaleString('ja-JP')}件に間引き（数字は全件）`)
+      : null,
     price ? el('span', {}, `価格 ${price} 万円`) : null,
     area ? el('span', {}, `面積 ${area} ㎡`) : null,
     tsubo ? el('span', {}, `坪単価 ${tsubo} 万円`) : null,

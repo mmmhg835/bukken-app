@@ -76,12 +76,20 @@ export function summary(rows) {
 }
 
 /** 貯まっている期間。データの厚みが分かるようにする */
+/**
+ * いちばん古い売り出しと、いちばん新しい売り出しの年月。
+ * 以前は行ごとに Math.min(...全件) を計算し直していたため、
+ * 66,768行で17秒かかっていた（件数の2乗に比例する）。1回なめて求める。
+ */
 function spanOf(rows) {
-  const ys = rows.map((x) => ymToNum(x.listedYM)).filter(Number.isFinite);
-  if (!ys.length) return null;
-  const lo = rows.find((x) => ymToNum(x.listedYM) === Math.min(...ys));
-  const hi = rows.find((x) => ymToNum(x.listedYM) === Math.max(...ys));
-  return { from: lo?.listedYM ?? null, to: hi?.listedYM ?? null };
+  let lo = null, hi = null, loV = Infinity, hiV = -Infinity;
+  for (const x of rows) {
+    const y = ymToNum(x.listedYM);
+    if (!Number.isFinite(y)) continue;
+    if (y < loV) { loV = y; lo = x; }
+    if (y > hiV) { hiV = y; hi = x; }
+  }
+  return lo || hi ? { from: lo?.listedYM ?? null, to: hi?.listedYM ?? null } : null;
 }
 
 export function median(vals) {

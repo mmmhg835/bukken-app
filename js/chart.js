@@ -171,8 +171,10 @@ export function scatterChart(series, opts = {}) {
   const pad = { t: 14, r: 18, b: 44, l: 74 };
   const iw = W - pad.l - pad.r, ih = H - pad.t - pad.b;
 
+  // 件数が多いと Math.min(...配列) は詰まる（引数として全件を展開するため）。なめて求める
   const span = (vals) => {
-    let lo = Math.min(...vals), hi = Math.max(...vals);
+    let lo = Infinity, hi = -Infinity;
+    for (const v of vals) { if (v < lo) lo = v; if (v > hi) hi = v; }
     if (lo === hi) { lo -= Math.abs(lo || 1) * 0.1; hi += Math.abs(hi || 1) * 0.1; }
     const p = (hi - lo) * 0.08;
     return [lo - p, hi + p];
