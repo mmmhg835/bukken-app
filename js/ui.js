@@ -90,7 +90,9 @@ export function ratingPicker(obj, onChange) {
 }
 
 export function statusBadge(status) {
-  const cls = status === '本命' ? 'badge-ok' : status === '見送り' ? 'badge-muted' : 'badge-muted';
+  // 申し込みが入っている部屋は目立たせる。動くなら急ぐ必要があるため
+  const cls = status === '本命' ? 'badge-ok'
+    : status === '申し込みあり' ? 'badge-warn' : 'badge-muted';
   return el('span', { class: `badge ${cls}` }, status || '検討中');
 }
 
