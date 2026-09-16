@@ -14,7 +14,24 @@ export const METRICS = {
   monthly: { label: '月額（ローン＋管理）', unit: '万円/月', get: (x) => x.c.monthly },
   running: { label: 'ランニング㎡単価', unit: '円/㎡・月',
     get: (x) => (x.c.kanriShuzen && x.r.area ? (x.c.kanriShuzen * 10000) / x.r.area : null) },
+  // 相場は内見タブで部屋ごとに入れている値。散布図に載せると、
+  // 相場より安い物件が回帰の残差ではなく実額として見える
+  offerTsubo: { label: '指値の坪単価', unit: '万円/坪',
+    get: (x) => (x.r.offerPrice != null && x.c.tsubo ? x.r.offerPrice / x.c.tsubo : null) },
+  gapIsoge: { label: 'ISOGE相場との差', unit: '万円/坪', get: (x) => marketGapOf(x, 'marketIsoge') },
+  gapMrev: { label: 'マンレビ相場との差', unit: '万円/坪', get: (x) => marketGapOf(x, 'marketMrev') },
 };
+
+/**
+ * 相場坪単価 − 指値の坪単価。＋ほど相場より安く買えるという向き。
+ * 指値が入っていない部屋は売り出し価格で見る（何もしなければいくら差があるか）。
+ */
+function marketGapOf(x, key) {
+  const m = x.r[key] ?? null;
+  if (m == null || !x.c.tsubo) return null;
+  const price = x.r.offerPrice ?? x.r.price;
+  return price == null ? null : m - price / x.c.tsubo;
+}
 
 /** 横軸（何で切るか） */
 export const ATTRS = {
@@ -25,6 +42,8 @@ export const ATTRS = {
   floor:     { label: '所在階', unit: '階', get: (x) => x.r.floor },
   balcony:   { label: 'バルコニー', unit: '㎡', get: (x) => x.r.balcony },
   salesDays: { label: '販売期間', unit: '日', get: (x) => x.a.salesDays },
+  isoge:     { label: 'ISOGE相場坪', unit: '万円/坪', get: (x) => x.r.marketIsoge ?? null },
+  mrev:      { label: 'マンレビ相場坪', unit: '万円/坪', get: (x) => x.r.marketMrev ?? null },
 };
 
 /** 設備は建物側と部屋側のどちらに入っていても、同じ「有無」として扱う */

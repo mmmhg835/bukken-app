@@ -308,8 +308,13 @@ function buildingCard(b, rooms) {
               : el('small', {}, '万円')))
         : el('div', { class: 'muted tiny' }, '価格未入力'),
       el('div', { class: 'roomchips' }, rooms.map((r) =>
+        // 指値を入れてある部屋は一覧の段階で分かるようにする。
+        // どこまで検討が進んでいるかが、開かないと分からなかったため。
         el('span', { class: 'roomchip' + (r.status === '本命' ? ' is-top' : '') },
-          `${r.label}・${fmt.man1(r.price)}万`))),
+          `${r.label}・${fmt.man1(r.price)}万`,
+          r.offerPrice != null && r.offerPrice !== r.price
+            ? el('span', { class: 'roomchip-offer' }, `指値 ${fmt.man1(r.offerPrice)}`)
+            : null))),
       el('div', { class: 'ftags' },
         b.walk ? featureTag('train', b.walk) : null,
         c.ageYears != null ? featureTag('cal', `築${c.ageYears}年`) : null,
