@@ -790,36 +790,7 @@ function trendView(rows, rerender) {
       info: [`中央 ${fmt.n(median(vals), 1)}${metric.unit}　${vals.length}件`, '押すと下に一覧が出ます'],
     });
   }
-  // 線が多すぎると読めないので、売り出しの多い順に SERIES_COLORS のぶんだけ描く。
-  //
-  // 以前は「点（＝線を引ける月）の数」で選んでいたため、件数は少ないのに記録が
-  // 長い分類が上に来て、川崎や横浜のような大きいエリアが落ちていた。
-  // 下で選んだ分類（pin）は件数に関わらず必ず描き、消した分類のぶんは次が繰り上がる。
-  const hidden = hiddenSet();
-  const ranked = [...byKey.entries()]
-    .filter(([name]) => !hidden.has(name))
-    .sort((a, b) => (rowsOf.get(b[0]) || 0) - (rowsOf.get(a[0]) || 0));
-  const pinned = ranked.filter(([name]) => ui.pin.includes(name));
-  const drawnKeys = [...pinned, ...ranked.filter(([name]) => !ui.pin.includes(name))]
-    .slice(0, SERIES_COLORS.length);
-  // 色は「描くと決まった系列」に配る（全分類に配ると、描く線が灰色ばかりになる）
-  const colors = colorOf(drawnKeys.map(([name]) => name), group);
-  // 築年数のように順序のある区分は、凡例も新しい順に並べる（件数順だと読めない）
-  if (group.order) {
-    const rank = (name) => {
-      const i = group.order.indexOf(name);
-      return i < 0 ? 999 : i;
-    };
-    drawnKeys.sort((a, b) => rank(a[0]) - rank(b[0]));
-  }
-  const series = drawnKeys.map(([name, points]) => ({
-    name, points: points.sort((a, b) => a.x - b.x),
-    color: colors.get(name) || SERIES_MUTED,
-  }));
-  // 凡例には、消した分類も残す（消すと凡例から消えては戻せない）
-  const all = [...series,
-    ...[...byKey.keys()].filter((name) => hidden.has(name))
-      .map((name) => ({ name, points: byKey.get(name), color: SERIES_MUTED }))];
+  const { series, all, hidden } = pickSeries(byKey, rowsOf, group);
   if (!all.length) {
     return el('div', {}, trendControls(rerender),
       el('div', { class: 'empty' }, 'まとめられる期間がありません'));
@@ -905,6 +876,47 @@ function trendView(rows, rerender) {
             el('td', {}, fmt.n(r.avg, 1)),
             el('td', {}, fmt.n(r.min, 0)),
             el('td', {}, fmt.n(r.max, 0)))))))));
+}
+
+/**
+ * 描く系列を決める。推移と供給で同じ決め方を使う。
+ *
+ * 線が多すぎると読めないので、売り出しの多い順に SERIES_COLORS のぶんだけ描く。
+ * 以前は「点（＝線を引ける月）の数」で選んでいたため、直近7年だと主要エリアが
+ * どれも同数で並び、川崎や横浜のような大きいエリアが落ちていた。
+ *
+ * 表から選んだ分類（pin）は件数に関わらず必ず描き、消した分類のぶんは次が繰り上がる。
+ * 凡例には消した分類も残す（凡例から消えると戻せなくなる）。
+ *
+ * @param {Map<string, Array>} byKey 分類名 → 点の配列
+ * @param {Map<string, number>} rowsOf 分類名 → 売り出しの件数（描く順に使う）
+ */
+function pickSeries(byKey, rowsOf, group) {
+  const hidden = hiddenSet();
+  const ranked = [...byKey.entries()]
+    .filter(([name]) => !hidden.has(name))
+    .sort((a, b) => (rowsOf.get(b[0]) || 0) - (rowsOf.get(a[0]) || 0));
+  const pinned = ranked.filter(([name]) => ui.pin.includes(name));
+  const drawnKeys = [...pinned, ...ranked.filter(([name]) => !ui.pin.includes(name))]
+    .slice(0, SERIES_COLORS.length);
+  // 色は「描くと決まった系列」に配る（全分類に配ると、描く線が灰色ばかりになる）
+  const colors = colorOf(drawnKeys.map(([name]) => name), group);
+  // 築年数のように順序のある区分は、凡例も新しい順に並べる（件数順だと読めない）
+  if (group.order) {
+    const rank = (name) => {
+      const i = group.order.indexOf(name);
+      return i < 0 ? 999 : i;
+    };
+    drawnKeys.sort((a, b) => rank(a[0]) - rank(b[0]));
+  }
+  const series = drawnKeys.map(([name, points]) => ({
+    name, points: [...points].sort((a, b) => a.x - b.x),
+    color: colors.get(name) || SERIES_MUTED,
+  }));
+  const all = [...series,
+    ...[...byKey.keys()].filter((name) => hidden.has(name))
+      .map((name) => ({ name, points: byKey.get(name), color: SERIES_MUTED }))];
+  return { series, all, hidden };
 }
 
 /**
@@ -1074,13 +1086,28 @@ function supplyView(rows, buildings, rerender) {
   const started = lastYear.reduce((s, c) => s + c.a, 0);
   const ended = lastYear.reduce((s, c) => s + c.b, 0);
 
-  const chart = histogramChart(list, {
-    // 目盛りが「2019/09」の形なので、軸の名前は出さない（斜めの目盛りと重なる）
-    xLabel: '', height: 300, fmt: (v) => periodLabel(v, true),
-    legend: ['売り出し開始', '掲載終了'],
-    onPick: (b) => { ui.pick = { key: '供給', period: b.from }; rerender(); },
-  });
-  const picked = ui.pick ? list.find((c) => c.from === ui.pick.period) : null;
+  // 分類を選んでいるときは、分類ごとの折れ線にする。
+  // 「どのエリアから何件出ているか」は、積み上げた棒では読み取れないため。
+  const group = activeGroup();
+  const grouped = ui.group !== 'none' ? supplySeries(rows, period) : null;
+
+  const chart = grouped
+    ? scatterChart(grouped.series, {
+      xLabel: '', yLabel: '売り出した数（件）',
+      xTick: (v) => periodLabel(v, true), height: 300, line: true,
+      onPick: (p) => { ui.pick = p ? { key: p.key, period: p.x } : null; rerender(); },
+    })
+    : histogramChart(list, {
+      // 目盛りが「2019/09」の形なので、軸の名前は出さない（斜めの目盛りと重なる）
+      xLabel: '', height: 300, fmt: (v) => periodLabel(v, true),
+      legend: ['売り出し開始', '掲載終了'],
+      onPick: (b) => { ui.pick = { key: '供給', period: b.from }; rerender(); },
+    });
+  const picked = ui.pick
+    ? (grouped
+      ? grouped.cells.get(`${ui.pick.key}|${ui.pick.period}`)
+      : list.find((c) => c.from === ui.pick.period))
+    : null;
 
   return el('div', {},
     el('div', { class: 'section' },
@@ -1097,22 +1124,39 @@ function supplyView(rows, buildings, rerender) {
     supplyControls(rerender),
     el('div', { class: 'section' },
       el('div', { class: 'chartwrap' }, chart),
-      el('div', { class: 'chart-foot' },
-        el('span', {}, el('b', { style: `color:${SERIES_COLORS[0]}` }, '■'), ' 売り出し開始'),
-        el('span', {}, el('b', { style: 'color:var(--text-3)' }, '■'), ' 掲載終了'),
-        el('span', { class: 'tiny muted' }, '棒を押すと、その期間に売り出した部屋が下に並びます')),),
+      grouped
+        ? el('div', {},
+          grouped.all.length > 1
+            ? el('div', { class: 'legendrow' },
+              chartLegend(grouped.all, chart,
+                { hidden: grouped.hidden, onToggle: (name) => toggleSeries(name, rerender) }),
+              showAllButton(rerender))
+            : null,
+          el('p', { class: 'tiny muted' },
+            grouped.total > grouped.series.length
+              ? `${group.label}は${grouped.total.toLocaleString('ja-JP')}件あります。`
+                + `売り出しの多い${grouped.series.length}件を線にしています（下の表は全件）。`
+              : '',
+            '点を押すと、その期間に売り出した部屋が下に並びます'))
+        : el('div', { class: 'chart-foot' },
+          el('span', {}, el('b', { style: `color:${SERIES_COLORS[0]}` }, '■'), ' 売り出し開始'),
+          el('span', {}, el('b', { style: 'color:var(--text-3)' }, '■'), ' 掲載終了'),
+          el('span', { class: 'tiny muted' }, '棒を押すと、その期間に売り出した部屋が下に並びます'))),
     picked
       ? el('div', { class: 'section' },
         el('div', { class: 'pickhead' },
-          el('b', {}, periodLabel(picked.from)),
+          el('b', {}, periodLabel(picked.from ?? ui.pick.period),
+            grouped ? `　${ui.pick.key}` : ''),
           el('span', { class: 'tiny muted' },
-            `売り出し ${picked.rows.length}件　掲載終了 ${picked.closed.length}件`),
+            `売り出し ${picked.rows.length}件`
+            + (picked.closed ? `　掲載終了 ${picked.closed.length}件` : '')),
           el('div', { class: 'spacer' }),
           el('button', { class: 'btn btn-sm', onclick: () => { ui.pick = null; rerender(); } }, 'クリア')),
         picked.rows.length
           ? saleTable(sortRows(picked.rows).slice(0, 200), picked.rows.length, rerender)
           : el('div', { class: 'empty' }, 'この期間に売り出した部屋はありません（終了のみ）'))
       : null,
+    grouped ? supplyTable(rows, grouped, group, rerender) : null,
     el('div', { class: 'section' },
       el('h3', {}, '期間ごとの数字'),
       el('div', { class: 'tablewrap' },
@@ -1128,10 +1172,104 @@ function supplyView(rows, buildings, rerender) {
               c.a - c.b > 0 ? `+${c.a - c.b}` : String(c.a - c.b)))))))));
 }
 
+/**
+ * 分類ごとの供給を並べる。線は8本までなので、残りはここで見る。
+ * 行を押すと、その分類をグラフに出し入れできる（推移の表と同じ）。
+ */
+function supplyTable(rows, grouped, group, rerender) {
+  const g = activeGroup();
+  const since = nowYear() - 1;
+  const stat = new Map();
+  const at = (k) => {
+    if (!stat.has(k)) stat.set(k, { name: k, all: 0, year: 0, ended: 0, open: 0 });
+    return stat.get(k);
+  };
+  for (const x of rows) {
+    const k = g.get(x, buildingOf(x.buildingId)) ?? '不明';
+    const c = at(k);
+    c.all++;
+    if ((ymToNum(x.listedYM) ?? -Infinity) >= since) c.year++;
+    if ((ymToNum(x.closedYM) ?? -Infinity) >= since) c.ended++;
+    if (isOpen(x)) c.open++;
+  }
+  const drawn = new Map(grouped.series.map((x) => [x.name, x.color]));
+  const list = [...stat.values()].sort((a, b) => b.all - a.all).slice(0, GROWTH_ROWS);
+
+  return el('div', { class: 'section' },
+    el('h3', {}, `${group.label}ごとの供給`),
+    el('div', { class: 'tablewrap' },
+      el('table', { class: 'cmp markettbl' },
+        el('thead', {}, el('tr', {},
+          ['', group.label, 'この期間に出た数', '直近1年に出た数', '直近1年に終わった数',
+            'いま出ている数'].map((c, i) =>
+            el('th', { class: i === 1 ? 'lab' : null }, c)))),
+        el('tbody', {}, list.map((r) => el('tr', {
+          class: 'pickrow' + (drawn.has(r.name) ? ' is-on' : ''),
+          title: drawn.has(r.name) ? '押すとグラフから外します' : '押すとグラフに出します',
+          onclick: () => togglePin(r.name, rerender),
+        },
+        el('td', {}, el('i', {
+          class: 'seriesdot' + (drawn.has(r.name) ? '' : ' is-off'),
+          style: drawn.has(r.name) ? `background:${drawn.get(r.name)}` : null,
+        })),
+        el('td', { class: 'lab' }, r.name),
+        el('td', {}, r.all.toLocaleString('ja-JP')),
+        el('td', {}, r.year.toLocaleString('ja-JP')),
+        el('td', {}, r.ended.toLocaleString('ja-JP')),
+        el('td', {}, r.open ? r.open.toLocaleString('ja-JP') : '—'),
+        ))))),
+    el('p', { class: 'tiny muted' },
+      `色が付いている${grouped.series.length}件がグラフの線です。行を押すと出し入れできます。`
+      + (stat.size > list.length
+        ? `　${stat.size.toLocaleString('ja-JP')}件のうち多い順に${GROWTH_ROWS}件を出しています。`
+        : '')));
+}
+
+/**
+ * 分類ごとの供給。期間ごとに「その分類から何件売りに出たか」を数える。
+ *
+ * 相場が上がっていても、同じエリアから毎月10件出ていれば買い手は選べる。
+ * 逆に年に1〜2件しか出ないエリアは、出たときに動かないと買えない。
+ * 積み上げた棒では分類ごとの本数が読めないので、分類を選んだら折れ線にする。
+ */
+function supplySeries(rows, period) {
+  const group = activeGroup();
+  const cells = new Map();          // 「分類|期間」→ その期間に出た部屋
+  const rowsOf = new Map();         // 分類 → 件数（どれを線にするかの順に使う）
+  for (const x of rows) {
+    const p = period(x.listedYM);
+    if (p == null) continue;
+    const key = group.get(x, buildingOf(x.buildingId)) ?? '不明';
+    rowsOf.set(key, (rowsOf.get(key) || 0) + 1);
+    const id = `${key}|${p}`;
+    if (!cells.has(id)) cells.set(id, { key, from: p, rows: [] });
+    cells.get(id).rows.push(x);
+  }
+  const byKey = new Map();
+  for (const c of cells.values()) {
+    if (!byKey.has(c.key)) byKey.set(c.key, []);
+    byKey.get(c.key).push({
+      x: c.from, y: c.rows.length, key: c.key,
+      label: `${periodLabel(c.from)}　${c.key}`,
+      info: [`売り出し ${c.rows.length}件`, '押すと下に一覧が出ます'],
+    });
+  }
+  const { series, all, hidden } = pickSeries(byKey, rowsOf, group);
+  return { series, all, hidden, cells, rowsOf, total: byKey.size };
+}
+
 /** 供給の操作。粒度と期間だけ。表示単位は件数なので出さない */
 function supplyControls(rerender) {
   return el('div', { class: 'panel' },
     el('div', { class: 'panel-controls' },
+      controlRow('◍', '分類',
+        el('div', { style: 'display:flex;align-items:center;gap:18px;flex-wrap:wrap' },
+          select(ui.group, Object.entries(MARKET_GROUPS).map(([k, v]) => [k, v.label]),
+            (k) => { ui.group = k; ui.pick = null; ui.hide = []; ui.pin = []; rerender(); }, 'picksel'),
+          el('span', { class: 'tiny muted' }, '×'),
+          select(ui.group2, group2Options(),
+            (k) => { ui.group2 = k; ui.pick = null; ui.hide = []; ui.pin = []; rerender(); }, 'picksel'),
+          el('span', { class: 'tiny muted' }, '　分類を選ぶと、エリアごとの折れ線になります'))),
       controlRow('◍', 'まとめ方',
         el('div', { style: 'display:flex;align-items:center;gap:18px;flex-wrap:wrap' },
           segmented(ui.step, [['year', '年ごと'], ['month', '月ごと']],

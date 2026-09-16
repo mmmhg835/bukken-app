@@ -496,6 +496,28 @@ const screens = [
       f.resetDraft();
     }
   }],
+  ['供給：分類ごとの折れ線と、点を押して中身を見る', () => {
+    const v = mods['market-view'];
+    const u = v.marketUI;
+    const saved = { ...u };
+    try {
+      for (const group of ['area', 'layout', 'ageBand']) {
+        for (const step of ['year', 'month']) {
+          Object.assign(u, saved, { group, group2: 'none', step, pick: null, hide: [], pin: [] });
+          v.renderMarket(stubEl(), () => {}, 'supply');
+        }
+      }
+      // 掛け合わせ、点を押した状態、当たらない点、消した分類
+      Object.assign(u, saved, { group: 'area', group2: 'layout', pick: null, hide: [], pin: [] });
+      v.renderMarket(stubEl(), () => {}, 'supply');
+      u.pick = { key: '存在しない', period: 1990 };
+      v.renderMarket(stubEl(), () => {}, 'supply');
+      Object.assign(u, saved, { group: 'layout', group2: 'none', pick: null, hide: ['2LDK'], pin: ['3LDK'] });
+      v.renderMarket(stubEl(), () => {}, 'supply');
+    } finally {
+      Object.assign(u, saved);
+    }
+  }],
   ['供給：棒を押してその期間の売り出しを見る', () => {
     const v = mods['market-view'];
     const u = v.marketUI;
