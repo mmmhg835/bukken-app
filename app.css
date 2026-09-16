@@ -654,3 +654,9 @@ table.cmp tr.is-current td.lab{background:var(--accent-soft)}
   padding:7px 14px;font-size:13px;font-weight:700;color:var(--text-2)}
 .pill:hover{background:var(--surface-2)}
 .pill.is-on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+/* 金利と価格の行見出し。価格そのものより「どの価格か」を先に読ませる */
+.anchor-label{font-size:11.5px;color:var(--text-2);font-weight:700;margin-bottom:3px}
+.anchor-price{display:flex;align-items:center;gap:10px;justify-content:flex-end;
+  font-weight:700;white-space:nowrap}
+.anchor-set{padding:4px 10px;font-size:11.5px}
+.mxtbl td.lab{text-align:right}

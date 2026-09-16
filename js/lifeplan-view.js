@@ -10,7 +10,7 @@ import {
 import { lineChart, stackedBarChart, chartLegend, SERIES_COLORS } from './chart.js';
 import { saleView } from './sale-view.js';
 
-import { derive } from './util.js';
+import { derive, TSUBO_SQM } from './util.js';
 
 const ui = {
   afterLoans: false,
@@ -50,7 +50,7 @@ export function renderLifeplan(root, rerender, sub = 'plan') {
     propertyPicker(plan, room, building, rerender, view),
     offerRoom && view === 'plan'
       ? offerComparison(plan, room, offerRoom, building, res, baseRes) : null,
-    view === 'matrix' ? matrixView(plan, offerRoom || room, building, rerender)
+    view === 'matrix' ? matrixView(plan, room, building, mark)
       : view === 'burden' ? burdenView(plan, offerRoom || room, res, mark, rerender)
         : view === 'graph' ? graphView(plan, offerRoom || room, building, res, offerRoom ? room : null)
           : view === 'sale' ? saleView(plan, offerRoom || room, rerender)
@@ -606,36 +606,56 @@ function thSub(title, sub) {
 
 /**
  * 金利が上がったら、価格がいくらなら、毎月どうなるか。
- * ローンの返済額だけでは家計に効いてくる形が見えないので、住居費と毎月の残りを
- * 同じマスに並べる。前提（収入・生活費・車）はライフプランのものをそのまま使う。
+ *
+ * 行は「意味のある価格」だけを並べる。500万刻みは根拠が無く、相場と
+ * 見比べながら指値を決めるのに使えないため。売り出し・指値・相場（出どころ別）
+ * を同じ表に並べ、相場の行からそのまま指値に落とせるようにしてある。
+ *
+ * 前提（収入・生活費・車）はライフプランのものをそのまま使う。
  */
-function matrixView(plan, room, building, rerender) {
+function matrixView(plan, room, building, mark) {
   if (!room) return el('div', { class: 'empty' }, '対象の物件を選んでください');
   const terms = store.loanTerms;
   const opts = { excludeTemporary: ui.afterLoans };
   const t = { ...terms, ...(room.loan || {}) };
+  const tsubo = room.area ? room.area / TSUBO_SQM : null;
+  const marketPrice = (key) => (room[key] != null && tsubo ? room[key] * tsubo : null);
 
   // 設定の金利を起点に0.25%刻み。押した分だけ列になる
   const baseRate = Number(t.rate) || 0;
   const OFFSETS = [0, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
   const picked = OFFSETS.filter((o) => ui.rateSteps.includes(o));
   const rates = (picked.length ? picked : [0]).map((o) => Math.round((baseRate + o) * 1000) / 1000);
-  // 価格は売り出しから500万刻みで下へ。指値が入っていればその額も行に混ぜる
-  const steps = [0, 500, 1000, 1500, 2000].map((d) => (room.price ?? 0) - d);
-  const prices = [...new Set([...steps, room.offerPrice].filter((v) => v != null && v > 0))]
-    .sort((a, b) => b - a);
 
-  const at = (price, rate) => {
-    const r2 = { ...room, price, loan: { ...(room.loan || {}), rate } };
-    return calcPlan(plan, r2, building, { ...terms, rate }, opts);
-  };
+  const anchors = [
+    { label: '売り出し', price: room.price },
+    { label: '指値', price: room.offerPrice, editable: true },
+    { label: 'ISOGE 相場', price: marketPrice('marketIsoge') },
+    { label: 'マンレビ 相場', price: marketPrice('marketMrev') },
+  ].filter((a) => a.price != null && a.price > 0).sort((a, b) => b.price - a.price);
 
-  const body = el('tbody', {}, prices.map((price) => {
+  const at = (price, rate) =>
+    calcPlan(plan, { ...room, price, loan: { ...(room.loan || {}), rate } },
+      building, { ...terms, rate }, opts);
+
+  const body = el('tbody', {}, anchors.map((a) => {
+    const price = Math.round(a.price);
     const principal = housingCost({ ...room, price }, building, terms).loan.principal;
-    const isOffer = room.offerPrice != null && price === room.offerPrice;
+    const isOffer = a.editable;
     return el('tr', { class: isOffer ? 'is-current' : null },
-      el('td', { class: 'lab' }, `${fmt.man1(price)}万円`,
-        isOffer ? el('span', { class: 'tiny muted' }, '　指値') : null),
+      el('td', { class: 'lab' },
+        el('div', { class: 'anchor-label' }, a.label),
+        isOffer
+          ? numberInput({
+            value: price, cls: 'lpitem-input', fkey: 'mx-offer',
+            onInput: (num) => { room.offerPrice = num; mark(); },
+          })
+          : el('div', { class: 'anchor-price' }, `${fmt.man1(price)}万円`,
+            el('button', {
+              class: 'btn btn-sm anchor-set',
+              onclick: () => { room.offerPrice = price; mark(); },
+            }, '指値にする'))),
+      el('td', { class: 'muted' }, tsubo ? `${fmt.man1(Math.round(price / tsubo))}万/坪` : '—'),
       el('td', { class: 'muted' }, `${fmt.man1(Math.round(principal))}万円`),
       ...rates.map((rate) => {
         const c = at(price, rate);
@@ -649,13 +669,19 @@ function matrixView(plan, room, building, rerender) {
       }));
   }));
 
+  // 毎月の残りがちょうど0になる価格。いくらまでなら出せるかの上限になる
+  const zeroRow = rates.map((rate) => {
+    const { price } = affordablePrice(plan, room, building, { ...terms, rate });
+    return { rate, price, tsuboPrice: tsubo ? price / tsubo : null };
+  });
+
   const ratePicker = el('div', { class: 'pillrow' }, OFFSETS.map((o) => el('button', {
     class: 'pill' + (ui.rateSteps.includes(o) ? ' is-on' : ''),
     onclick: () => {
       ui.rateSteps = ui.rateSteps.includes(o)
         ? ui.rateSteps.filter((x) => x !== o)
         : [...ui.rateSteps, o].sort((a, b) => a - b);
-      rerender();
+      mark();
     },
   }, `${Math.round((baseRate + o) * 1000) / 1000}%`)));
 
@@ -667,11 +693,17 @@ function matrixView(plan, room, building, rerender) {
         el('table', { class: 'cmp mxtbl' },
           el('thead', {}, el('tr', {},
             el('th', { class: 'lab' }, '物件価格'),
+            el('th', {}, thSub('坪単価', '価格 ÷ 坪数')),
             el('th', {}, thSub('借入額', t.includeFees ? '諸費用を含む' : '諸費用は現金')),
             ...rates.map((r, i) => el('th', {},
               thSub(`金利 ${r}%`, picked[i] ? `いまより +${picked[i]}%` : 'いまの設定'))),
           )),
           body))),
+    el('div', { class: 'section' },
+      el('h3', {}, '毎月の残りが0になる価格'),
+      el('div', { class: 'calcgrid calcgrid-4' },
+        ...zeroRow.map((z) => kv(`金利 ${z.rate}%`, `${fmt.man1(Math.round(z.price))}万円`,
+          z.tsuboPrice ? `${fmt.man1(Math.round(z.tsuboPrice))}万/坪` : null)))),
   );
 }
 
