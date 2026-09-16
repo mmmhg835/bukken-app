@@ -112,8 +112,15 @@ table.cmp tr:hover td.lab{background:var(--surface-2)}
 .detail-head h2{font-size:20px;flex:1;min-width:200px}
 .detail-head select{border:1px solid var(--line);background:var(--surface);border-radius:var(--r-sm);padding:8px 11px;font-weight:600}
 .back{background:none;border:0;color:var(--accent);cursor:pointer;padding:4px 0;font-weight:600;margin-bottom:8px}
+/* セクションの境目。縦に長い画面では、見出しだけだとどこで話が変わったのか
+   読み取れない。区切り線と見出しの色柱の2つで切れ目を示す。 */
 .section{margin-bottom:22px}
-.section > h3{font-size:14px;color:var(--text-2);text-transform:none;margin-bottom:10px;letter-spacing:.04em}
+.section + .section{border-top:1px solid var(--line-2);padding-top:24px;margin-top:26px}
+.section > h3{display:flex;align-items:center;gap:9px;
+  font-size:15px;color:var(--text);font-weight:700;margin-bottom:12px;letter-spacing:.02em}
+.section > h3::before{content:'';width:3px;height:16px;border-radius:2px;background:var(--accent);flex:none}
+/* サブタブの直後は、タブ自体が切れ目なので線を重ねない */
+.subtabs + .section,.section:first-child{border-top:0;padding-top:0;margin-top:0}
 .form{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;padding:14px}
 .field{display:flex;flex-direction:column;gap:5px;min-width:0}
 .field label{font-size:12px;color:var(--text-2);font-weight:600}
@@ -636,3 +643,9 @@ table.cmp tr.is-current td.lab{background:var(--accent-soft)}
    出どころが2つあるので、差を列に分けると表が横に伸びすぎるため */
 .diffline{display:flex;gap:6px;justify-content:flex-end;align-items:baseline;white-space:nowrap}
 .diffline .dk{font-size:10.5px;color:var(--text-3);font-weight:600}
+/* 金利と価格のマス目。1つのマスに住居費と毎月の残りを縦に並べる */
+.mxline{display:flex;gap:8px;justify-content:flex-end;align-items:baseline;white-space:nowrap}
+.mxline .dk{font-size:10.5px;color:var(--text-3);font-weight:600}
+/* 金利と価格のマス目。1つのマスに住居費と毎月の残りを縦に並べる */
+.mxline{display:flex;gap:8px;justify-content:flex-end;align-items:baseline;white-space:nowrap}
+.mxline .dk{font-size:10.5px;color:var(--text-3);font-weight:600}

@@ -14,7 +14,8 @@ import { derive } from './util.js';
 
 const ui = { afterLoans: false, openGroups: null };
 
-const SUBTABS = [['plan', 'ライフプラン'], ['burden', '返済負担比率'], ['graph', 'グラフ'], ['sale', '売却']];
+const SUBTABS = [['plan', 'ライフプラン'], ['burden', '返済負担比率'], ['matrix', '金利と価格'],
+  ['graph', 'グラフ'], ['sale', '売却']];
 
 /**
  * @param {string} sub 'plan' | 'burden'。物件と収入の前提を共有したまま切り替える
@@ -43,11 +44,12 @@ export function renderLifeplan(root, rerender, sub = 'plan') {
     propertyPicker(plan, room, building, rerender, view),
     offerRoom && view === 'plan'
       ? offerComparison(plan, room, offerRoom, building, res, baseRes) : null,
-    view === 'burden' ? burdenView(plan, offerRoom || room, res, mark, rerender)
-      : view === 'graph' ? graphView(plan, offerRoom || room, building, res, offerRoom ? room : null)
-        : view === 'sale' ? saleView(plan, offerRoom || room, rerender)
-          : planView(plan, offerRoom || room, building, res, mark, rerender,
-            baseRes, offerRoom ? room : null),
+    view === 'matrix' ? matrixView(plan, offerRoom || room, building)
+      : view === 'burden' ? burdenView(plan, offerRoom || room, res, mark, rerender)
+        : view === 'graph' ? graphView(plan, offerRoom || room, building, res, offerRoom ? room : null)
+          : view === 'sale' ? saleView(plan, offerRoom || room, rerender)
+            : planView(plan, offerRoom || room, building, res, mark, rerender,
+              baseRes, offerRoom ? room : null),
   );
 }
 
@@ -597,6 +599,66 @@ function burdenTable(title, rows, pick, room, footer = null) {
 
 function thSub(title, sub) {
   return el('div', { class: 'thsub' }, el('b', {}, title), el('span', {}, sub));
+}
+
+/* ===== 金利と価格のマトリクス ===== */
+
+/**
+ * 金利が上がったら、価格がいくらなら、毎月どうなるか。
+ * ローンの返済額だけでは家計に効いてくる形が見えないので、住居費と毎月の残りを
+ * 同じマスに並べる。前提（収入・生活費・車）はライフプランのものをそのまま使う。
+ */
+function matrixView(plan, room, building) {
+  if (!room) return el('div', { class: 'empty' }, '対象の物件を選んでください');
+  const terms = store.loanTerms;
+  const opts = { excludeTemporary: ui.afterLoans };
+  const t = { ...terms, ...(room.loan || {}) };
+
+  // 金利はいまの条件に上振れを3段。同じ値が並ばないよう重複は落とす
+  const rates = [...new Set([Number(t.rate), 1.5, 2.0, 2.5])]
+    .filter((v) => Number.isFinite(v)).sort((a, b) => a - b);
+  // 価格は売り出しから500万刻みで下へ。指値が入っていればその額も行に混ぜる
+  const steps = [0, 500, 1000, 1500, 2000].map((d) => (room.price ?? 0) - d);
+  const prices = [...new Set([...steps, room.offerPrice].filter((v) => v != null && v > 0))]
+    .sort((a, b) => b - a);
+
+  const at = (price, rate) => {
+    const r2 = { ...room, price, loan: { ...(room.loan || {}), rate } };
+    return calcPlan(plan, r2, building, { ...terms, rate }, opts);
+  };
+
+  const body = el('tbody', {}, prices.map((price) => {
+    const principal = housingCost({ ...room, price }, building, terms).loan.principal;
+    const isOffer = room.offerPrice != null && price === room.offerPrice;
+    return el('tr', { class: isOffer ? 'is-current' : null },
+      el('td', { class: 'lab' }, `${fmt.man1(price)}万円`,
+        isOffer ? el('span', { class: 'tiny muted' }, '　指値') : null),
+      el('td', { class: 'muted' }, `${fmt.man1(Math.round(principal))}万円`),
+      ...rates.map((rate) => {
+        const c = at(price, rate);
+        const ok = c.balance >= 0;
+        return el('td', {},
+          el('div', { class: 'mxline' }, el('span', { class: 'dk' }, '住居'),
+            el('span', {}, `${fmt.n(c.housingTotal, 1)}万`)),
+          el('div', { class: 'mxline' }, el('span', { class: 'dk' }, '残り'),
+            el('span', { class: ok ? 'pos' : 'neg' },
+              `${ok ? '+' : '▲'}${fmt.n(Math.abs(c.balance), 1)}万`)));
+      }));
+  }));
+
+  return el('div', {},
+    el('div', { class: 'section' },
+      el('h3', {}, `${building?.name ?? ''} ${room.label}　金利と価格`),
+      el('div', { class: 'tablewrap' },
+        el('table', { class: 'cmp mxtbl' },
+          el('thead', {}, el('tr', {},
+            el('th', { class: 'lab' }, '物件価格'),
+            el('th', {}, thSub('借入額', t.includeFees ? '諸費用を含む' : '諸費用は現金')),
+            ...rates.map((r) => el('th', {},
+              thSub(`金利 ${r}%`, `${t.years}年 ${t.method === 'equal' ? '元利均等' : '元金均等'}`))),
+          )),
+          body))),
+  );
 }
 
 /* ===== 支出グループ ===== */

@@ -278,11 +278,13 @@ const screens = [
   ['分析', () => mods['analytics-view'].renderAnalysis(stubEl(), () => {})],
   ['ライフプラン', lp('plan')],
   ['返済負担比率', lp('burden')],
+  ['金利と価格', lp('matrix')],
   ['グラフ', lp('graph')],
   ['売却', lp('sale')],
   // 指値を入れると元値との2組を描く経路に入る。ここも必ず通す
   ['ライフプラン（指値あり）', () => { room.offerPrice = Math.round(room.price * 0.93); lp('plan')(); }],
   ['返済負担比率（指値あり）', lp('burden')],
+  ['金利と価格（指値あり）', lp('matrix')],
   ['グラフ（指値あり）', lp('graph')],
   ['売却（指値あり）', () => { lp('sale')(); room.offerPrice = null; }],
   ['内見チェック', () => mods['viewing-view'].renderViewing(stubEl(), () => {}, 'check')],
