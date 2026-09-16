@@ -6,7 +6,7 @@ import { buildingDefaults, SPEC_GROUPS, BUILDING_EQUIPMENT } from './spec.js';
 import { defaultLifeplan, categoryOf } from './lifeplan.js';
 import { DEFAULT_SALE } from './sale.js';
 
-export const CURRENT_SCHEMA = 22;
+export const CURRENT_SCHEMA = 23;
 
 export function migrate(data) {
   let d = structuredClone(data);
@@ -31,6 +31,7 @@ export function migrate(data) {
   if (d.schemaVersion < 20) d = v19ToV20(d);
   if (d.schemaVersion < 21) d = v20ToV21(d);
   if (d.schemaVersion < 22) d = v21ToV22(d);
+  if (d.schemaVersion < 23) d = v22ToV23(d);
   d.settings ||= {};
   d.settings.loan = { ...DEFAULT_TERMS, ...(d.settings.loan || {}) };
   d.settings.places ||= [];   // 職場・駅など、地図上の参照地点
@@ -345,6 +346,19 @@ function v20ToV21(d) {
 function v21ToV22(d) {
   for (const m of d.marketListings || []) m.open ??= !m.closedYM;
   d.schemaVersion = 22;
+  return d;
+}
+
+/**
+ * 相場を properties.json から追い出す。建物ごとの market/<id>.json に移した。
+ * 1棟で数千行になり、まとめると GitHub Contents API が中身を返す上限（1MB）を超える。
+ * ファイルの分割はデータ側で済ませてあるので、ここでは器を落とすだけでよい。
+ */
+function v22ToV23(d) {
+  delete d.marketListings;
+  delete d.rentListings;
+  delete d.newPrices;
+  d.schemaVersion = 23;
   return d;
 }
 

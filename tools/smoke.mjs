@@ -342,6 +342,8 @@ const screens = [
   ...marketTabs('相場（データなし）'),
   ['相場のデータを入れる', () => {
     const b = store.data.buildings[0];
+    // 相場は建物ごとの別ファイル。読み込み済みとして差し込んでから足す
+    store.setMarket(b.id, {});
     store.addListing(b.id, { listedYM: '2026-05', closedYM: '2026-08', floor: 4, layout: '3LDK',
       direction: '東', feature: 'リフォーム', area: 75.67, balcony: 12.7, price: 9698,
       priceHistory: [{ ym: '2026-08', price: 9998 }, { ym: '2026-09', price: 9698 }],

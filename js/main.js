@@ -66,24 +66,32 @@ function paintStatus() {
     unconfigured: ['未接続', 'badge-muted'],
     idle: ['待機', 'badge-muted'],
     syncing: ['同期中…', 'badge-muted'],
-    ok: [store.dirty ? '未保存' : '同期済', store.dirty ? 'badge-warn' : 'badge-ok'],
+    ok: [store.dirty || store.marketDirty.size ? '未保存' : '同期済',
+      store.dirty || store.marketDirty.size ? 'badge-warn' : 'badge-ok'],
     error: ['エラー', 'badge-warn'],
   };
   const [text, cls] = map[store.syncState] || map.idle;
   badge.textContent = text;
   badge.className = `badge ${cls}`;
   badge.title = store.lastError || '';
-  $('#btnSave').hidden = !store.dirty;
+  $('#btnSave').hidden = !store.dirty && !store.marketDirty.size;
 }
 
 // 変更から少し経ったら自動でコミットする（明示保存ボタンも残す）
 const autosave = debounce(async () => {
-  if (!store.dirty || !store.configured) return;
-  try { await store.save(); toast('GitHub に保存しました'); }
-  catch (e) { toast(e.message, true); }
+  if (!store.configured) return;
+  try {
+    if (store.dirty) await store.save();
+    // 相場は建物ごとの別ファイル。触った建物だけ書き戻す
+    for (const id of [...store.marketDirty]) await store.saveMarket(id);
+    toast('GitHub に保存しました');
+  } catch (e) { toast(e.message, true); }
 }, 4000);
 
-store.addEventListener('change', () => { paintStatus(); if (store.dirty) autosave(); });
+store.addEventListener('change', () => {
+  paintStatus();
+  if (store.dirty || store.marketDirty.size) autosave();
+});
 
 $('#tabs').addEventListener('click', (e) => {
   const tab = e.target.closest('.tab');
@@ -91,8 +99,11 @@ $('#tabs').addEventListener('click', (e) => {
 });
 
 $('#btnSave').addEventListener('click', async () => {
-  try { await store.save(); toast('GitHub に保存しました'); }
-  catch (e) { toast(e.message, true); }
+  try {
+    if (store.dirty) await store.save();
+    for (const id of [...store.marketDirty]) await store.saveMarket(id);
+    toast('GitHub に保存しました');
+  } catch (e) { toast(e.message, true); }
 });
 
 window.addEventListener('hashchange', render);

@@ -11,6 +11,10 @@ import { uid } from './util.js';
 const CFG_KEY = 'bukken.config.v1';
 const PREF_KEY = 'bukken.prefs.v1';
 const DATA_PATH = 'properties.json';
+// 相場は建物ごとの別ファイルにする。1棟で数千行になり、まとめると
+// GitHub Contents API が中身を返す上限（1MB）を超えて読めなくなる。
+const marketPath = (buildingId) => `market/${buildingId}.json`;
+const emptyMarket = () => ({ sale: [], rent: [], new: [] });
 
 /**
  * 初期データ。項目を直接並べず migrate() に通して作る。
@@ -27,6 +31,10 @@ class Store extends EventTarget {
   syncState = 'idle';   // idle | syncing | ok | error | unconfigured
   lastError = '';
   #urls = new Map();
+  // 相場は建物ごとに遅延読み込みする。読んだものだけここに載る
+  #market = new Map();
+  #marketLoading = new Set();
+  marketDirty = new Set();
 
   emit() { this.dispatchEvent(new Event('change')); }
 
@@ -148,15 +156,67 @@ class Store extends EventTarget {
   async deleteBuilding(id) {
     this.data.buildings = this.data.buildings.filter((b) => b.id !== id);
     this.data.rooms = this.data.rooms.filter((r) => r.buildingId !== id);
-    this.data.marketListings = this.marketListings.filter((m) => m.buildingId !== id);
-    this.data.rentListings = this.rentListings.filter((m) => m.buildingId !== id);
-    this.data.newPrices = this.newPrices.filter((m) => m.buildingId !== id);
     await this.save(`delete: 建物と配下の部屋を削除 (${id})`);
+    // 相場は別ファイルなので個別に消す。消せなくても本体の削除は済んでいる
+    const m = this.#market.get(id);
+    this.#market.delete(id);
+    this.marketDirty.delete(id);
+    await idb.del('kv', `market:${id}`).catch(() => {});
+    if (m?.sha) await this.repo.remove(marketPath(id), m.sha, `delete: 相場を削除 (${id})`).catch(() => {});
   }
 
-  // ===== 売り出し履歴（同じ建物で過去に売りに出た部屋） =====
-  get marketListings() { return this.data.marketListings ||= []; }
-  listingsOf(buildingId) { return this.marketListings.filter((m) => m.buildingId === buildingId); }
+  // ===== 相場（建物ごとの別ファイル） =====
+  // 売り出し履歴・賃料履歴・新築分譲価格。件数が桁違いなので properties.json には入れず、
+  // 相場タブで選んだ建物の分だけ読む。
+
+  /** 読み込み済みなら中身、まだなら null */
+  marketOf(buildingId) { return this.#market.get(buildingId) ?? null; }
+
+  /**
+   * 未読なら読みに行く。読めたら change を投げて画面を描き直させる。
+   * 画面側は「まだ null」の状態でも描けるようにしておくこと。
+   */
+  ensureMarket(buildingId) {
+    if (!buildingId || this.#market.has(buildingId) || this.#marketLoading.has(buildingId)) return;
+    this.#marketLoading.add(buildingId);
+    (async () => {
+      const key = `market:${buildingId}`;
+      let m = await idb.get('kv', key).catch(() => null);   // オフラインでも直前の内容を出す
+      if (this.configured) {
+        try {
+          const got = await this.repo.getJson(marketPath(buildingId));
+          m = got ? { ...emptyMarket(), ...got.data, sha: got.sha } : { ...emptyMarket(), sha: null };
+          await idb.set('kv', key, m);
+        } catch { /* 取れなければキャッシュのまま */ }
+      }
+      this.#market.set(buildingId, m || { ...emptyMarket(), sha: null });
+      this.#marketLoading.delete(buildingId);
+      this.emit();
+    })();
+  }
+
+  /** 読み込み済みとして相場を差し込む。まとめ取り込みと smoke から使う */
+  setMarket(buildingId, data = {}) {
+    this.#market.set(buildingId, { ...emptyMarket(), ...data, sha: data.sha ?? null });
+    this.emit();
+  }
+
+  /** 書き換え用。未読の建物には触らせない（空で上書きしてしまうため） */
+  #marketFor(buildingId) {
+    const m = this.#market.get(buildingId);
+    if (!m) throw new Error('相場をまだ読み込んでいません');
+    return m;
+  }
+
+  #markMarketDirty(buildingId) {
+    this.marketDirty.add(buildingId);
+    idb.set(`kv`, `market:${buildingId}`, this.#market.get(buildingId));
+    this.emit();
+  }
+
+  listingsOf(buildingId) { return this.marketOf(buildingId)?.sale ?? []; }
+  rentsOf(buildingId) { return this.marketOf(buildingId)?.rent ?? []; }
+  newPricesOf(buildingId) { return this.marketOf(buildingId)?.new ?? []; }
 
   addListing(buildingId, partial = {}) {
     const m = {
@@ -172,21 +232,12 @@ class Store extends EventTarget {
       source: 'マンレビ', note: '',
       ...partial,
     };
-    this.marketListings.push(m);
-    this.markDirty();
+    this.#marketFor(buildingId).sale.push(m);
+    this.#markMarketDirty(buildingId);
     return m;
   }
 
-  deleteListing(id) {
-    this.data.marketListings = this.marketListings.filter((m) => m.id !== id);
-    this.markDirty();
-  }
-
-  // ===== 賃料履歴（同じ建物で募集に出た賃貸） =====
   // 賃貸まわりの金額は円のまま持つ。掲載も生活実感も円で、万円に直すと写し間違えるため。
-  get rentListings() { return this.data.rentListings ||= []; }
-  rentsOf(buildingId) { return this.rentListings.filter((m) => m.buildingId === buildingId); }
-
   addRent(buildingId, partial = {}) {
     const m = {
       id: uid('t'), buildingId,
@@ -198,19 +249,10 @@ class Store extends EventTarget {
       source: 'マンレビ', note: '',
       ...partial,
     };
-    this.rentListings.push(m);
-    this.markDirty();
+    this.#marketFor(buildingId).rent.push(m);
+    this.#markMarketDirty(buildingId);
     return m;
   }
-
-  deleteRent(id) {
-    this.data.rentListings = this.rentListings.filter((m) => m.id !== id);
-    this.markDirty();
-  }
-
-  // ===== 新築分譲価格（新築時にいくらで売られたか） =====
-  get newPrices() { return this.data.newPrices ||= []; }
-  newPricesOf(buildingId) { return this.newPrices.filter((m) => m.buildingId === buildingId); }
 
   addNewPrice(buildingId, partial = {}) {
     const m = {
@@ -221,15 +263,33 @@ class Store extends EventTarget {
       source: 'マンレビ', note: '',
       ...partial,
     };
-    this.newPrices.push(m);
-    this.markDirty();
+    this.#marketFor(buildingId).new.push(m);
+    this.#markMarketDirty(buildingId);
     return m;
   }
 
-  deleteNewPrice(id) {
-    this.data.newPrices = this.newPrices.filter((m) => m.id !== id);
-    this.markDirty();
+  #removeFrom(buildingId, key, id) {
+    const m = this.#marketFor(buildingId);
+    m[key] = m[key].filter((x) => x.id !== id);
+    this.#markMarketDirty(buildingId);
   }
+
+  deleteListing(buildingId, id) { this.#removeFrom(buildingId, 'sale', id); }
+  deleteRent(buildingId, id) { this.#removeFrom(buildingId, 'rent', id); }
+  deleteNewPrice(buildingId, id) { this.#removeFrom(buildingId, 'new', id); }
+
+  /** 相場ファイルを書き戻す。字下げなしで置く（機械が書くだけで人は読まない） */
+  async saveMarket(buildingId, message = `update: 相場を更新 (${buildingId})`) {
+    if (!this.configured) throw new Error('GitHub 接続が未設定です（設定タブ）');
+    const m = this.#marketFor(buildingId);
+    const { sha, ...body } = m;
+    const res = await this.repo.putJson(marketPath(buildingId), body, message, sha ?? undefined, null);
+    m.sha = res.sha;
+    this.marketDirty.delete(buildingId);
+    await idb.set('kv', `market:${buildingId}`, m);
+    this.emit();
+  }
+
 
   // ===== 部屋 =====
   get rooms() { return this.data.rooms; }

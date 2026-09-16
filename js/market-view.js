@@ -31,9 +31,18 @@ export function renderMarket(root, rerender, view = 'overview') {
   }
 
   const b = store.building(ui.buildingId);
+  // 相場は建物ごとの別ファイル。まだ読んでいなければ読みに行き、届いたら描き直される
+  store.ensureMarket(ui.buildingId);
+  const loaded = store.marketOf(ui.buildingId) != null;
   const sale = sortRows(store.listingsOf(ui.buildingId));
   const rent = sortRents(store.rentsOf(ui.buildingId));
   const news = sortNewPrices(store.newPricesOf(ui.buildingId));
+
+  if (!loaded) {
+    mount(root, subTabs(view), picker(buildings, rerender),
+      el('div', { class: 'empty' }, '読み込み中'));
+    return;
+  }
 
   const body = view === 'rent' ? rentView(rent, rerender)
     : view === 'new' ? newView(news, b, rerender)
@@ -54,8 +63,10 @@ function subTabs(current) {
 /** 建物の切り替え。3種類の件数を添えて、どこが厚いか分かるようにする */
 function picker(buildings, rerender) {
   const options = buildings.map((b) => {
-    const n = store.listingsOf(b.id).length + store.rentsOf(b.id).length + store.newPricesOf(b.id).length;
-    return [b.id, n ? `${b.name}（${n}件）` : b.name];
+    // 未読の建物は件数が出せない。読みに行かせるのは選ばれたときだけにする
+    const m = store.marketOf(b.id);
+    const n = m ? m.sale.length + m.rent.length + m.new.length : null;
+    return [b.id, n == null ? b.name : `${b.name}（${n}件）`];
   });
   return el('div', { class: 'section' },
     el('div', { class: 'filterrow' },
@@ -272,7 +283,7 @@ function saleTable(rows, rerender) {
           class: 'btn btn-sm',
           onclick: () => {
             if (!confirm(`${ymLabel(x.listedYM)} の行を消しますか`)) return;
-            store.deleteListing(x.id);
+            store.deleteListing(x.buildingId, x.id);
             rerender();
           },
         }, '削除')));
@@ -319,7 +330,7 @@ function rentView(rows, rerender) {
     el('td', {}, x.deposit != null ? fmt.n(x.deposit, 0) : '—'),
     el('td', {}, x.keyMoney != null ? fmt.n(x.keyMoney, 0) : '—'),
     el('td', {}, x.guarantee != null ? fmt.n(x.guarantee, 0) : '—'),
-    delCell(() => store.deleteRent(x.id), ymLabel(x.ym), rerender))));
+    delCell(() => store.deleteRent(x.buildingId, x.id), ymLabel(x.ym), rerender))));
 
   return el('div', {},
     el('div', { class: 'section' },
@@ -368,7 +379,7 @@ function newView(rows, b, rerender) {
     el('td', {}, x.balcony != null ? fmt.n(x.balcony, 1) : '—'),
     el('td', {}, x.price != null ? fmt.n(x.price, 0) : '—'),
     el('td', {}, newTsuboOf(x) != null ? fmt.n(newTsuboOf(x), 2) : '—'),
-    delCell(() => store.deleteNewPrice(x.id), `${x.floor ?? ''}階`, rerender))));
+    delCell(() => store.deleteNewPrice(x.buildingId, x.id), `${x.floor ?? ''}階`, rerender))));
 
   return el('div', {},
     el('div', { class: 'section' },

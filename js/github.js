@@ -75,8 +75,9 @@ export class GitHubRepo {
     return { sha: j.content?.sha, commit: j.commit?.sha };
   }
 
-  async putJson(path, obj, message, sha) {
-    return this.put(path, utf8ToB64(JSON.stringify(obj, null, 2)), message, sha);
+  /** indent に null を渡すと字下げなしで書く。機械が書く大きなファイル向け */
+  async putJson(path, obj, message, sha, indent = 2) {
+    return this.put(path, utf8ToB64(JSON.stringify(obj, null, indent ?? undefined)), message, sha);
   }
 
   async remove(path, sha, message) {
