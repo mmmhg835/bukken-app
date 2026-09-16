@@ -2,7 +2,7 @@
 import { calcLoan, DEFAULT_TERMS } from './loan.js';
 
 /** 表示用の版数。更新が届いているかを設定画面で確認できるようにしている */
-export const APP_VERSION = 'v87';
+export const APP_VERSION = 'v88';
 
 export const TSUBO_SQM = 3.305785;          // 1坪 = 3.305785㎡
 export const STATUSES = ['検討中', '内見済', '本命', '申込検討', '見送り'];

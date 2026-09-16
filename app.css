@@ -614,6 +614,7 @@ table.cmp tr.is-current td{background:var(--accent-soft)}
 .ucard-foot{display:flex;gap:8px;flex-wrap:wrap;font-size:11.5px;color:var(--text-3);
   font-weight:600;border-top:1px solid var(--line);padding-top:7px}
 .ucard-foot .is-cut{color:var(--bad)}
+.ucard-foot .is-many{color:var(--warn)}
 .ucard-link{font-size:11.5px;color:var(--text-2);text-decoration:underline}
 @media (max-width:640px){
   .ucard-kv{grid-template-columns:1fr}

@@ -12,7 +12,9 @@ import { SKINS, currentSkin, setSkin } from './skin.js';
 import { salesSection } from './sales.js';
 import { BUILDING_FORM, SPEC_GROUPS, RENOVATION } from './spec.js';
 import { areaOf } from './analysis.js';
-import { allUnits, promote, listingMismatches, unitUrl, unitHistory } from './units.js';
+import {
+  allUnits, promote, listingMismatches, unitUrl, unitHistory, onsaleCount,
+} from './units.js';
 import { unitUI, unitMatches, unitFilterBar } from './unit-filter.js';
 import { analyze, LISTING_STATUS, CLOSED_STATUS, formatDate } from './price.js';
 import { ymLabel, tsuboOf, monthsOf } from './market.js';
@@ -135,7 +137,7 @@ function filterBar(all, shown, byRoom) {
 function roomListing(shown) {
   const rooms = [...shown].sort(roomSorter(listUI.sort));
   if (!rooms.length) return el('div', { class: 'empty' }, '条件に合う部屋がありません');
-  return el('div', { class: 'grid' }, rooms.map((x) => propertyCard(x.r, x.b, unitUrl(x), x.ambiguous)));
+  return el('div', { class: 'grid' }, rooms.map((x) => propertyCard(x)));
 }
 
 function roomSorter(key) {
@@ -313,8 +315,11 @@ function featureTag(icon, text) {
  * 1画面に3件しか入らなかったため。そのぶん数字を詰めて、開かなくても
  * 比べられるようにしている。
  */
-function propertyCard(r, b, url = null, ambiguous = null) {
+function propertyCard({ r, b, listing = null, ambiguous = null }) {
+  const url = unitUrl({ r, b, listing });
   const c = derive(r, b, store.loanTerms);
+  // 同じ建物から他にも出ているか。多いほど売り急ぎ・供給過多のしるし
+  const others = onsaleCount(b.id) - (listing ? 1 : 0);
   const gap = vsBuildingMarket(r, b, c);
   const sale = saleAge(r);
   const cut = priceCut(r);
@@ -365,6 +370,8 @@ function propertyCard(r, b, url = null, ambiguous = null) {
       b.parkingCount ? `敷地内${b.parkingCount}台` : null),
       kvRow('諸費用', c.loan ? `${fmt.n(c.loan.fees, 0)}万` : '—',
         c.loan ? `物件＋諸費用で ${fmt.n((r.price || 0) + c.loan.fees, 0)}万` : null),
+      // 新築時から何倍になっているか。上がりきっているのかどうかの目安
+      ...(vsNewBuild(c, b) ? [kvRow('新築比', vsNewBuild(c, b).text, vsNewBuild(c, b).sub)] : []),
     ),
     el('div', { class: 'ucard-foot' },
       el('span', {}, [c.ageYears != null ? `築${c.ageYears}年` : b.builtYM,
@@ -372,6 +379,12 @@ function propertyCard(r, b, url = null, ambiguous = null) {
         b.totalFloors ? `${b.totalFloors}階建` : null].filter(Boolean).join('・')),
       sale ? el('span', {}, sale) : null,
       cut ? el('span', { class: 'is-cut' }, cut) : null,
+      others > 0
+        ? el('span', {
+          class: others >= 5 ? 'is-many' : null,
+          title: 'この建物から同時に出ている部屋の数。多いほど買い手が選べる',
+        }, `同じ建物に他${others}部屋`)
+        : null,
       r.renovation && r.renovation !== 'なし' ? el('span', {}, r.renovation) : null),
     url ? el('a', {
       class: 'ucard-link', href: url, target: '_blank', rel: 'noreferrer',
@@ -398,6 +411,16 @@ function vsBuildingMarket(r, b, c) {
   return pct < 0
     ? { text: `相場より${fmt.n(-pct, 0)}%安い`, cls: 'badge-ok', title }
     : { text: `相場より${fmt.n(pct, 0)}%高い`, cls: 'badge-warn', title };
+}
+
+/** いまの坪単価が、その建物の新築時の何倍か */
+function vsNewBuild(c, b) {
+  const m = store.newTsuboMed(b.id);
+  if (!m || c.tsuboPrice == null) return null;
+  return {
+    text: `${fmt.n(c.tsuboPrice / m.med, 2)}倍`,
+    sub: `新築時 ＠${fmt.n(m.med, 0)}万/坪（${m.n}件）`,
+  };
 }
 
 /** 売り出してから何か月たっているか。長いほど値段の相談はしやすい */
@@ -458,6 +481,10 @@ function buildingCard(b, rooms) {
       b.parkingFee != null ? '月額' : null),
       kvRow('相場', store.tsuboMed(b.id) ? `＠${fmt.n(store.tsuboMed(b.id).med, 0)}万/坪` : '—',
         store.tsuboMed(b.id) ? `直近24か月・${store.tsuboMed(b.id).n}件の中央値` : null),
+      kvRow('新築時', store.newTsuboMed(b.id) ? `＠${fmt.n(store.newTsuboMed(b.id).med, 0)}万/坪` : '—',
+        store.newTsuboMed(b.id) && store.tsuboMed(b.id)
+          ? `いまは ${fmt.n(store.tsuboMed(b.id).med / store.newTsuboMed(b.id).med, 2)}倍`
+          : null),
       kvRow('事業者', b.brand || b.developer || '—',
         b.brand && b.developer ? b.developer : null),
     ),

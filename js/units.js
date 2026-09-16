@@ -138,6 +138,22 @@ export function options(values, label = (v) => v) {
     .map(([v, n]) => [v, `${label(v)}（${n}）`]);
 }
 
+/**
+ * 建物ごとの売り出し中の部屋数。
+ * 同じ建物から何部屋も出ていれば、売り急ぎや供給過多のしるしになる。
+ * 1,500件を建物ごとに数え直すと重いので、行が入れ替わるまで使い回す。
+ */
+let countCache = { rows: null, map: new Map() };
+export function onsaleCount(buildingId) {
+  const rows = store.onsaleRows;
+  if (countCache.rows !== rows) {
+    const map = new Map();
+    for (const x of rows) map.set(x.buildingId, (map.get(x.buildingId) || 0) + 1);
+    countCache = { rows, map };
+  }
+  return countCache.map.get(buildingId) || 0;
+}
+
 /** カードから開くリンク。部屋の募集ページがあればそれ、無ければ建物のページ */
 export function unitUrl({ r, b, listing }) {
   return listing?.url || r?.listingUrl || b?.url || '';

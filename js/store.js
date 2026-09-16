@@ -171,6 +171,15 @@ class Store extends EventTarget {
     return b?.tsuboMed ? { med: b.tsuboMed, n: b.tsuboN || 0 } : null;
   }
 
+  /**
+   * その建物の新築時の坪単価（万円/坪）と件数。
+   * いまの値段が新築時の何倍になっているかを見るために持っている。
+   */
+  newTsuboMed(buildingId) {
+    const b = this.#onsale?.buildings?.[buildingId];
+    return b?.newTsuboMed ? { med: b.newTsuboMed, n: b.newN || 0 } : null;
+  }
+
   /** onsale.json を読む。一覧を開いたときに呼ぶ */
   ensureOnsale() {
     if (this.#onsaleState !== 'idle') return;
