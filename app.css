@@ -29,7 +29,6 @@
 *{box-sizing:border-box}
 [hidden]{display:none!important}
 /* 新デザイン専用の要素。クラシックでは出さない */
-.tab-ico,.brand-sub{display:none}
 html,body{margin:0}
 body{
   background:var(--bg); color:var(--text);
