@@ -7,7 +7,11 @@ import { store } from './store.js';
 import { el, mount, fmt, derive, STATUSES } from './util.js';
 import { select, segmented, toggle, controlRow } from './ui.js';
 import { scatterChart, chartLegend, histogramChart, SERIES_COLORS, SERIES_MUTED } from './chart.js';
-import { linearFit, areaOf, walkMinutesOf, builtYearOf } from './analysis.js';
+import { linearFit, areaOf } from './analysis.js';
+import {
+  AGE_BANDS, WALK_BANDS, AREA_BANDS, FIRM_KEYS, FIRM_LABEL,
+  stationsOf, ageOf, walkOf, inBand, options,
+} from './units.js';
 import { RENOVATION } from './spec.js';
 import {
   sortRows, summary, pricePoints, tsuboOf, sqmOf, monthsOf, cutOf, isOpen, ymLabel, ymToNum, median,
@@ -24,24 +28,20 @@ const SUBTABS = [
 /** 一度に読みに行く建物の上限。これを超えたら条件を絞ってもらう */
 const LOAD_LIMIT = 60;
 
-// 竣工年ではなく築年数で見る。何年に建ったかより、いま何年たっているかで選ぶため
-const AGE_BANDS = [['all', 'すべて'], ...[5, 10, 15, 20, 25, 30, 35, 40]
-  .map((n) => [`-${n}`, `築${n}年以内`]), ['40-', '築40年超']];
-const WALK_BANDS = [['all', 'すべて'], ['-5', '5分以内'], ['-10', '10分以内'],
-  ['-15', '15分以内'], ['15-', '15分超']];
-// 部屋の広さ。10㎡刻みだと選択肢が増えすぎるので、実際に探す区切りに寄せる
-const AREA_BANDS = [['all', 'すべて'], ['-50', '50㎡未満'], ['50-60', '50〜60㎡'],
-  ['60-70', '60〜70㎡'], ['70-80', '70〜80㎡'], ['80-90', '80〜90㎡'],
-  ['90-100', '90〜100㎡'], ['100-', '100㎡以上']];
+// 検討の軸。「自分の物件」ではなく、部屋を登録して検討しているかどうかで見る
+const MINE_OPTIONS = [['all', 'すべて'], ['mine', '検討している建物'],
+  ...STATUSES.map((x) => [x, x])];
+
 
 /** 画面の状態。保存する値ではないので、smoke から作れるように出しておく */
 const ui = {
-  // 対象。mine は部屋を登録した建物だけ、all は取り込んだ建物も含む
-  scope: 'mine',
-  // 検討状態（検討中・内見済・本命…）。募集状況とは別の軸なので混ぜない
-  roomStatus: 'all',
+  // 検討。mine は部屋を登録した建物、STATUSES はそのうちの状態で絞る。
+  // 「自分の物件」という区分は持たない。売り出し中かどうかは募集状況で見る
+  mine: 'mine',
   // 建物の条件。area は最寄駅、town は町名
-  building: 'all', area: 'all', town: 'all', age: 'all', walk: 'all', firm: 'all',
+  building: 'all', area: 'all', town: 'all', age: 'all', walk: 'all',
+  // 事業者。ブランドと会社は別物なので混ぜない
+  brand: 'all', developer: 'all', builder: 'all', designer: 'all',
   // 売り出しの行の条件
   from: 'all', to: 'all', listing: 'all', layout: 'all', size: 'all',
   metric: 'tsubo', attr: 'year', group: 'building', fit: true,
@@ -101,31 +101,6 @@ function subTabs(current) {
    絞り込み
    ========================================================= */
 
-/** 最寄駅。「有明テニスの森 / 有明 / 国際展示場」を配列にする */
-const stationsOf = (b) => String(b.stations || '').split('/').map((x) => x.trim()).filter(Boolean);
-
-/** 事業者。ブランド・施工・分譲・設計をまとめて1つの選択肢にする */
-const firmsOf = (b) => [b.brand, b.builder, b.developer, b.designer]
-  .map((v) => (v || '').trim()).filter(Boolean);
-
-/** 築年数。竣工年そのものではなく、いま何年たっているかで見る */
-function ageOf(b) {
-  const y = builtYearOf(b);
-  if (y == null) return null;
-  const now = new Date();
-  return now.getFullYear() + now.getMonth() / 12 - y;
-}
-
-/** 「-10」「40-」のような帯に入るか */
-function inBand(band, v) {
-  if (band === 'all') return true;
-  if (v == null) return false;
-  const [lo, hi] = band.split('-').map((x) => (x === '' ? null : Number(x)));
-  if (lo != null && v < lo) return false;
-  if (hi != null && v > hi) return false;
-  return true;
-}
-
 /**
  * 条件に合う建物。相場はここで決まった建物ぶんだけ読む。
  * except を渡すと、その条件だけ外して数える。選択肢を作るときに使う
@@ -135,15 +110,18 @@ function targetBuildings(except = null) {
   const on = (key) => key !== except;
   return store.allBuildings.filter((b) => {
     const rooms = store.roomsOf(b.id);
-    if (on('scope') && ui.scope === 'mine' && !rooms.length) return false;
-    if (on('roomStatus') && ui.roomStatus !== 'all'
-      && !rooms.some((r) => r.status === ui.roomStatus)) return false;
+    if (on('mine') && ui.mine !== 'all') {
+      if (!rooms.length) return false;
+      if (ui.mine !== 'mine' && !rooms.some((r) => r.status === ui.mine)) return false;
+    }
     if (on('building') && ui.building !== 'all' && b.id !== ui.building) return false;
     if (on('area') && ui.area !== 'all' && !stationsOf(b).includes(ui.area)) return false;
     if (on('town') && ui.town !== 'all' && areaOf(b).town !== ui.town) return false;
-    if (on('firm') && ui.firm !== 'all' && !firmsOf(b).includes(ui.firm)) return false;
+    for (const k of FIRM_KEYS) {
+      if (on(k) && ui[k] !== 'all' && (b[k] || '').trim() !== ui[k]) return false;
+    }
     if (on('age') && !inBand(ui.age, ageOf(b))) return false;
-    if (on('walk') && !inBand(ui.walk, walkMinutesOf(b))) return false;
+    if (on('walk') && !inBand(ui.walk, walkOf(b))) return false;
     return true;
   });
 }
@@ -171,15 +149,6 @@ function saleRows(buildings, except = null) {
 
 const buildingOf = (id) => store.building(id);
 
-/** 件数の多い順に並べた選択肢。何を選べばいいか分かるように件数を添える */
-function options(values, label = (v) => v) {
-  const count = new Map();
-  for (const v of values) if (v) count.set(v, (count.get(v) || 0) + 1);
-  return [...count.entries()]
-    .sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(b[0], 'ja'))
-    .map(([v, n]) => [v, `${label(v)}（${n}）`]);
-}
-
 function buildingFilter(targets, loaded, rows, rerender) {
   const pick = (key, list) =>
     select(ui[key], [['all', 'すべて'], ...list], (v) => { ui[key] = v; rerender(); }, 'fsel');
@@ -196,7 +165,7 @@ function buildingFilter(targets, loaded, rows, rerender) {
     .map((b) => [b.id, b.name]);
   const areaOptions = options(pool('area').flatMap(stationsOf));
   const townOptions = options(pool('town').map((b) => areaOf(b).town));
-  const firmOptions = options(pool('firm').flatMap(firmsOf));
+  const firmOptions = (k) => options(pool(k).map((b) => (b[k] || '').trim()));
   const yearOptions = options(rowsFor('year').map((x) => {
     const y = ymToNum(x.listedYM);
     return y == null ? null : String(Math.floor(y));
@@ -206,9 +175,7 @@ function buildingFilter(targets, loaded, rows, rerender) {
   const loading = store.marketLoadingCount;
   return el('div', { class: 'filterbar' },
     el('div', { class: 'filterbar-row' },
-      group('対象', segmented(ui.scope, [['mine', '自分の物件'], ['all', 'すべて']],
-        (v) => { ui.scope = v; rerender(); })),
-      group('検討状態', pick('roomStatus', STATUSES.map((x) => [x, x]))),
+      group('検討', band('mine', MINE_OPTIONS)),
       group('エリア（最寄駅）', pick('area', areaOptions)),
       group('住所', pick('town', townOptions)),
       group('築年数', band('age', AGE_BANDS)),
@@ -220,7 +187,7 @@ function buildingFilter(targets, loaded, rows, rerender) {
     ),
     el('div', { class: 'filterbar-row' },
       group('建物', pick('building', buildingOptions)),
-      group('事業者', pick('firm', firmOptions)),
+      FIRM_KEYS.map((k) => group(FIRM_LABEL[k], pick(k, firmOptions(k)))),
       group('間取り', pick('layout', layoutOptions)),
       group('広さ', band('size', AREA_BANDS)),
       group('売り出し年', el('div', { class: 'frange' },

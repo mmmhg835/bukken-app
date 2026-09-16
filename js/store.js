@@ -18,6 +18,9 @@ const emptyMarket = () => ({ sale: [], rent: [], new: [] });
 // 相場だけ見る「参考建物」は properties.json に入れない。
 // 1棟2KBあり、駅ひとつで数百棟入るので、まとめると読み込みの上限（1MB）に当たる。
 const REFS_INDEX = 'refs/index.json';
+// 販売中の行だけを取り出したファイル。一覧・比較・ライフプランはここだけを読む。
+// 相場は436ファイル13MBあり、全部読むのは無理なので取り出し済みの形を用意してある。
+const ONSALE = 'onsale.json';
 
 /**
  * 初期データ。項目を直接並べず migrate() に通して作る。
@@ -41,6 +44,9 @@ class Store extends EventTarget {
   // 参考建物。相場タブを開いたときにまとめて読む
   #refs = new Map();
   #refsState = 'idle';   // idle | loading | ready
+  // 販売中の物件。行と、その建物の最小限の情報
+  #onsale = null;
+  #onsaleState = 'idle';
 
   emit() { this.dispatchEvent(new Event('change')); }
 
@@ -150,7 +156,46 @@ class Store extends EventTarget {
   get refs() { return [...this.#refs.values()]; }
   get allBuildings() { return [...this.data.buildings, ...this.#refs.values()]; }
   get refsReady() { return this.#refsState === 'ready'; }
-  building(id) { return this.data.buildings.find((b) => b.id === id) || this.#refs.get(id) || null; }
+
+  // ===== 販売中の物件 =====
+  get onsaleReady() { return this.#onsaleState === 'ready'; }
+  get onsaleRows() { return this.#onsale?.rows ?? []; }
+
+  /** onsale.json を読む。一覧を開いたときに呼ぶ */
+  ensureOnsale() {
+    if (this.#onsaleState !== 'idle') return;
+    this.#onsaleState = 'loading';
+    (async () => {
+      let v = await idb.get('kv', 'onsale').catch(() => null);
+      if (this.configured) {
+        try {
+          const got = await this.repo.getJson(ONSALE);
+          v = got ? got.data : { buildings: {}, rows: [] };
+          await idb.set('kv', 'onsale', v);
+        } catch { /* 取れなければキャッシュのまま */ }
+      }
+      this.#onsale = v || { buildings: {}, rows: [] };
+      this.#onsaleState = 'ready';
+      this.emit();
+    })();
+  }
+
+  /** 読み込み済みとして差し込む。smoke から使う */
+  setOnsale(v) {
+    this.#onsale = { buildings: {}, rows: [], ...v };
+    this.#onsaleState = 'ready';
+    this.emit();
+  }
+
+  /**
+   * 建物を引く。properties.json → 参考建物 → onsale に埋めた最小限、の順に探す。
+   * onsale だけ読んだ状態でも一覧が描けるようにするため。
+   */
+  building(id) {
+    return this.data.buildings.find((b) => b.id === id)
+      || this.#refs.get(id)
+      || (this.#onsale?.buildings?.[id] ? { id, ...this.#onsale.buildings[id] } : null);
+  }
 
   /** 読み込み済みとして参考建物を差し込む。取り込みと smoke から使う */
   setRefs(list) {

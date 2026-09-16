@@ -11,7 +11,8 @@ import { lineChart, stackedBarChart, chartLegend, SERIES_COLORS } from './chart.
 import { saleView } from './sale-view.js';
 
 import { derive, TSUBO_SQM } from './util.js';
-import { CLOSED_STATUS } from './price.js';
+import { allUnits } from './units.js';
+import { unitUI, unitMatches, unitFilterBar } from './unit-filter.js';
 
 const ui = {
   afterLoans: false,
@@ -106,28 +107,28 @@ function planView(plan, room, building, res, mark, rerender, baseRes = null, bas
 }
 
 /**
- * 試算の対象にする部屋。募集が終わった部屋は買えないので外す。
- * ただし選択中の部屋だけは、途中で募集終了になっても消えないよう残す。
+ * 試算の対象にする部屋。絞り込みは一覧・比較と同じものを使う。
+ * 既定は募集中だけ（募集が終わった部屋は買えない）。
+ * ただし選択中の部屋だけは、条件から外れても消えないよう残す。
  */
 function planRooms(keepId = null) {
-  const out = [];
-  for (const b of store.buildings) {
-    for (const r of store.roomsOf(b.id)) {
-      if (CLOSED_STATUS.includes(r.listingStatus) && r.id !== keepId) continue;
-      out.push({ b, r });
-    }
-  }
-  return out;
+  store.ensureOnsale();
+  return allUnits().filter((x) => x.r.id === keepId || unitMatches(x));
 }
+
+// 月次収支の表に並べる件数。売り出し中を全部試算すると重いうえに読めない
+const PLAN_MAX = 12;
 
 /* ===== 物件の選択 ===== */
 function propertyPicker(plan, room, building, rerender, view = 'plan') {
+  const rooms = planRooms(plan.selectedRoomId);
   const options = [['', '現在の想定（手入力の住居費）']];
-  for (const { b, r } of planRooms(plan.selectedRoomId)) {
+  for (const { b, r } of rooms) {
     options.push([r.id, `${b.name} ${r.label}　${fmt.man1(r.price)}万円`]);
   }
   return el('div', { class: 'section' },
     el('h3', {}, '試算する物件'),
+    unitFilterBar(allUnits(), rooms, rerender, { unit: '部屋' }),
     el('div', { class: 'panel' },
       el('div', { class: 'panel-controls' },
         el('div', { class: 'ctlrow' },
@@ -959,8 +960,13 @@ function incomeSection(plan, mark) {
    物件ごとの比較と、買える上限の逆算
    ========================================================= */
 function scenarioSection(plan, currentRoom, currentBuilding) {
+  // 価格の安い順に上から PLAN_MAX 件だけ試算する。選択中の部屋は必ず入れる
+  const target = planRooms(plan.selectedRoomId)
+    .sort((a, x) => (a.r.id === plan.selectedRoomId ? -1 : x.r.id === plan.selectedRoomId ? 1 : 0)
+      || (a.r.price ?? Infinity) - (x.r.price ?? Infinity))
+    .slice(0, PLAN_MAX);
   const rows = [];
-  for (const { b, r } of planRooms(plan.selectedRoomId)) {
+  for (const { b, r } of target) {
     const res = calcPlan(plan, r, b, planTerms(), { excludeTemporary: ui.afterLoans });
     rows.push({ b, r, res, housing: housingCost(r, b, planTerms()) });
   }
@@ -971,6 +977,9 @@ function scenarioSection(plan, currentRoom, currentBuilding) {
 
   return el('div', { class: 'section' },
     el('h3', {}, '物件ごとの月次収支'),
+    target.length < planRooms(plan.selectedRoomId).length
+      ? el('p', { class: 'tiny muted' }, `条件に合う部屋のうち、価格の安い順に${PLAN_MAX}件を試算しています。`)
+      : null,
     el('div', { class: 'tablewrap' },
       el('table', { class: 'cmp valuetable' },
         el('thead', {}, el('tr', {},

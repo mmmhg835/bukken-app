@@ -34,7 +34,7 @@ Object.defineProperty(globalThis, 'location', {
 
 const FILES = [
   'util', 'loan', 'spec', 'price', 'chart', 'idb', 'image', 'github', 'migrate', 'store',
-  'ui', 'gallery', 'map', 'pairing', 'theme', 'analysis', 'lifeplan', 'sales', 'parse', 'sale', 'market',
+  'ui', 'gallery', 'map', 'pairing', 'theme', 'analysis', 'lifeplan', 'sales', 'parse', 'sale', 'market', 'units', 'unit-filter',
   'lifeplan-view', 'import-view', 'sale-view', 'viewing-view', 'market-view', 'views', 'main',
 ];
 
@@ -298,6 +298,29 @@ room.priceHistory = [
   { date: '2026-05-01', price: 12000 },
 ];
 
+// 一覧・比較・ライフプランは販売中の物件（onsale.json）が主役。
+// 自分が登録した部屋と、まだ登録していない売り出しの両方を通す。
+store.setOnsale({
+  buildings: {
+    b9: { name: '相場タワー', address: '東京都江東区東雲2-2-2', stations: '東雲 / 辰巳',
+      walk: '東雲5分・辰巳9分', builtYM: '2016/03', totalUnits: 200, url: '', photo: null,
+      brand: 'シティタワー', developer: '住友不動産', builder: '鹿島建設', designer: '鹿島建設' },
+  },
+  rows: [
+    // 自分の部屋と同じ建物・階・面積。指値などが引き継がれる側
+    { id: 'os1', buildingId: store.data.buildings[0].id, listedYM: '2026-08', open: true,
+      floor: 20, layout: '3LDK', direction: '南', feature: '角部屋・リフォーム',
+      area: 80, balcony: 10, price: 12000, priceHistory: [{ ym: '2026-08', price: 12000 }],
+      kanrihi: 2, shuzen: 1.8 },
+    // まだ登録していない売り出し。別の建物
+    { id: 'os2', buildingId: 'b9', listedYM: '2026-09', open: true,
+      floor: 15, layout: '2LDK', direction: '東', feature: '', area: 70, balcony: 9,
+      price: 9800, priceHistory: [], kanrihi: 1.6, shuzen: 1.3 },
+    // 階も面積も無い行。写し損ねでこの形になりうる
+    { id: 'os3', buildingId: 'b9', listedYM: '2026-07', open: true, priceHistory: [] },
+  ],
+});
+
 // ライフプランは物件を選んでいないと住居費・段階表・指値の比較まで届かない。
 // 選ばないまま検査していたため、その配下が未定義参照でも気づけなかった。
 store.data.settings.lifeplan.selectedRoomId = room.id;
@@ -410,11 +433,56 @@ const screens = [
     }
     Object.assign(u, saved);
   }],
+  ['販売中の物件が一覧に出る', () => {
+    const u = mods.units;
+    const list = u.allUnits();
+    if (!list.some((x) => x.r.id === 'os2')) throw new Error('売り出しの行が一覧に出ていない');
+    // 同じ建物・階・面積の自分の部屋があれば、そちらが使われる（指値が消えないこと）
+    const room = store.data.rooms[0];
+    room.floor = 20; room.area = 80; room.offerPrice = 11000;
+    const merged = u.allUnits().find((x) => x.r.floor === 20 && x.r.area === 80);
+    if (!merged || merged.r.fromListing) throw new Error('自分の部屋より売り出しが優先されている');
+    if (merged.r.offerPrice !== 11000) throw new Error('指値が引き継がれていない');
+    // 売り出しの行を開くと自分の部屋になる
+    const before = store.data.rooms.length;
+    const unit = u.allUnits().find((x) => x.r.id === 'os2');
+    const made = u.promote(unit);
+    if (store.data.rooms.length !== before + 1) throw new Error('部屋が作られていない');
+    if (made.price !== 9800 || made.floor !== 15) throw new Error('売り出しの中身が移っていない');
+    if (u.promote({ r: made, listing: null }) !== made) throw new Error('二重に作っている');
+  }],
+  ['絞り込みが一覧・比較・ライフプランで揃う', () => {
+    const v = mods.views;
+    const f = mods['unit-filter'];
+    const saved = { ...f.unitUI };
+    const b = store.building('b9');
+    const all = mods.units.allUnits();
+    try {
+      // 事業者はブランドと会社を分けて選ぶ
+      Object.assign(f.unitUI, saved, { listing: 'all', developer: (b.developer || '').trim() });
+      if (!all.filter((x) => f.unitMatches(x)).every((x) => x.b.id === 'b9')) {
+        throw new Error('分譲会社で絞れていない');
+      }
+      Object.assign(f.unitUI, saved, { listing: 'all', developer: '存在しない会社' });
+      if (all.some((x) => f.unitMatches(x))) throw new Error('効かない条件が素通りしている');
+      // 同じ条件が比較・ライフプランにも効く
+      v.renderCompare(stubEl());
+      mods['lifeplan-view'].renderLifeplan(stubEl(), () => {});
+      // 登録した部屋だけに絞る
+      Object.assign(f.unitUI, saved, { listing: 'all', own: 'mine' });
+      if (all.filter((x) => f.unitMatches(x)).some((x) => x.r.fromListing)) {
+        throw new Error('売り出しの行が「登録した部屋」に混ざっている');
+      }
+      v.renderList(stubEl());
+    } finally {
+      Object.assign(f.unitUI, saved);
+    }
+  }],
   ['参考建物', () => {
     const v = mods['market-view'];
     const u = v.marketUI;
     const saved = { ...u };
-    Object.assign(u, saved, { scope: 'all' });
+    Object.assign(u, saved, { mine: 'all' });
     v.renderMarket(stubEl(), () => {}, 'overview');
     v.renderMarket(stubEl(), () => {}, 'sale');
     if (!store.allBuildings.some((b) => b.id === 'ref1')) throw new Error('参考建物が相場に出ていない');
