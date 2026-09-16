@@ -6,7 +6,7 @@ import { buildingDefaults, SPEC_GROUPS, BUILDING_EQUIPMENT } from './spec.js';
 import { defaultLifeplan, categoryOf } from './lifeplan.js';
 import { DEFAULT_SALE } from './sale.js';
 
-export const CURRENT_SCHEMA = 21;
+export const CURRENT_SCHEMA = 22;
 
 export function migrate(data) {
   let d = structuredClone(data);
@@ -30,6 +30,7 @@ export function migrate(data) {
   if (d.schemaVersion < 19) d = v18ToV19(d);
   if (d.schemaVersion < 20) d = v19ToV20(d);
   if (d.schemaVersion < 21) d = v20ToV21(d);
+  if (d.schemaVersion < 22) d = v21ToV22(d);
   d.settings ||= {};
   d.settings.loan = { ...DEFAULT_TERMS, ...(d.settings.loan || {}) };
   d.settings.places ||= [];   // 職場・駅など、地図上の参照地点
@@ -332,6 +333,18 @@ function v20ToV21(d) {
   d.rentListings ||= [];
   d.newPrices ||= [];
   d.schemaVersion = 21;
+  return d;
+}
+
+/**
+ * 売り出し履歴に「販売中かどうか」を持たせる。
+ * マンレビの販売終了年月には「販売中」と「ー」（記録なし）の2種類があり、
+ * どちらも終了年月が無い。終了年月の有無だけで判定すると、2009年の行まで
+ * 販売中に数えてしまう。
+ */
+function v21ToV22(d) {
+  for (const m of d.marketListings || []) m.open ??= !m.closedYM;
+  d.schemaVersion = 22;
   return d;
 }
 

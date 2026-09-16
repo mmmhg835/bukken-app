@@ -25,12 +25,16 @@ export const tsuboOf = (x) =>
 /** ㎡単価 */
 export const sqmOf = (x) => (x.price && x.area ? x.price / x.area : null);
 
-/** 販売にかかった月数。販売中は今月までで数える */
+/**
+ * 販売にかかった月数。販売中は今月までで数える。
+ * 終了年月も販売中の印も無い行（マンレビの「ー」）は分からないので null を返す。
+ */
 export function monthsOf(x) {
   const from = ymToNum(x.listedYM);
   if (from == null) return null;
   const now = new Date();
-  const to = x.closedYM ? ymToNum(x.closedYM) : now.getFullYear() + now.getMonth() / 12;
+  const to = x.closedYM ? ymToNum(x.closedYM)
+    : (isOpen(x) ? now.getFullYear() + now.getMonth() / 12 : null);
   return to == null ? null : Math.max(0, Math.round((to - from) * 12));
 }
 
@@ -42,7 +46,8 @@ export function cutOf(x) {
   return ((x.price - first) / first) * 100;
 }
 
-export const isOpen = (x) => !x.closedYM;
+/** 販売中か。open が無い古いデータは終了年月の有無で見る */
+export const isOpen = (x) => (x.open != null ? !!x.open : !x.closedYM);
 
 /** 新しい順。同じ月なら価格の高い順で安定させる */
 export function sortRows(rows) {
@@ -175,4 +180,16 @@ export function grossYield(saleTsuboMan, rentTsuboYen) {
 export function vsNew(saleTsuboMan, newTsuboMan) {
   if (!saleTsuboMan || !newTsuboMan) return null;
   return saleTsuboMan / newTsuboMan;
+}
+
+/**
+ * 直近 n 年ぶんに絞る。
+ * 履歴が17年ぶん貯まると全期間の中央値は「今の相場」ではなくなる
+ * （2009年の212万/坪まで混ざる）。突き合わせには直近だけを使う。
+ */
+export function recent(rows, years = 1, key = 'listedYM') {
+  const now = new Date();
+  const from = now.getFullYear() + now.getMonth() / 12 - years;
+  const hit = rows.filter((x) => (ymToNum(x[key]) ?? -Infinity) >= from);
+  return hit.length ? hit : rows;   // 直近に1件も無ければ全部で見る
 }

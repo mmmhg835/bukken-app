@@ -161,7 +161,9 @@ class Store extends EventTarget {
   addListing(buildingId, partial = {}) {
     const m = {
       id: uid('m'), buildingId,
-      listedYM: null, closedYM: null,      // closedYM が null なら販売中
+      listedYM: null, closedYM: null, open: false,
+      // closedYM は販売終了年月。open が true なら販売中、
+      // どちらも無い行は「終了年月の記録が無い」（マンレビの「ー」）
       floor: null, layout: '', direction: '', feature: '',
       area: null, balcony: null,
       price: null,                          // 万円。価格変更後の最終価格

@@ -11,7 +11,7 @@ import { linearFit } from './analysis.js';
 import {
   sortRows, summary, pricePoints, tsuboOf, sqmOf, monthsOf, cutOf, isOpen, ymLabel,
   sortRents, rentSummary, rentTsuboOf, rentSqmOf, ymToNum,
-  sortNewPrices, newSummary, newTsuboOf, grossYield, vsNew,
+  sortNewPrices, newSummary, newTsuboOf, grossYield, vsNew, recent,
 } from './market.js';
 
 const SUBTABS = [['overview', '概況'], ['sale', '売出'], ['rent', '賃貸'], ['new', '新築']];
@@ -70,7 +70,9 @@ const cell = (k, v, sub = null) =>
    概況（3つを突き合わせて見る）
    ========================================================= */
 function overview(sale, rent, news, b) {
-  const s = summary(sale), r = rentSummary(rent), n = newSummary(news);
+  // 突き合わせは直近1年で見る。全期間の中央値は「今の相場」ではない
+  const s = summary(recent(sale)), r = rentSummary(recent(rent, 1, 'ym')), n = newSummary(news);
+  const all = summary(sale), allR = rentSummary(rent);
   const y = grossYield(s.tsuboMed, r.tsuboMed);
   const mult = vsNew(s.tsuboMed, n.tsuboMed);
 
@@ -78,14 +80,16 @@ function overview(sale, rent, news, b) {
     return el('div', { class: 'empty' }, `${b?.name ?? ''} の相場はまだ入っていません`);
   }
 
+  const span = (a) => (a.span ? `全${a.count}件では ${fmt.n(a.tsuboMed, 0)}` : null);
+
   return el('div', {},
     el('div', { class: 'section' },
-      el('h3', {}, '坪単価'),
+      el('h3', {}, '坪単価　直近1年'),
       el('div', { class: 'calcgrid calcgrid-3' },
         cell('売り出し 中央', s.tsuboMed != null ? `${fmt.n(s.tsuboMed, 0)}万` : '—',
-          s.count ? `${s.count}件` : 'データなし'),
+          s.count ? `${s.count}件　${span(all) ?? ''}` : 'データなし'),
         cell('賃料 中央', r.tsuboMed != null ? `${fmt.n(r.tsuboMed, 0)}円/月` : '—',
-          r.count ? `${r.count}件` : 'データなし'),
+          r.count ? `${r.count}件　${span(allR) ?? ''}` : 'データなし'),
         cell('新築時 中央', n.tsuboMed != null ? `${fmt.n(n.tsuboMed, 0)}万` : '—',
           n.count ? `${n.count}件` : 'データなし'),
       )),

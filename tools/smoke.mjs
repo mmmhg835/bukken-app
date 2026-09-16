@@ -230,8 +230,12 @@ const checks = [
     if (m.monthsOf(row) !== 3) throw new Error('販売期間の月数が合わない');
     if (!(m.cutOf(row) < 0)) throw new Error('値下げを負の値にできていない');
     if (m.ymLabel('2026-08') !== '2026/08') throw new Error('年月の表記が不正');
-    // 販売中は終了年月が無い
-    if (!m.isOpen({ listedYM: '2026-05' })) throw new Error('販売中を判定できていない');
+    // 「販売中」と「終了年月の記録が無い」を取り違えない
+    if (!m.isOpen({ listedYM: '2026-05', open: true })) throw new Error('販売中を判定できていない');
+    if (m.isOpen({ listedYM: '2009-01', open: false })) throw new Error('記録なしを販売中に数えている');
+    if (m.monthsOf({ listedYM: '2009-01', open: false }) !== null) throw new Error('記録なしの販売期間を出している');
+    // open を持たない古いデータは終了年月の有無で見る
+    if (!m.isOpen({ listedYM: '2026-05' })) throw new Error('古い形の販売中を判定できていない');
     // 価格変更履歴があれば、その本数ぶん点を打つ
     if (m.pricePoints([row]).length !== 2) throw new Error('価格変更のぶん点が出ていない');
     const s = m.summary([row]);
@@ -342,6 +346,8 @@ const screens = [
       direction: '東', feature: 'リフォーム', area: 75.67, balcony: 12.7, price: 9698,
       priceHistory: [{ ym: '2026-08', price: 9998 }, { ym: '2026-09', price: 9698 }],
       kanrihi: 1.184, shuzen: 1.984 });
+    // 終了年月も販売中の印も無い行。マンレビの古い行がこの形
+    store.addListing(b.id, { listedYM: '2009-01', floor: 26, area: 68.12, price: 4380 });
     store.addRent(b.id, { ym: '2026-05', floor: 13, layout: '1SLDK', direction: '北東',
       area: 67.23, rent: 280000, kanrihi: 20000, deposit: 560000, keyMoney: 280000, guarantee: 0 });
     store.addNewPrice(b.id, { floor: 4, direction: '南西', layout: '1LDK',
