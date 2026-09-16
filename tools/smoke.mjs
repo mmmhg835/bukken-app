@@ -286,6 +286,12 @@ const screens = [
   ['ライフプラン（指値あり）', () => { room.offerPrice = Math.round(room.price * 0.93); lp('plan')(); }],
   ['返済負担比率（指値あり）', lp('burden')],
   ['金利と価格（指値あり）', lp('matrix')],
+  ['試算金利を上げた状態', () => {
+    const v = mods['lifeplan-view'];
+    v.lifeplanUI.rateBump = 0.5;
+    for (const tab of lifeplanTabs) lp(tab)();
+    v.lifeplanUI.rateBump = 0;
+  }],
   ['グラフ（指値あり）', lp('graph')],
   ['売却（指値あり）', () => { lp('sale')(); room.offerPrice = null; }],
   ['内見チェック', () => mods['viewing-view'].renderViewing(stubEl(), () => {}, 'check')],

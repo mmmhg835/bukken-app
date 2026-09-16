@@ -24,6 +24,8 @@ const ui = {
   sort: { key: 'offer', dir: 'asc' },
   // 物件が増えると全室を並べても読めないので、見る範囲を絞れるようにする
   filter: { status: '', offerOnly: false },
+  // 直前に描いたときの並び。入力中は並び替えを止めるために覚えておく
+  lastOrder: null,
 };
 
 /**
@@ -209,13 +211,22 @@ function offerSection(mark, rerender) {
     return null;
   };
   const { key: sortKey, dir } = ui.sort;
-  rows.sort((a, b) => {
-    const va = value(a, sortKey); const vb = value(b, sortKey);
-    const ea = va == null || Number.isNaN(va); const eb = vb == null || Number.isNaN(vb);
-    if (ea || eb) return ea && eb ? 0 : (ea ? 1 : -1);
-    if (typeof va === 'string') return dir === 'asc' ? va.localeCompare(vb, 'ja') : vb.localeCompare(va, 'ja');
-    return dir === 'asc' ? va - vb : vb - va;
-  });
+  // 指値や相場を打っている最中は並びを固定する。1文字ごとに並び替えると、
+  // 入力中の行が表の中で動いてしまい、どこを打っているのか分からなくなる。
+  const typing = /^(offer|market)/.test(document.activeElement?.dataset?.fkey ?? '');
+  if (typing && ui.lastOrder) {
+    const at = new Map(ui.lastOrder.map((id, i) => [id, i]));
+    rows.sort((a, b) => (at.get(a.r.id) ?? 1e9) - (at.get(b.r.id) ?? 1e9));
+  } else {
+    rows.sort((a, b) => {
+      const va = value(a, sortKey); const vb = value(b, sortKey);
+      const ea = va == null || Number.isNaN(va); const eb = vb == null || Number.isNaN(vb);
+      if (ea || eb) return ea && eb ? 0 : (ea ? 1 : -1);
+      if (typeof va === 'string') return dir === 'asc' ? va.localeCompare(vb, 'ja') : vb.localeCompare(va, 'ja');
+      return dir === 'asc' ? va - vb : vb - va;
+    });
+    ui.lastOrder = rows.map((x) => x.r.id);
+  }
 
   // 名前と「安いほうが良い」項目は昇順から、相場や差は大きいほうから見たい
   const ASC_FIRST = new Set(['name', 'age', 'floor', 'price', 'offer', 'tsubo', 'offerTsubo', 'fees', 'running']);

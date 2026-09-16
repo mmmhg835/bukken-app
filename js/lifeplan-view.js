@@ -18,7 +18,25 @@ const ui = {
   // 金利と価格の表に出す金利。設定の金利からの上乗せ幅（%）で持つ。
   // 設定側の金利を直しても選び直さずに済むように、絶対値ではなく差で持つ。
   rateSteps: [0, 0.25, 0.5, 0.75, 1],
+  // 試算に使う金利の上乗せ幅（%）。0 なら設定のまま。
+  // 設定そのものを書き換えずに「上がったらどうなるか」を全サブタブで見るための値で、
+  // 保存はしない。一覧・比較・分析は設定の金利のままにしてある。
+  rateBump: 0,
 };
+
+/**
+ * 画面の状態。保存する値ではない。
+ * 試算金利を上げた状態の分岐は描いてみないと未定義参照に気づけないので、
+ * tools/smoke.mjs から状態を作れるように出している。
+ */
+export const lifeplanUI = ui;
+
+/** ライフプランタブの中だけで使う条件。試算金利の上乗せを当てて返す */
+function planTerms() {
+  const t = store.loanTerms;
+  if (!ui.rateBump) return t;
+  return { ...t, rate: Math.round(((Number(t.rate) || 0) + ui.rateBump) * 1000) / 1000 };
+}
 
 const SUBTABS = [['plan', 'ライフプラン'], ['burden', '返済負担比率'], ['matrix', '金利と価格'],
   ['graph', 'グラフ'], ['sale', '売却']];
@@ -36,9 +54,9 @@ export function renderLifeplan(root, rerender, sub = 'plan') {
   // 指値は「いくらまで下がったら」を見るための仮の価格。
   // このタブの中だけで価格に代えて使い、一覧や分析の現在価格には手を触れない。
   const offerRoom = offerRoomOf(room);
-  const res = calcPlan(plan, offerRoom || room, building, store.loanTerms, opts);
+  const res = calcPlan(plan, offerRoom || room, building, planTerms(), opts);
   // 指値を入れているときだけ、元値の結果も並べて計算する
-  const baseRes = offerRoom ? calcPlan(plan, room, building, store.loanTerms, opts) : null;
+  const baseRes = offerRoom ? calcPlan(plan, room, building, planTerms(), opts) : null;
 
   if (!ui.openGroups) ui.openGroups = new Set(['住居費']);
   rerenderOffer = rerender;
@@ -50,10 +68,10 @@ export function renderLifeplan(root, rerender, sub = 'plan') {
     propertyPicker(plan, room, building, rerender, view),
     offerRoom && view === 'plan'
       ? offerComparison(plan, room, offerRoom, building, res, baseRes) : null,
-    view === 'matrix' ? matrixView(plan, room, building, mark)
+    view === 'matrix' ? matrixView(plan, room, building, mark, rerender)
       : view === 'burden' ? burdenView(plan, offerRoom || room, res, mark, rerender)
         : view === 'graph' ? graphView(plan, offerRoom || room, building, res, offerRoom ? room : null)
-          : view === 'sale' ? saleView(plan, offerRoom || room, rerender)
+          : view === 'sale' ? saleView(plan, offerRoom || room, rerender, planTerms())
             : planView(plan, offerRoom || room, building, res, mark, rerender,
               baseRes, offerRoom ? room : null),
   );
@@ -114,6 +132,7 @@ function propertyPicker(plan, room, building, rerender, view = 'plan') {
               : null,
           )),
         room ? offerRow(room, rerender) : null,
+        rateRow(rerender),
         view === 'plan'
           ? el('div', { class: 'ctlrow' },
             el('span', { class: 'ctllabel' }, el('i', { class: 'ctlicon' }, '◷'), 'シナリオ'),
@@ -121,6 +140,29 @@ function propertyPicker(plan, room, building, rerender, view = 'plan') {
               ui.afterLoans, (v) => { ui.afterLoans = v; rerender(); }))
           : null,
       )),
+  );
+}
+
+/**
+ * 試算金利。設定の金利から0.25%刻みで上げ下げして、このタブの全サブタブに効かせる。
+ * 金利が上がったときの影響は、返済額だけでなく負担率・売却時の残高・将来の資産
+ * にも出る。設定そのものを書き換えると一覧や分析の数字まで動いてしまうので、
+ * ここでは上乗せ幅だけを画面の状態として持つ。
+ */
+const RATE_BUMPS = [0, 0.25, 0.5, 0.75, 1, 1.5];
+
+function rateRow(rerender) {
+  const base = Number(store.loanTerms.rate) || 0;
+  const cur = planTerms().rate;
+  return el('div', { class: 'ctlrow' },
+    el('span', { class: 'ctllabel' }, el('i', { class: 'ctlicon' }, '％'), '試算金利'),
+    el('div', { style: 'display:flex;gap:16px;align-items:center;flex-wrap:wrap' },
+      el('div', { class: 'pillrow', style: 'margin:0' }, RATE_BUMPS.map((o) => el('button', {
+        class: 'pill' + (ui.rateBump === o ? ' is-on' : ''),
+        onclick: () => { ui.rateBump = o; rerender(); },
+      }, `${Math.round((base + o) * 1000) / 1000}%`))),
+      el('span', { class: 'tiny muted' },
+        ui.rateBump ? `設定は ${base}%。このタブだけ +${ui.rateBump}% で試算中` : `設定どおり ${cur}%`)),
   );
 }
 
@@ -176,7 +218,7 @@ function offerRow(room, rerender) {
 const offerUI = { diffOnly: false };
 
 function offerComparison(plan, room, offerRoom, building, res, baseRes) {
-  const terms = store.loanTerms;
+  const terms = planTerms();
   const hA = housingCost(room, building, terms);
   const hB = housingCost(offerRoom, building, terms);
   const years = Math.max(40, { ...terms, ...(room.loan || {}) }.years + 5);
@@ -310,12 +352,12 @@ function housingDetail(res, room, building, baseRes = null, baseRoom = null) {
   const manual = store.lifeplan.groups.find((g) => g.kind === 'housing').items
     .reduce((s, it) => s + (Number(it.amount) || 0), 0);
   const diff = res.housingFromRoom.total - manual;
-  const t = { ...store.loanTerms, ...(room.loan || {}) };
+  const t = { ...planTerms(), ...(room.loan || {}) };
 
   // 指値が入っているときは、差を添え字で足さずに元値と指値を1組ずつ並べる。
   // 添え字だと、どの数字がどちらの前提のものか読み取れないため。
   const blocks = baseRoom
-    ? [['元値', baseRoom, housingCost(baseRoom, building, store.loanTerms)],
+    ? [['元値', baseRoom, housingCost(baseRoom, building, planTerms())],
       ['指値', room, res.housingFromRoom]]
     : [[null, room, res.housingFromRoom]];
 
@@ -409,10 +451,10 @@ const COLOR = {
  *   線を2本並べないと、指値で将来どれだけ差がつくかが読み取れない。
  */
 function graphView(plan, room, building, res, baseRoom = null) {
-  const years = Math.max(40, (room ? { ...store.loanTerms, ...(room.loan || {}) } : store.loanTerms).years + 5);
-  const rows = project(plan, room, building, store.loanTerms, years);
-  const baseRows = baseRoom ? project(plan, baseRoom, building, store.loanTerms, years) : null;
-  const marks = milestones(plan, room, store.loanTerms)
+  const years = Math.max(40, (room ? { ...planTerms(), ...(room.loan || {}) } : planTerms()).years + 5);
+  const rows = project(plan, room, building, planTerms(), years);
+  const baseRows = baseRoom ? project(plan, baseRoom, building, planTerms(), years) : null;
+  const marks = milestones(plan, room, planTerms())
     .filter((m) => m.year <= years)
     .map((m) => ({ x: m.year, label: m.label }));
 
@@ -608,7 +650,7 @@ function thSub(title, sub) {
  * 実態と突き合わせられない。足す前の額をすべて並べる。
  */
 function affordCards(afford, room, building) {
-  const t = { ...store.loanTerms, ...(room?.loan || {}) };
+  const t = { ...planTerms(), ...(room?.loan || {}) };
   const price = Math.round(afford.price);
   const fees = (price * (Number(t.costRate) || 0)) / 100 + (Number(t.costFixed) || 0);
   const down = Number(t.downPayment) || 0;
@@ -645,9 +687,9 @@ function affordCards(afford, room, building) {
  *
  * 前提（収入・生活費・車）はライフプランのものをそのまま使う。
  */
-function matrixView(plan, room, building, mark) {
+function matrixView(plan, room, building, mark, rerender) {
   if (!room) return el('div', { class: 'empty' }, '対象の物件を選んでください');
-  const terms = store.loanTerms;
+  const terms = planTerms();
   const opts = { excludeTemporary: ui.afterLoans };
   const t = { ...terms, ...(room.loan || {}) };
   const tsubo = room.area ? room.area / TSUBO_SQM : null;
@@ -659,22 +701,25 @@ function matrixView(plan, room, building, mark) {
   const picked = OFFSETS.filter((o) => ui.rateSteps.includes(o));
   const rates = (picked.length ? picked : [0]).map((o) => Math.round((baseRate + o) * 1000) / 1000);
 
+  // 並びは固定。価格順にすると、指値を打っている最中に行が動いてしまう。
+  // 指値の行は額が未入力でも残す。ここが指値を決める場所なので、
+  // 空だと入れる場所が無くなる。
   const anchors = [
     { label: '売り出し', price: room.price },
     { label: '指値', price: room.offerPrice, editable: true },
     { label: 'ISOGE 相場', price: marketPrice('marketIsoge') },
     { label: 'マンレビ 相場', price: marketPrice('marketMrev') },
-  ].filter((a) => a.price != null && a.price > 0).sort((a, b) => b.price - a.price);
+  ].filter((a) => a.editable || (a.price != null && a.price > 0));
 
   const at = (price, rate) =>
     calcPlan(plan, { ...room, price, loan: { ...(room.loan || {}), rate } },
       building, { ...terms, rate }, opts);
 
   const body = el('tbody', {}, anchors.map((a) => {
-    const price = Math.round(a.price);
-    const loan = housingCost({ ...room, price }, building, terms).loan;
-    const principal = loan.principal;
-    const fees = loan.fees;
+    const price = a.price != null && a.price > 0 ? Math.round(a.price) : null;
+    const loan = price == null ? null : housingCost({ ...room, price }, building, t).loan;
+    const principal = loan?.principal ?? null;
+    const fees = loan?.fees ?? null;
     const isOffer = a.editable;
     return el('tr', { class: isOffer ? 'is-current' : null },
       el('td', { class: 'lab' },
@@ -682,6 +727,7 @@ function matrixView(plan, room, building, mark) {
         isOffer
           ? numberInput({
             value: price, cls: 'lpitem-input', fkey: 'mx-offer',
+            placeholder: '未入力',
             onInput: (num) => { room.offerPrice = num; mark(); },
           })
           : el('div', { class: 'anchor-price' }, `${fmt.man1(price)}万円`,
@@ -689,13 +735,14 @@ function matrixView(plan, room, building, mark) {
               class: 'btn btn-sm anchor-set',
               onclick: () => { room.offerPrice = price; mark(); },
             }, '指値にする'))),
-      el('td', { class: 'muted' }, tsubo ? `${fmt.man1(Math.round(price / tsubo))}万/坪` : '—'),
-      el('td', {},
+      el('td', { class: 'muted' }, price != null && tsubo ? `${fmt.man1(Math.round(price / tsubo))}万/坪` : '—'),
+      el('td', {}, price == null ? el('span', { class: 'muted' }, '—') : [
         el('div', { class: 'mxline' }, el('span', { class: 'dk' }, '諸費用'),
           el('span', {}, `${fmt.man1(Math.round(fees))}万`)),
         el('div', { class: 'mxline' }, el('span', { class: 'dk' }, '借入'),
-          el('span', {}, `${fmt.man1(Math.round(principal))}万`))),
+          el('span', {}, `${fmt.man1(Math.round(principal))}万`))]),
       ...rates.map((rate) => {
+        if (price == null) return el('td', { class: 'muted' }, '—');
         const c = at(price, rate);
         const ok = c.balance >= 0;
         return el('td', {},
@@ -730,7 +777,8 @@ function matrixView(plan, room, building, mark) {
       ui.rateSteps = ui.rateSteps.includes(o)
         ? ui.rateSteps.filter((x) => x !== o)
         : [...ui.rateSteps, o].sort((a, b) => a - b);
-      mark();
+      // 表に出す金利は画面の状態なので、保存の対象にはしない
+      rerender();
     },
   }, `${Math.round((baseRate + o) * 1000) / 1000}%`)));
 
@@ -900,14 +948,14 @@ function scenarioSection(plan, currentRoom, currentBuilding) {
   const rows = [];
   for (const b of store.buildings) {
     for (const r of store.roomsOf(b.id)) {
-      const res = calcPlan(plan, r, b, store.loanTerms, { excludeTemporary: ui.afterLoans });
-      rows.push({ b, r, res, housing: housingCost(r, b, store.loanTerms) });
+      const res = calcPlan(plan, r, b, planTerms(), { excludeTemporary: ui.afterLoans });
+      rows.push({ b, r, res, housing: housingCost(r, b, planTerms()) });
     }
   }
   if (!rows.length) return null;
   rows.sort((a, x) => x.res.balance - a.res.balance);
 
-  const afford = affordablePrice(plan, currentRoom || rows[0].r, currentBuilding || rows[0].b, store.loanTerms);
+  const afford = affordablePrice(plan, currentRoom || rows[0].r, currentBuilding || rows[0].b, planTerms());
 
   return el('div', { class: 'section' },
     el('h3', {}, '物件ごとの月次収支'),

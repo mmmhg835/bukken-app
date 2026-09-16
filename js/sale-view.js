@@ -19,11 +19,12 @@ const MAX_YEARS = 35;
 /** 表に出す節目。全年を並べると読む気にならないので5年刻みにする */
 const MILESTONE_YEARS = [3, 5, 10, 15, 20, 25, 30];
 
-export function saleView(plan, room, rerender) {
+/** @param {object} [baseTerms] ライフプラン側の試算金利。省略時は設定のまま */
+export function saleView(plan, room, rerender, baseTerms = null) {
   if (!room) {
     return el('div', { class: 'empty' }, '対象の物件を選んでください');
   }
-  const terms = { ...store.loanTerms, ...(room.loan || {}) };
+  const terms = { ...(baseTerms || store.loanTerms), ...(room.loan || {}) };
   const sale = { ...store.saleTerms, price: room.salePrice ?? room.price };
   const res = saleResult(room, terms, sale);
   const rows = saleSchedule(room, terms, sale, MAX_YEARS);

@@ -166,6 +166,8 @@ class Store extends EventTarget {
       refMonthly: null, refLoanPrincipal: null, refLoanInterest: null, loan: null,
       offerPrice: null,   // 指値。ライフプランの試算でだけ価格に代えて使う
       salePrice: null,    // 想定売却価格。null なら現在価格を使う
+      marketIsoge: null, marketMrev: null,   // 相場の坪単価。出どころごとに持つ
+      viewingAt: null, viewingChecks: {}, viewingNote: '',   // 内見
       reform: '', viewNote: '', roomNote: '', imageRange: '', url: '', memo: '',
       cover: null, coverThumb: null, images: [], ...partial,
     };
