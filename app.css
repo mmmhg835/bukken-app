@@ -562,9 +562,23 @@ table.cmp tr.is-current td{background:var(--accent-soft)}
 
 .filterbar{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
   padding:12px 14px;margin-bottom:18px;box-shadow:var(--shadow)}
-.filterbar-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.filterbar-row{display:flex;align-items:flex-end;gap:10px 14px;flex-wrap:wrap}
+/* 追加の条件と、いま効いている条件。区切って、探す場所を分ける */
+.filterbar-row.is-more{margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+.filterbar-row.is-foot{margin-top:12px;padding-top:10px;border-top:1px solid var(--line);
+  align-items:center;gap:10px}
 .filterbar-more{margin-top:12px;padding-top:12px;border-top:1px solid var(--line);
   display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap}
+.fmore{white-space:nowrap}
+.fmore.is-on{border-color:var(--accent);color:var(--accent)}
+.flabel{font-size:10.5px;color:var(--text-3);font-weight:700;letter-spacing:.04em;padding-bottom:6px}
+/* いま効いている条件。押すとその条件だけ外れる */
+.fchips{display:flex;gap:6px;flex-wrap:wrap}
+.fchip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line-2);
+  background:var(--surface-2);color:var(--text);border-radius:999px;
+  padding:4px 10px;font-size:12px;font-weight:600;cursor:pointer}
+.fchip:hover{border-color:var(--accent);color:var(--accent)}
+.fchip i{font-style:normal;color:var(--text-3);font-size:13px}
 .fgroup{display:flex;flex-direction:column;gap:3px;min-width:0}
 .fgroup label{font-size:10.5px;color:var(--text-3);font-weight:700;letter-spacing:.04em}
 .fsel{border:1px solid var(--line);background:var(--surface);border-radius:var(--r-sm);

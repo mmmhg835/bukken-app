@@ -45,7 +45,7 @@ const ui = {
   brand: 'all', developer: 'all', builder: 'all', designer: 'all',
   // 売り出しの行の条件
   from: 'all', to: 'all', listing: 'all', layout: 'all', sizeMin: null, sizeMax: null,
-  metric: 'tsubo', attr: 'year', group: 'building', fit: true, names: true,
+  metric: 'tsubo', attr: 'year', group: 'building', fit: true, names: true, more: false,
 };
 export const marketUI = ui;
 
@@ -197,34 +197,44 @@ function buildingFilter(targets, loaded, rows, rerender) {
   const layoutOptions = options(rowsFor('layout').map((x) => x.layout));
 
   const loading = store.marketLoadingCount;
+  // よく使う条件だけ出し、残りは「条件を増やす」の中へ。並べすぎると探す画面になる
+  const open = ui.more;
+  const extra = ['town', 'walk', ...FIRM_KEYS].filter((k) => marketDraft[k] !== 'all').length;
   return el('div', { class: 'filterbar' },
     el('div', { class: 'filterbar-row' },
       group('検討', band('mine', MINE_OPTIONS)),
       group('エリア（最寄駅）', pick('area', areaOptions)),
-      group('住所', pick('town', townOptions)),
-      group('築年数', band('age', AGE_BANDS)),
-      group('駅徒歩', band('walk', WALK_BANDS)),
-      el('div', { class: 'spacer' }),
-      el('span', { class: 'fcount' },
-        `${targets.length}棟${loading ? `（${loading}棟 読み込み中）` : ''}`
-        + (store.refsReady ? '' : '（建物を読み込み中）')),
-    ),
-    el('div', { class: 'filterbar-row' },
       group('建物', pick('building', buildingOptions)),
-      FIRM_KEYS.map((k) => group(FIRM_LABEL[k], pick(k, firmOptions(k)))),
+      group('築年数', band('age', AGE_BANDS)),
       group('間取り', pick('layout', layoutOptions)),
       group('広さ', range('sizeMin', 'sizeMax', '㎡')),
+      el('button', {
+        class: 'btn btn-sm fmore' + (open ? ' is-on' : ''),
+        onclick: () => { ui.more = !open; rerender(); },
+      }, `${open ? '条件を隠す' : '条件を増やす'}${extra ? `（${extra}）` : ''}`),
+      searchButton(rerender),
+    ),
+    el('div', { class: 'filterbar-row' },
       group('売り出し年', el('div', { class: 'frange' },
         pick('from', yearOptions), el('span', {}, '〜'), pick('to', yearOptions))),
       group('募集状況', band('listing',
         [['all', 'すべて'], ['open', '販売中'], ['closed', '終了']])),
       el('div', { class: 'spacer' }),
+      el('span', { class: 'fcount' },
+        `${targets.length}棟${loading ? `（${loading}棟 読み込み中）` : ''}`
+        + (store.refsReady ? '' : '（建物を読み込み中）')),
       el('span', { class: 'fcount' }, `売り出し ${rows.length.toLocaleString('ja-JP')}件`),
       loaded.length < targets.length
         ? el('span', { class: 'tiny muted' }, `${loaded.length}/${targets.length}棟`)
         : null,
-      searchButton(rerender),
-    ));
+    ),
+    open
+      ? el('div', { class: 'filterbar-row is-more' },
+        group('住所', pick('town', townOptions)),
+        group('駅徒歩', band('walk', WALK_BANDS)),
+        FIRM_KEYS.map((k) => group(FIRM_LABEL[k], pick(k, firmOptions(k)))),
+      )
+      : null);
 }
 
 /** 検索ボタン。条件を選んだ時点ではグラフを変えず、これを押して初めて効かせる */

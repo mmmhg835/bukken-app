@@ -118,8 +118,7 @@ export function unitFilterBar(all, shown, rerender, { lead = null, trail = null,
   const band = (key, list) =>
     select(draft[key], list, (v) => { draft[key] = v; rerender(); }, 'fsel');
   const group = (label, ctrl) => el('div', { class: 'fgroup' }, el('label', {}, label), ctrl);
-  // 下限〜上限の入力。打つたびに描き直すと入力できないので、離れたときに効かせる
-  const range = (minKey, maxKey, unit) => el('div', { class: 'frange' },
+  const range = (minKey, maxKey, unitLabel) => el('div', { class: 'frange' },
     numberInput({
       value: draft[minKey] ?? '', fkey: minKey, cls: 'fnum', placeholder: '下限',
       onInput: (v) => { draft[minKey] = v; },
@@ -129,7 +128,7 @@ export function unitFilterBar(all, shown, rerender, { lead = null, trail = null,
       value: draft[maxKey] ?? '', fkey: maxKey, cls: 'fnum', placeholder: '上限',
       onInput: (v) => { draft[maxKey] = v; },
     }),
-    el('span', { class: 'tiny muted' }, unit));
+    el('span', { class: 'tiny muted' }, unitLabel));
 
   // 選択肢は「その条件だけ外した結果」から作る。1つ選ぶと他の選択肢も連動して減る
   const pool = (key) => all.filter((x) => unitMatches(x, key, draft));
@@ -143,50 +142,103 @@ export function unitFilterBar(all, shown, rerender, { lead = null, trail = null,
     .flatMap((b) => [...(b.equipmentTags || []), ...(b.facilityTags || [])])
     .concat(pool('equip').flatMap((x) => x.r.roomEquipmentTags || [])))].sort();
 
+  // よく使う条件だけ出し、残りは「条件を増やす」の中へ。
+  // 13個を並べると、どれがどこにあるか探す画面になってしまう
+  const open = unitUI.more;
   return el('div', { class: 'filterbar' },
     el('div', { class: 'filterbar-row' },
       lead,
       group('募集状況', band('listing',
         [['open', '募集中'], ['closed', '募集終了'], ['all', 'すべて']])),
-      group('検討', band('own', OWN_OPTIONS)),
       group('エリア（最寄駅）', pick('area', options(buildings('area').flatMap(stationsOf)))),
-      group('住所', pick('town', options(buildings('town').map((b) => areaOf(b).town)))),
-      group('築年数', band('age', AGE_BANDS)),
-      group('駅徒歩', band('walk', WALK_BANDS)),
-      el('div', { class: 'spacer' }),
-      el('span', { class: 'fcount' }, `${shown.length.toLocaleString('ja-JP')}件の${unit}`),
-    ),
-    el('div', { class: 'filterbar-row' },
-      FIRM_KEYS.map((k) => group(FIRM_LABEL[k],
-        pick(k, options(buildings(k).map((b) => (b[k] || '').trim()))))),
       group('間取り', pick('layout', options(pool('layout').map((x) => x.r.layout)))),
-      group('広さ', range('areaMin', 'areaMax', '㎡')),
       group('価格', range('priceMin', 'priceMax', '万円')),
-      equipOptions.length
-        ? el('button', {
-          class: 'btn btn-sm' + (unitUI.more ? ' btn-primary' : ''),
-          onclick: () => { unitUI.more = !unitUI.more; rerender(); },
-        }, `設備で絞る${draft.equip.length ? ` (${draft.equip.length})` : ''}`)
-        : null,
+      group('広さ', range('areaMin', 'areaMax', '㎡')),
+      el('button', {
+        class: 'btn btn-sm fmore' + (open ? ' is-on' : ''),
+        onclick: () => { unitUI.more = !open; rerender(); },
+      }, `${open ? '条件を隠す' : '条件を増やす'}${extraCount() ? `（${extraCount()}）` : ''}`),
       searchButton(rerender),
+    ),
+    open
+      ? el('div', { class: 'filterbar-row is-more' },
+        group('検討', band('own', OWN_OPTIONS)),
+        group('住所', pick('town', options(buildings('town').map((b) => areaOf(b).town)))),
+        group('築年数', band('age', AGE_BANDS)),
+        group('駅徒歩', band('walk', WALK_BANDS)),
+        FIRM_KEYS.map((k) => group(FIRM_LABEL[k],
+          pick(k, options(buildings(k).map((b) => (b[k] || '').trim()))))),
+      )
+      : null,
+    open && equipOptions.length
+      ? el('div', { class: 'filterbar-row is-more' },
+        el('label', { class: 'flabel' }, '設備'),
+        el('div', { class: 'tagwrap' }, equipOptions.map((x) => el('button', {
+          class: 'tag' + (draft.equip.includes(x) ? ' is-on' : ''),
+          onclick: () => {
+            const i = draft.equip.indexOf(x);
+            if (i >= 0) draft.equip.splice(i, 1); else draft.equip.push(x);
+            rerender();
+          },
+        }, x))))
+      : null,
+    // いま効いている条件と件数。何で絞れているのかを一目で分かるようにする
+    el('div', { class: 'filterbar-row is-foot' },
+      el('span', { class: 'fcount' }, `${shown.length.toLocaleString('ja-JP')}件の${unit}`),
+      activeChips(rerender),
       el('div', { class: 'spacer' }),
       trail,
     ),
-    unitUI.more
-      ? el('div', { class: 'filterbar-more' },
-        el('div', { class: 'tagwrap' }, equipOptions.map((t) => el('button', {
-          class: 'tag' + (draft.equip.includes(t) ? ' is-on' : ''),
-          onclick: () => {
-            const i = draft.equip.indexOf(t);
-            if (i >= 0) draft.equip.splice(i, 1); else draft.equip.push(t);
-            rerender();
-          },
-        }, t))),
-        draft.equip.length
-          ? el('button', { class: 'btn btn-sm', onclick: () => { draft.equip = []; rerender(); } }, '解除')
-          : null)
-      : null,
   );
+}
+
+/** 「条件を増やす」の中で、いくつ使われているか */
+function extraCount() {
+  const keys = ['own', 'town', 'age', 'walk', ...FIRM_KEYS];
+  return keys.filter((k) => draft[k] !== 'all').length + (draft.equip.length ? 1 : 0);
+}
+
+/** いま効いている条件。押すとその条件だけ外れる */
+function activeChips(rerender) {
+  const label = {
+    listing: '募集状況', own: '検討', area: 'エリア', town: '住所', age: '築年数',
+    walk: '駅徒歩', layout: '間取り', brand: 'ブランド', developer: '分譲',
+    builder: '施工', designer: '設計',
+  };
+  const chips = [];
+  const off = (keys, value) => () => {
+    for (const k of keys) draft[k] = value;
+    applyDraft();
+    rerender();
+  };
+  for (const [k, name] of Object.entries(label)) {
+    if (unitUI[k] === 'all' || unitUI[k] == null) continue;
+    if (k === 'listing' && unitUI.listing === 'open') continue;   // 既定なので出さない
+    const shown = k === 'age' || k === 'walk'
+      ? (AGE_BANDS.concat(WALK_BANDS).find(([v]) => v === unitUI[k]) || [])[1] || unitUI[k]
+      : unitUI[k];
+    chips.push([`${name}：${shown}`, off([k], 'all')]);
+  }
+  const money = (v) => Number(v).toLocaleString('ja-JP');
+  if (unitUI.priceMin != null || unitUI.priceMax != null) {
+    chips.push([`価格：${unitUI.priceMin != null ? money(unitUI.priceMin) : ''}〜`
+      + `${unitUI.priceMax != null ? money(unitUI.priceMax) : ''}万円`,
+    off(['priceMin', 'priceMax'], null)]);
+  }
+  if (unitUI.areaMin != null || unitUI.areaMax != null) {
+    chips.push([`広さ：${unitUI.areaMin ?? ''}〜${unitUI.areaMax ?? ''}㎡`,
+      off(['areaMin', 'areaMax'], null)]);
+  }
+  for (const e of unitUI.equip) {
+    chips.push([`設備：${e}`, () => {
+      draft.equip = draft.equip.filter((x) => x !== e);
+      applyDraft();
+      rerender();
+    }]);
+  }
+  if (!chips.length) return null;
+  return el('div', { class: 'fchips' },
+    chips.map(([text, fn]) => el('button', { class: 'fchip', onclick: fn }, text, el('i', {}, '×'))));
 }
 
 /**
