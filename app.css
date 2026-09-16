@@ -660,3 +660,14 @@ table.cmp tr.is-current td.lab{background:var(--accent-soft)}
   font-weight:700;white-space:nowrap}
 .anchor-set{padding:4px 10px;font-size:11.5px}
 .mxtbl td.lab{text-align:right}
+/* 並び替えできる列見出し */
+table.cmp th.sortable{cursor:pointer;user-select:none}
+table.cmp th.sortable:hover{color:var(--accent)}
+table.cmp th.is-sorted{color:var(--accent)}
+.sortmark{margin-left:5px;font-size:10px}
+/* 指値の表の行を選ぶチェック。物件名と同じセルに置いて、横スクロールしても残す */
+.pickcell{display:flex;align-items:center;gap:9px;cursor:pointer}
+.pickcell input{width:15px;height:15px;flex:none;accent-color:var(--accent)}
+/* 指値の表の行を選ぶチェック。物件名と同じセルに置いて、横スクロールしても残す */
+.pickcell{display:flex;align-items:center;gap:9px;cursor:pointer}
+.pickcell input{width:15px;height:15px;flex:none;accent-color:var(--accent)}

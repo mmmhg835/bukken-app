@@ -8,15 +8,29 @@
  * 部屋から引く。売り出し価格が動いたときに直す場所を2か所にしないため、
  * ここで手入力するのは指値と相場坪単価（掲載サイトの外から持ってくる値）だけ。
  */
-import { el, mount, fmt, derive, preserveFocus } from './util.js';
+import { el, mount, fmt, derive, preserveFocus, STATUSES } from './util.js';
 import { store } from './store.js';
-import { numberInput, select } from './ui.js';
+import { numberInput, select, toggle } from './ui.js';
 import { VIEWING_SECTIONS } from './spec.js';
 
 const SUBTABS = [['check', 'チェックポイント'], ['note', '内見の記録'], ['offer', '指値']];
 
-/** 選んでいる部屋。保存する値ではないので画面の状態として持つ */
-const ui = { roomId: null };
+/** 選んでいる部屋と並び順。保存する値ではないので画面の状態として持つ */
+const ui = {
+  roomId: null,
+  sort: { key: 'offer', dir: 'asc' },
+  // 物件が増えると全室を並べても読めないので、見る範囲を絞れるようにする
+  filter: { status: '', offerOnly: false },
+  // 下段で並べて見る部屋。横に16列ある表のままでは2件でも見比べられない
+  picked: new Set(),
+};
+
+/**
+ * 画面の状態。保存する値ではない。
+ * 選択中や絞り込みの分岐は描いてみないと未定義参照に気づけないので、
+ * tools/smoke.mjs から状態を作れるように出している。
+ */
+export const viewingUI = ui;
 
 export function renderViewing(root, rerender, view = 'check') {
   const rooms = store.rooms;
@@ -26,10 +40,11 @@ export function renderViewing(root, rerender, view = 'check') {
   // 入力のたびに描き直すので、打っている欄からフォーカスを外さない
   const mark = () => { store.markDirty(); preserveFocus(rerender); };
 
+  rerenderPicked = rerender;
   mount(root,
     subTabs(view),
     view === 'offer'
-      ? offerSection(mark)
+      ? offerSection(mark, rerender)
       : el('div', {},
         roomPicker(room, rerender),
         room
@@ -151,9 +166,13 @@ function noteSection(room, building) {
  */
 const MARKET_SOURCES = [['marketIsoge', 'ISOGE'], ['marketMrev', 'マンレビ']];
 
-function offerSection(mark) {
+function offerSection(mark, rerender) {
   const terms = store.loanTerms;
-  const rows = store.rooms.map((r) => {
+  const all = store.rooms;
+  const shown = all.filter((r) =>
+    (!ui.filter.status || r.status === ui.filter.status)
+    && (!ui.filter.offerOnly || r.offerPrice != null));
+  const rows = shown.map((r) => {
     const b = store.building(r.buildingId);
     const d = derive(r, b, terms);
     const t = { ...terms, ...(r.loan || {}) };
@@ -167,8 +186,51 @@ function offerSection(mark) {
       feesOnOffer: offer != null,
     };
   });
-  // 指値（無ければ売り出し価格）の安い順。いくらで出すかを上から並べて見る
-  rows.sort((a, b) => (a.offer ?? a.r.price ?? 0) - (b.offer ?? b.r.price ?? 0));
+  // 並び替え。空の項目は向きに関わらず末尾に送る。
+  // 相場や指値が入っていない部屋が上に来ると、比べたい行が押し下げられるため。
+  const value = (x, key) => {
+    if (key === 'name') return `${x.b?.name ?? ''} ${x.r.label}`;
+    if (key === 'age') return x.d.ageYears;
+    if (key === 'floor') return x.r.floor;
+    if (key === 'area') return x.r.area;
+    if (key === 'price') return x.r.price;
+    if (key === 'offer') return x.offer ?? x.r.price;
+    if (key === 'tsubo') return x.d.tsuboPrice;
+    if (key === 'offerTsubo') return x.offerTsubo;
+    if (key === 'fees') return x.fees;
+    if (key === 'running') return x.d.kanriShuzen;
+    for (const [mk] of MARKET_SOURCES) {
+      const m = x.r[mk] ?? null;
+      if (key === mk) return m;
+      if (key === `${mk}:gross`) return m != null && x.d.tsubo ? m * x.d.tsubo : null;
+      // 差で並べるときは、売出より指値のほうが判断に使う数字なので指値側を見る
+      if (key === `${mk}:gap`) return m != null && x.offerTsubo != null ? m - x.offerTsubo : null;
+    }
+    return null;
+  };
+  const { key: sortKey, dir } = ui.sort;
+  rows.sort((a, b) => {
+    const va = value(a, sortKey); const vb = value(b, sortKey);
+    const ea = va == null || Number.isNaN(va); const eb = vb == null || Number.isNaN(vb);
+    if (ea || eb) return ea && eb ? 0 : (ea ? 1 : -1);
+    if (typeof va === 'string') return dir === 'asc' ? va.localeCompare(vb, 'ja') : vb.localeCompare(va, 'ja');
+    return dir === 'asc' ? va - vb : vb - va;
+  });
+
+  // 名前と「安いほうが良い」項目は昇順から、相場や差は大きいほうから見たい
+  const ASC_FIRST = new Set(['name', 'age', 'floor', 'price', 'offer', 'tsubo', 'offerTsubo', 'fees', 'running']);
+  const sortTh = (key, title, sub, cls = null) => el('th', {
+    class: [cls, 'sortable', sortKey === key ? 'is-sorted' : null].filter(Boolean).join(' '),
+    onclick: () => {
+      ui.sort = sortKey === key
+        ? { key, dir: dir === 'asc' ? 'desc' : 'asc' }
+        : { key, dir: ASC_FIRST.has(key) ? 'asc' : 'desc' };
+      rerender();
+    },
+  }, el('div', { class: 'thsub' },
+    el('b', {}, title, el('span', { class: 'sortmark' },
+      sortKey === key ? (dir === 'asc' ? '▲' : '▼') : '')),
+    el('span', {}, sub)));
 
   const oku = (v) => (v == null ? '—' : `${(v / 10000).toFixed(3)}億`);
   const man = (v) => (v == null ? '—' : `${fmt.man1(Math.round(v))}万`);
@@ -204,7 +266,16 @@ function offerSection(mark) {
   const body = el('tbody', {}, rows.map((row) => {
     const { r, b, d, t, offer, offerTsubo, fees, feesOnOffer } = row;
     return el('tr', {},
-      el('td', { class: 'lab' }, `${b?.name ?? ''} ${r.label}`),
+      el('td', { class: 'lab' },
+        el('label', { class: 'pickcell' },
+          el('input', {
+            type: 'checkbox', checked: ui.picked.has(r.id) ? '' : null,
+            onchange: (e) => {
+              if (e.target.checked) ui.picked.add(r.id); else ui.picked.delete(r.id);
+              rerender();
+            },
+          }),
+          el('span', {}, `${b?.name ?? ''} ${r.label}`))),
       el('td', {}, d.ageYears != null ? `築${d.ageYears}年` : '—'),
       el('td', {}, r.floor != null ? `${r.floor}F` : '—'),
       el('td', {}, r.area != null ? `${r.area}㎡` : '—'),
@@ -222,32 +293,105 @@ function offerSection(mark) {
   }));
 
   const t0 = store.loanTerms;
-  return el('div', { class: 'section' },
-    el('h3', {}, '指値の検討'),
+  return el('div', {},
+    el('div', { class: 'section' },
+      el('h3', {}, '指値の検討'),
+    el('div', { class: 'toolbar' },
+      select(ui.filter.status, [['', 'すべての状態'], ...STATUSES.map((v) => [v, v])],
+        (v) => { ui.filter.status = v; rerender(); }),
+      toggle('指値を入れた部屋だけ', ui.filter.offerOnly,
+        (v) => { ui.filter.offerOnly = v; rerender(); }),
+      el('span', { class: 'tiny muted' },
+        rows.length === all.length ? `${all.length}室` : `${rows.length} / ${all.length}室`)),
     el('div', { class: 'tablewrap' },
       el('table', { class: 'cmp offertbl' },
         el('thead', {}, el('tr', {},
-          el('th', { class: 'lab' }, '物件'),
-          el('th', {}, '築年数'),
-          el('th', {}, '階'),
-          el('th', {}, '広さ'),
-          el('th', {}, thSub('現価格', '売り出し')),
-          el('th', {}, thSub('指値', '万円')),
-          el('th', {}, thSub('元坪', '現価格 ÷ 坪')),
-          el('th', {}, thSub('指値坪', '指値 ÷ 坪')),
-          ...MARKET_SOURCES.flatMap(([, label]) => [
-            el('th', {}, thSub(`${label} 坪`, '万円/坪')),
-            el('th', {}, thSub(`${label} 価格`, '相場坪 × 坪数')),
-            el('th', {}, thSub(`${label}との差`, '＋ほど相場より安い')),
+          sortTh('name', '物件', '', 'lab'),
+          sortTh('age', '築年数', ''),
+          sortTh('floor', '階', ''),
+          sortTh('area', '広さ', ''),
+          sortTh('price', '現価格', '売り出し'),
+          sortTh('offer', '指値', '万円'),
+          sortTh('tsubo', '元坪', '現価格 ÷ 坪'),
+          sortTh('offerTsubo', '指値坪', '指値 ÷ 坪'),
+          ...MARKET_SOURCES.flatMap(([mk, label]) => [
+            sortTh(mk, `${label} 坪`, '万円/坪'),
+            sortTh(`${mk}:gross`, `${label} 価格`, '相場坪 × 坪数'),
+            sortTh(`${mk}:gap`, `${label}との差`, '＋ほど相場より安い'),
           ]),
-          el('th', {}, thSub('諸費用', `指値の${t0.costRate}%${t0.costFixed ? ` ＋ ${t0.costFixed}万` : ''}`)),
-          el('th', {}, thSub('管理＋修繕', '月額')),
+          sortTh('fees', '諸費用', `指値の${t0.costRate}%${t0.costFixed ? ` ＋ ${t0.costFixed}万` : ''}`),
+          sortTh('running', '管理＋修繕', '月額'),
         )),
-        body)),
+        body))),
+    pickedCompare(rows),
   );
 }
 
-/** 列見出しに算式を小さく添える。別途の説明文を置かずに済ませる */
-function thSub(title, sub) {
-  return el('div', { class: 'thsub' }, el('b', {}, title), el('span', {}, sub));
+/**
+ * 選んだ部屋だけを縦に並べ替えて見比べる。
+ * 上の表は列が16本あり、横に流れるので2件でも同時に読めない。
+ * 項目を行・物件を列にすれば、件数が増えても見る場所が変わらない。
+ */
+function pickedCompare(rows) {
+  const picked = rows.filter((x) => ui.picked.has(x.r.id));
+  if (!picked.length) return null;
+
+  const man = (v) => (v == null ? '—' : `${fmt.man1(Math.round(v))}万`);
+  const gapOf = (x, key) => {
+    const m = x.r[key] ?? null;
+    return m != null && x.offerTsubo != null ? m - x.offerTsubo : null;
+  };
+  const signed = (v) => (v == null ? '—' : `${v >= 0 ? '+' : '▲'}${fmt.n(Math.abs(v), 0)}万/坪`);
+
+  // [見出し, 表示, 並べ替え用の値, 望ましい向き]。向きが null の行は優劣を付けない
+  const lines = [
+    ['築年数', (x) => (x.d.ageYears != null ? `築${x.d.ageYears}年` : '—'), (x) => x.d.ageYears, 'low'],
+    ['階 / 広さ', (x) => `${x.r.floor ?? '—'}F / ${x.r.area ?? '—'}㎡`, null, null],
+    ['現価格', (x) => man(x.r.price), (x) => x.r.price, 'low'],
+    ['指値', (x) => man(x.offer), (x) => x.offer, 'low'],
+    ['値引き率', (x) => (x.offer == null || !x.r.price ? '—' : `${((1 - x.offer / x.r.price) * 100).toFixed(1)}%`),
+      (x) => (x.offer == null || !x.r.price ? null : 1 - x.offer / x.r.price), 'high'],
+    ['元坪', (x) => man(x.d.tsuboPrice), (x) => x.d.tsuboPrice, 'low'],
+    ['指値坪', (x) => man(x.offerTsubo), (x) => x.offerTsubo, 'low'],
+    ...MARKET_SOURCES.flatMap(([mk, label]) => [
+      [`${label} 坪`, (x) => man(x.r[mk]), null, null],
+      [`${label}との差`, (x) => signed(gapOf(x, mk)), (x) => gapOf(x, mk), 'high'],
+    ]),
+    ['諸費用', (x) => man(x.fees), (x) => x.fees, 'low'],
+    ['管理＋修繕', (x) => (x.d.kanriShuzen != null ? `${fmt.n(x.d.kanriShuzen, 2)}万` : '—'),
+      (x) => x.d.kanriShuzen, 'low'],
+  ];
+
+  const body = el('tbody', {}, lines.map(([label, show, pick, better]) => {
+    let best = null;
+    if (pick && better && picked.length > 1) {
+      const vs = picked.map(pick).filter((v) => v != null && !Number.isNaN(v));
+      if (vs.length) best = better === 'low' ? Math.min(...vs) : Math.max(...vs);
+    }
+    return el('tr', {},
+      el('td', { class: 'lab' }, label),
+      ...picked.map((x) => {
+        const v = pick ? pick(x) : null;
+        const isBest = best != null && v != null && Math.abs(v - best) < 1e-9;
+        return el('td', { class: isBest ? 'best' : null }, show(x));
+      }));
+  }));
+
+  return el('div', { class: 'section' },
+    el('h3', {}, `選んだ${picked.length}件を並べる`),
+    el('div', { class: 'toolbar' },
+      el('button', {
+        class: 'btn btn-sm',
+        onclick: () => { ui.picked.clear(); rerenderPicked(); },
+      }, '選択を解除')),
+    el('div', { class: 'tablewrap' },
+      el('table', { class: 'cmp' },
+        el('thead', {}, el('tr', {},
+          el('th', { class: 'lab' }, '項目'),
+          ...picked.map((x) => el('th', {}, `${x.b?.name ?? ''} ${x.r.label}`)))),
+        body)));
 }
+
+/** 選択解除だけのために画面全体を描き直す */
+let rerenderPicked = () => {};
+
