@@ -365,9 +365,11 @@ function propertyCard({ r, b, listing = null, ambiguous = null }) {
       kvRow('管理・修繕', c.kanriShuzen != null ? `${fmt.n(c.kanriShuzen, 1)}万` : '—',
         [r.kanrihi != null ? `管理${fmt.n(r.kanrihi, 1)}万` : null,
           r.shuzen != null ? `修繕${fmt.n(r.shuzen, 1)}万` : null].filter(Boolean).join('・') || null),
+      // 駐車場は月額。マンレビは台数しか持っていないので、入れるまでは空欄にする
       kvRow('駐車場', park != null ? `${fmt.n(park, 1)}万`
-        : (b.parkingCount ? `${b.parkingCount}台` : '—'),
-      b.parkingCount ? `敷地内${b.parkingCount}台` : null),
+        : (b.parkingCount === 0 ? 'なし' : '—'),
+      park != null ? `月額${fmt.n(park, 1)}万`
+        : (b.parkingCount ? `敷地内${b.parkingCount}台・月額は未登録` : '台数も未登録')),
       kvRow('諸費用', c.loan ? `${fmt.n(c.loan.fees, 0)}万` : '—',
         c.loan ? `物件＋諸費用で ${fmt.n((r.price || 0) + c.loan.fees, 0)}万` : null),
       // 新築時から何倍になっているか。上がりきっているのかどうかの目安
@@ -477,8 +479,9 @@ function buildingCard(b, rooms) {
       kvRow('管理・修繕', fees.length ? `${fmt.n(avg(fees), 1)}万` : '—',
         fees.length > 1 ? '部屋の平均' : null),
       kvRow('駐車場', b.parkingFee != null ? `${fmt.n(b.parkingFee, 1)}万`
-        : (b.parkingCount ? `${b.parkingCount}台` : '—'),
-      b.parkingFee != null ? '月額' : null),
+        : (b.parkingCount === 0 ? 'なし' : '—'),
+      b.parkingFee != null ? '月額'
+        : (b.parkingCount ? `敷地内${b.parkingCount}台・月額は未登録` : null)),
       kvRow('相場', store.tsuboMed(b.id) ? `＠${fmt.n(store.tsuboMed(b.id).med, 0)}万/坪` : '—',
         store.tsuboMed(b.id) ? `直近24か月・${store.tsuboMed(b.id).n}件の中央値` : null),
       kvRow('新築時', store.newTsuboMed(b.id) ? `＠${fmt.n(store.newTsuboMed(b.id).med, 0)}万/坪` : '—',
