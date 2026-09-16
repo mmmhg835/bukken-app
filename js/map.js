@@ -3,6 +3,31 @@
 const LEAFLET_JS = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js';
 const LEAFLET_CSS = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css';
 const GSI_TILE = 'https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png';
+
+/**
+ * Googleマップを開くリンク。
+ *
+ * 地図そのものを Google に差し替えると API キーが要り、アプリ本体は公開リポジトリ
+ * なのでキーを埋められない（課金の登録も必要になる）。開くだけならキーも金も要らない。
+ *
+ * 検索は座標ではなく「建物名＋住所」で投げる。座標だとピンが立つだけだが、
+ * 名前で当たればその建物として認識され、写真・口コミ・ストリートビューまで辿れる。
+ */
+export function googleMapsUrls(b) {
+  const q = [b?.name, b?.address].filter(Boolean).join(' ').trim();
+  const at = b?.lat != null && b?.lng != null ? `${b.lat},${b.lng}` : null;
+  const query = q || at;
+  if (!query) return null;
+  const enc = encodeURIComponent(query);
+  return {
+    query,
+    search: `https://www.google.com/maps/search/?api=1&query=${enc}`,
+    // ストリートビューは座標でしか開けない
+    pano: at ? `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${at}` : null,
+    dirTo: (dest) => `https://www.google.com/maps/dir/?api=1&origin=${enc}`
+      + `&destination=${encodeURIComponent(dest)}`,
+  };
+}
 const GSI_ATTR = '<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">国土地理院</a>';
 const GSI_SEARCH = 'https://msearch.gsi.go.jp/address-search/AddressSearch?q=';
 
@@ -77,7 +102,9 @@ export async function drawMap(container, buildings, places = []) {
   const pts = [];
   buildings.forEach((b, i) => {
     const m = L.marker([b.lat, b.lng], { icon: pin(L, i + 1, '#1d4ed8') }).addTo(map);
-    m.bindPopup(`<b>${escapeHtml(b.name)}</b><br>${escapeHtml(b.address || '')}<br>${b.roomSummary || ''}`);
+    const g = googleMapsUrls(b);
+    m.bindPopup(`<b>${escapeHtml(b.name)}</b><br>${escapeHtml(b.address || '')}<br>${b.roomSummary || ''}`
+      + (g ? `<br><a href="${g.search}" target="_blank" rel="noopener">Googleマップで開く</a>` : ''));
     pts.push([b.lat, b.lng]);
   });
   places.forEach((p) => {

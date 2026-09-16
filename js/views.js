@@ -4,7 +4,7 @@ import { el, fmt, derive, toast, mount, preserveFocus, STATUSES, debounce, APP_V
 import { labeled, select, kv, field, ratingPicker, statusBadge, section, tagPicker, segmented, toggle } from './ui.js';
 import { gallerySection } from './gallery.js';
 import { calcLoan, METHODS, DEFAULT_TERMS } from './loan.js';
-import { geocode, drawMap, distanceMeters, walkMinutes } from './map.js';
+import { geocode, drawMap, distanceMeters, walkMinutes, googleMapsUrls } from './map.js';
 import { pairingUrl, renderQr } from './pairing.js';
 import { QUALITY_PRESETS } from './image.js';
 import { THEMES, currentTheme, setTheme } from './theme.js';
@@ -460,13 +460,32 @@ function locationBox(b) {
     },
   }, '住所から地図上の位置を取得');
 
+  // Googleマップは埋め込まずに開くだけにしてある。API キーも課金も要らず、
+  // 写真・口コミ・ストリートビュー・経路はあちらのほうが揃っているため。
+  const g = googleMapsUrls(b);
+  const ext = (href, label) => el('a', {
+    href, target: '_blank', rel: 'noopener', class: 'btn btn-sm',
+  }, label);
+
   const dists = store.places.filter((p) => b.lat != null).map((p) => {
     const m = distanceMeters(b, p);
-    return el('div', {}, `${p.name} まで 約${(m / 1000).toFixed(2)}km（徒歩約${walkMinutes(m)}分）`);
+    return el('div', {},
+      `${p.name} まで 約${(m / 1000).toFixed(2)}km（徒歩約${walkMinutes(m)}分）`,
+      g && (p.address || p.name)
+        ? el('a', {
+          href: g.dirTo(p.address || p.name), target: '_blank', rel: 'noopener',
+          class: 'tiny', style: 'margin-left:8px',
+        }, '経路')
+        : null);
   });
 
   return el('div', { style: 'margin-top:12px' },
     btn, status,
+    g
+      ? el('div', { class: 'toolbar', style: 'margin:10px 0 0' },
+        ext(g.search, 'Googleマップで開く'),
+        g.pano ? ext(g.pano, 'ストリートビュー') : null)
+      : null,
     dists.length ? el('div', { class: 'tiny muted', style: 'margin-top:8px;line-height:1.9' }, dists) : null,
     mapBox,
   );
