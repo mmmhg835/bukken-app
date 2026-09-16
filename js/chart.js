@@ -158,6 +158,8 @@ export function chartLegend(series, chart = null, { hidden = null, onToggle = nu
       item.addEventListener('click', () => onToggle(s.name));
       if (!chart) return;
     }
+    // 消している系列は線も点も無いので、さわっても絞れない（全部薄くなるだけ）
+    if (off(s.name)) return;
     items.push({ el: item, name: s.name });
     const paint = () => items.forEach((b) => b.el.classList.toggle('is-on', pinned === b.name));
     item.addEventListener('pointerenter', () => { if (pinned == null) chart.focusSeries(s.name); });
@@ -277,15 +279,19 @@ export function scatterChart(series, opts = {}) {
   );
 
   // 推移を追う図では点を線でつなぐ。点だけだと、どれが同じ系列か分からない
+  const lines = [];
   if (line) {
     for (const [si, s] of series.entries()) {
       const sorted = [...s.points].sort((a, b) => a.x - b.x);
       if (sorted.length < 2) continue;
-      svg.append(n('path', {
+      const path = n('path', {
         d: sorted.map((p, i) => `${i ? 'L' : 'M'} ${X(p.x)} ${Y(p.y)}`).join(' '),
         fill: 'none', stroke: s.color || SERIES_COLORS[si % SERIES_COLORS.length],
-        'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round', opacity: '.9',
-      }));
+        'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round',
+        opacity: '.9', class: 'sline',
+      });
+      svg.append(path);
+      lines.push({ el: path, name: s.name });
     }
   }
 
@@ -410,9 +416,21 @@ export function scatterChart(series, opts = {}) {
   svg.addEventListener('pointerleave', () => { if (!pinned) hideTip(); });
   svg.addEventListener('click', () => { pinned = null; hideTip(); });
 
-  /** 凡例から呼ぶ。指定した系列だけ残して他を薄くする（null で解除） */
+  /**
+   * 凡例から呼ぶ。指定した系列だけ残して他を薄くする（null で解除）。
+   *
+   * 線を引く図では、点だけ薄くしても線が8本そのまま残るので、どれを指しているのか
+   * 分からなかった。線も薄くし、指している線は太く・前面に出す。
+   */
   svg.focusSeries = (name) => {
     for (const d of dots) d.el.classList.toggle('is-dim', name != null && d.name !== name);
+    for (const l of lines) {
+      const on = name == null || l.name === name;
+      l.el.classList.toggle('is-dim', !on);
+      l.el.classList.toggle('is-lit', name != null && on);
+      // 指している線は他の線の上に出す。重なって隠れていると追えない
+      if (name != null && on) svg.insertBefore(l.el, tip);
+    }
   };
 
   return svg;

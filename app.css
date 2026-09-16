@@ -378,6 +378,11 @@ table.cmp tr:hover td.lab{background:var(--surface-2)}
 .chart .dot.is-hot{opacity:1}
 /* 凡例でさわった系列だけを残すときに、他を薄くする */
 .chart .dot.is-dim{opacity:.12}
+/* 線は飾りなので、当たり判定は点（.dothit）だけに任せる */
+.chart .sline{transition:opacity .12s,stroke-width .12s;pointer-events:none}
+.chart .sline.is-dim{opacity:.08}
+/* 凡例で指している線。他を薄くするだけでは、8本あると，どれか分からない */
+.chart .sline.is-lit{opacity:1;stroke-width:3.5}
 /* 点そのものは小さくするので、押せる範囲は透明な円で別に確保する */
 .chart .dothit{cursor:pointer}
 /* 散布図の点の下に出す物件名。重なるものは出さないので、地の色で十分読める */
@@ -406,7 +411,10 @@ table.cmp tr:hover td.lab{background:var(--surface-2)}
 .chart-tip-v{fill:var(--text-2);font-size:10px;font-family:inherit}
 .chart-legend.is-live button{font:inherit;color:inherit;background:none;border:0;padding:1px 5px;
   margin:-1px -5px;border-radius:6px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
-.chart-legend.is-live button:hover{background:var(--surface-2)}
+.chart-legend.is-live button:hover{background:var(--surface-2);color:var(--text);font-weight:700}
+/* 指している項目の色も大きくする。線と凡例のどちらを見ても同じものだと分かるように */
+.chart-legend.is-live button:hover i{transform:scale(1.35);box-shadow:0 0 0 2px var(--surface)}
+.chart-legend i{transition:transform .12s}
 .chart-legend.is-live button.is-on{background:var(--accent-soft);color:var(--text);font-weight:700}
 /* 押して線を消した分類。凡例からは消さない（戻せなくなるため） */
 .chart-legend.is-live button.is-off{opacity:.5;text-decoration:line-through}
