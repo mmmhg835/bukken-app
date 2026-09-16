@@ -5,7 +5,7 @@
 // 単位は売買が万円、賃貸が円。混ぜないこと。
 import { store } from './store.js';
 import { el, mount, fmt, derive, toast } from './util.js';
-import { select, segmented, toggle, controlRow, numberInput } from './ui.js';
+import { select, segmented, toggle, controlRow, numberInput, combo } from './ui.js';
 import {
   scatterChart, chartLegend, histogramChart, thin,
   SERIES_COLORS, SERIES_MUTED, BAND_COLORS,
@@ -248,13 +248,17 @@ const buildingOf = (id) => store.building(id);
 function buildingFilter(targets, loaded, rows, rerender, hitBuildings = null) {
   const d = marketDraft;             // 相場だけの条件
   const u = unitDraft;               // 一覧・比較と共通の条件
-  const pick = (key, list) =>
-    select(d[key], [['all', 'すべて'], ...list], (v) => { d[key] = v; rerender(); }, 'fsel');
+  // 選択肢が多い条件は、打って絞れる入力欄にする（建物は1,400件あり選べない）
+  const COMBO_FROM = 12;
+  const pick = (key, list) => (list.length >= COMBO_FROM
+    ? combo(d[key], list, (v) => { d[key] = v; rerender(); }, 'fsel fcombo-in', `m-${key}`)
+    : select(d[key], [['all', 'すべて'], ...list], (v) => { d[key] = v; rerender(); }, 'fsel'));
   const band = (key, list) =>
     select(d[key], list, (v) => { d[key] = v; rerender(); }, 'fsel');
   // 共通の条件はこちら。unit-filter の入力中の値を読み書きする
-  const uPick = (key, list) =>
-    select(u[key], [['all', 'すべて'], ...list], (v) => { u[key] = v; rerender(); }, 'fsel');
+  const uPick = (key, list) => (list.length >= COMBO_FROM
+    ? combo(u[key], list, (v) => { u[key] = v; rerender(); }, 'fsel fcombo-in', `mu-${key}`)
+    : select(u[key], [['all', 'すべて'], ...list], (v) => { u[key] = v; rerender(); }, 'fsel'));
   const uBand = (key, list) =>
     select(u[key], list, (v) => { u[key] = v; rerender(); }, 'fsel');
   const uRange = (minKey, maxKey, unitLabel) => el('div', { class: 'frange' },

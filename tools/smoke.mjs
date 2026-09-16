@@ -600,6 +600,34 @@ const screens = [
       Object.assign(u, saved);
     }
   }],
+  ['選択肢の多い条件は打って絞れる', () => {
+    const { comboMatch } = mods.ui;
+    const opts = [['川崎', '川崎（352）'], ['川崎新町', '川崎新町（33）'],
+      ['武蔵小杉', '武蔵小杉（257）'], ['元住吉', '元住吉（48）']];
+    const want = {
+      武蔵小杉: '武蔵小杉',            // 正式名そのまま
+      ' 武蔵小杉（257）': '武蔵小杉',   // 候補から選んだ形（件数つき・前後の空白）
+      '武蔵小杉（999）': '武蔵小杉',   // 他の条件で件数が動いたあとの古い表示
+      元住: '元住吉',                  // 打ちかけでも1つに絞れる
+      川崎: '川崎',                    // 川崎新町もあるが、正式名は正式名として当てる
+      '': 'all',                       // 空にしたら「すべて」
+      新町: '川崎新町',                // 後ろの方だけでも当てる
+    };
+    for (const [text, expect] of Object.entries(want)) {
+      const got = comboMatch(text, opts);
+      if (got !== expect) throw new Error(`「${text}」が ${got}（${expect} のはず）`);
+    }
+    // 決められないものは null。黙って全件に戻したり、勝手に選んだりしない
+    for (const text of ['ZZZ', '崎']) {
+      if (comboMatch(text, opts) !== null) throw new Error(`「${text}」で勝手に選んでいる`);
+    }
+    // 実際の駅でも、いちばん多い駅を正式名で選べる
+    const stations = mods.units.options(store.allBuildings.flatMap(mods.units.stationsOf));
+    if (stations.length) {
+      const [first] = stations[0];
+      if (comboMatch(first, stations) !== first) throw new Error(`${first} を選べない`);
+    }
+  }],
   ['相場（絞り込み）', () => {
     const v = mods['market-view'];
     const u = v.marketUI;

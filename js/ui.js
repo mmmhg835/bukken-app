@@ -10,6 +10,59 @@ export function select(value, options, onchange, cls = null) {
     options.map(([v, t]) => el('option', { value: v, selected: String(v) === String(value) }, t)));
 }
 
+/**
+ * 打った文字から選択肢を1つに決める。決まらなければ null（＝選び直さない）。
+ *
+ * 末尾の件数「（352）」は付いていても外れていても、古い件数でも当てる。
+ * 件数は他の条件で動くので、前に選んだときの件数が残っていると選び直せなくなるため。
+ *
+ * @returns {string|null} 選ばれた値。空文字を打ったときは 'all'
+ */
+export function comboMatch(text, options) {
+  const norm = (t) => String(t || '').normalize('NFKC').toLowerCase()
+    .replace(/\s/g, '').replace(/[（(]\d+[）)]$/, '');
+  const t = norm(text);
+  if (!t) return 'all';
+  const exact = options.find(([v, label]) => norm(label) === t || norm(v) === t);
+  if (exact) return exact[0];
+  // 打ちかけでも、当てはまるものが1つに絞れていればそれにする
+  const part = options.filter(([v, label]) => norm(label).includes(t) || norm(v).includes(t));
+  return part.length === 1 ? part[0][0] : null;
+}
+
+/**
+ * 打ちながら候補を絞れる選択欄（入力欄＋datalist）。
+ *
+ * 駅は90件、建物は1,400件あり、選択肢を上から探すのは現実的でない。
+ * 「もとず」と打てば元住吉だけが残る、という入り方にする。
+ * 部品を足さずに datalist で済ませているのは、圏外でも開ける作りを崩さないため。
+ *
+ * @param {string} value いま選んでいる値（'all' なら未選択）
+ * @param {Array<[string,string]>} options [値, 表示名]。先頭の ['all', 'すべて'] は渡さない
+ * @param {(v: string) => void} onchange 選ばれたときに呼ぶ。外したときは 'all' で呼ぶ
+ */
+let comboSeq = 0;
+export function combo(value, options, onchange, cls = null, fkey = null) {
+  const id = `dl${++comboSeq}`;
+  const labelOf = (v) => (options.find(([x]) => String(x) === String(v)) || [])[1] ?? '';
+  const shown = value === 'all' || value == null ? '' : labelOf(value) || String(value);
+  const input = el('input', {
+    type: 'search', list: id, class: cls, placeholder: 'すべて　（打つと絞れます）',
+    value: shown, 'data-fkey': fkey,
+    // 打つたびに効かせると、候補が出る前に画面が入れ替わる。選んだとき・離れたときだけ見る
+    onchange: (e) => {
+      const hit = comboMatch(e.target.value, options);
+      // どれにも決まらないときは、打つ前の状態に戻す（黙って全件に戻さない）
+      if (hit == null) e.target.value = shown;
+      else onchange(hit);
+    },
+  });
+  return el('div', { class: 'fcombo' },
+    input,
+    // 候補に出すのは表示名だけ。値（建物のidなど）は見せない
+    el('datalist', { id }, options.map(([, label]) => el('option', { value: label }))));
+}
+
 export function kv(k, v, sub = null) {
   return el('div', {},
     k ? el('div', { class: 'k' }, k) : null,

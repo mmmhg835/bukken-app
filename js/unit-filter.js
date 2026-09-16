@@ -2,7 +2,7 @@
 // 相場タブと同じ軸・同じ見た目にしてあるので、どの画面でも同じ感覚で探せる。
 // 対象は allUnits()（売り出し中の部屋＋登録した部屋）。
 import { el, STATUSES } from './util.js';
-import { select, numberInput } from './ui.js';
+import { select, numberInput, combo } from './ui.js';
 import { areaOf } from './analysis.js';
 import { CLOSED_STATUS } from './price.js';
 import {
@@ -118,8 +118,13 @@ export function unitMatches({ r, b }, except = null, f = unitUI) {
  */
 export function unitFilterBar(all, shown, rerender, { lead = null, trail = null, unit = '物件' } = {}) {
   const dirty = draftDirty();
-  const pick = (key, list) =>
-    select(draft[key], [['all', 'すべて'], ...list], (v) => { draft[key] = v; rerender(); }, 'fsel');
+  // 選択肢が多い条件（駅・住所・事業者）は、打って絞れる入力欄にする。
+  // 90件の駅を上から探すのは無理なので、この本数を超えたら切り替える
+  const COMBO_FROM = 12;
+  const pick = (key, list) => (list.length >= COMBO_FROM
+    ? combo(draft[key], list, (v) => { draft[key] = v; rerender(); }, 'fsel fcombo-in', `u-${key}`)
+    : select(draft[key], [['all', 'すべて'], ...list],
+      (v) => { draft[key] = v; rerender(); }, 'fsel'));
   const band = (key, list) =>
     select(draft[key], list, (v) => { draft[key] = v; rerender(); }, 'fsel');
   const group = (label, ctrl) => el('div', { class: 'fgroup' }, el('label', {}, label), ctrl);
