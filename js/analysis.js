@@ -5,11 +5,39 @@
 
 /* ===== 値の取り出し ===== */
 
-/** 「辰巳7分・東雲12分」から最短の分数を取る。徒歩表記は自由記述のため */
-export function walkMinutesOf(building) {
-  const m = String(building?.walk || '').match(/(\d+)\s*分/g);
-  if (!m) return null;
-  return Math.min(...m.map((s) => Number(s.match(/\d+/)[0])));
+/**
+ * 「辰巳7分・東雲12分」を 駅名 → 分 の対応にする。
+ * どの駅から何分かが分かれば、選んだ駅までの距離で絞れる。
+ */
+export function walkByStation(building) {
+  const out = new Map();
+  for (const m of String(building?.walk || '').matchAll(/([^・/、,]+?)\s*(\d+)\s*分/g)) {
+    const name = m[1].trim();
+    const min = Number(m[2]);
+    if (name && Number.isFinite(min) && !out.has(name)) out.set(name, min);
+  }
+  return out;
+}
+
+/**
+ * 駅からの徒歩分。
+ *
+ * only に駅を渡すと、その駅までの分数で見る。渡さなければ最短の駅で見る。
+ * 「豊洲まで10分以内」で探しているのに、隣の辰巳まで6分だからという理由で
+ * 残ってしまうと、条件の意味が変わってしまうため。
+ * 選んだ駅が徒歩の記載に無いときは、最短の駅に戻す（黙って落とさない）。
+ *
+ * @param {object} building
+ * @param {string[]} [only] 選んでいる駅
+ */
+export function walkMinutesOf(building, only = null) {
+  const map = walkByStation(building);
+  if (!map.size) return null;
+  if (only && only.length) {
+    const picked = [...map].filter(([name]) => only.includes(name)).map(([, v]) => v);
+    if (picked.length) return Math.min(...picked);
+  }
+  return Math.min(...map.values());
 }
 
 /** 「2007/02」を 2007.08 のような小数年にする。年内の差も傾きに反映させるため */
@@ -35,6 +63,23 @@ export function areaOf(building) {
   const rest = (m?.[3] || '').trim();
   const town = rest.replace(/[0-9０-９].*$/, '').replace(/[-‐−―ー].*$/, '').trim();
   return { pref, city, town: town ? `${city}${town}` : city };
+}
+
+/**
+ * 区（政令市は「川崎市中原区」まで）。エリアの単位として使う。
+ *
+ * 町名まで見ると細かすぎて数が揃わず、市だけだと横浜市が1つになってしまう。
+ * 買う側が「このへん」と考える単位は区なので、そこで切る。
+ * 区の無い市（藤沢市など）はその市を返す。
+ */
+export function wardOf(building) {
+  const rest = String(building?.address || '').trim()
+    .replace(/^(東京都|北海道|京都府|大阪府|.{2,3}県)/, '').trim();
+  if (!rest) return '';
+  // 「市川市」を「市」と切らないよう、市町村名は2文字以上を求める
+  const city = rest.match(/^(.{2,}?[市町村郡])/)?.[1] || '';
+  const ward = rest.slice(city.length).match(/^(.{1,}?区)/)?.[1] || '';
+  return city + ward;
 }
 
 /* ===== 回帰 ===== */

@@ -501,14 +501,14 @@ const screens = [
     const u = v.marketUI;
     const saved = { ...u };
     try {
-      for (const group of ['area', 'layout', 'ageBand']) {
+      for (const group of ['station', 'ward', 'layout', 'ageBand']) {
         for (const step of ['year', 'month']) {
           Object.assign(u, saved, { group, group2: 'none', step, pick: null, hide: [], pin: [] });
           v.renderMarket(stubEl(), () => {}, 'supply');
         }
       }
       // 掛け合わせ、点を押した状態、当たらない点、消した分類
-      Object.assign(u, saved, { group: 'area', group2: 'layout', pick: null, hide: [], pin: [] });
+      Object.assign(u, saved, { group: 'station', group2: 'ward', pick: null, hide: [], pin: [] });
       v.renderMarket(stubEl(), () => {}, 'supply');
       u.pick = { key: '存在しない', period: 1990 };
       v.renderMarket(stubEl(), () => {}, 'supply');
@@ -572,14 +572,14 @@ const screens = [
     try {
       // エリア × 間取り、エリア × 築年数。売出・建物別も同じ分類で描く
       for (const group2 of ['layout', 'ageBand', 'none']) {
-        Object.assign(u, saved, { group: 'area', group2, minCount: 1, pick: null, hide: [] });
+        Object.assign(u, saved, { group: 'station', group2, minCount: 1, pick: null, hide: [] });
         for (const tab of ['trend', 'sale', 'group']) v.renderMarket(stubEl(), () => {}, tab);
       }
       // 同じ分類どうしを掛けても落ちない（掛け合わせを無視する）
-      Object.assign(u, saved, { group: 'area', group2: 'area', minCount: 1, hide: [] });
+      Object.assign(u, saved, { group: 'station', group2: 'station', minCount: 1, hide: [] });
       v.renderMarket(stubEl(), () => {}, 'trend');
       // 表から選んだ分類は、件数の順に関わらず必ず線にする
-      Object.assign(u, saved, { group: 'area', group2: 'none', minCount: 1, hide: [], pin: [] });
+      Object.assign(u, saved, { group: 'station', group2: 'none', minCount: 1, hide: [], pin: [] });
       v.renderMarket(stubEl(), () => {}, 'trend');
       u.pin = ['存在しないエリア'];
       v.renderMarket(stubEl(), () => {}, 'trend');
@@ -659,6 +659,45 @@ const screens = [
       if (comboMatch(first, stations) !== first) throw new Error(`${first} を選べない`);
     }
   }],
+  ['駅と区はいくつでも選べる／徒歩は選んだ駅までで見る', () => {
+    const f = mods['unit-filter'];
+    const u = mods.units;
+    const a = mods.analysis;
+    const saved = { ...f.unitUI };
+    const all = u.allUnits();
+    const hit = (o) => {
+      Object.assign(f.unitUI, saved,
+        { listing: 'all', own: 'all', walk: 'all', station: [], ward: [] }, o);
+      return all.filter((x) => f.unitMatches(x)).length;
+    };
+    try {
+      const stations = [...new Set(store.allBuildings.flatMap(u.stationsOf))];
+      const [s1, s2] = stations;
+      if (s1 && s2) {
+        const a1 = hit({ station: [s1] });
+        const a2 = hit({ station: [s2] });
+        const both = hit({ station: [s1, s2] });
+        // 複数選んだら「どれかに当たれば残す」。片方だけより必ず増える
+        if (both < Math.max(a1, a2)) throw new Error('複数選んだのに減っている');
+        if (both > a1 + a2) throw new Error('複数選んだ結果が足し算を超えている');
+      }
+      const wards = [...new Set(store.allBuildings.map(a.wardOf).filter(Boolean))];
+      if (wards.length > 1) {
+        const w1 = hit({ ward: [wards[0]] });
+        const w2 = hit({ ward: [wards[0], wards[1]] });
+        if (w2 <= w1) throw new Error('区を足したのに増えていない');
+      }
+      // 徒歩は「選んだ駅まで」で見る。隣の駅が近いという理由で残らないこと
+      const b = { walk: '辰巳6分・東雲8分・豊洲15分' };
+      if (a.walkMinutesOf(b) !== 6) throw new Error('駅を選ばないときは最短で見ていない');
+      if (a.walkMinutesOf(b, ['豊洲']) !== 15) throw new Error('選んだ駅までの分になっていない');
+      if (a.walkMinutesOf(b, ['東雲', '豊洲']) !== 8) throw new Error('選んだ駅のうち近いほうを見ていない');
+      if (a.walkMinutesOf(b, ['存在しない駅']) !== 6) throw new Error('記載に無い駅で落としている');
+    } finally {
+      Object.assign(f.unitUI, saved);
+      f.resetDraft();
+    }
+  }],
   ['相場（絞り込み）', () => {
     const v = mods['market-view'];
     const u = v.marketUI;
@@ -667,7 +706,9 @@ const screens = [
       { scope: 'all' },
       { building: 'b1' },
       { firm: '長谷工' },
-      { area: '東雲' },
+      { station: ['東雲'] },
+      { ward: ['江東区'] },
+      { station: ['東雲', '辰巳'], ward: ['江東区', '中央区'] },
       { town: '東京都江東区東雲' },
       { age: '-20' },
       { age: '40-' },
@@ -794,7 +835,7 @@ const screens = [
     const saved = { ...f.unitUI };
     try {
       // 条件を変えると、内見と地図の中身も一緒に絞られる
-      Object.assign(f.unitUI, saved, { listing: 'all', own: '検討中', area: '存在しない駅' });
+      Object.assign(f.unitUI, saved, { listing: 'all', own: '検討中', station: ['存在しない駅'] });
       f.resetDraft();
       mods['viewing-view'].renderViewing(stubEl(), () => {});
       mods.views.renderMap(stubEl());

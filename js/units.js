@@ -112,7 +112,8 @@ export function ageOf(b) {
   return y == null ? null : nowYear() - y;
 }
 
-export const walkOf = (b) => walkMinutesOf(b);
+/** 駅徒歩。駅を選んでいるときは、その駅までの分で見る */
+export const walkOf = (b, only = null) => walkMinutesOf(b, only);
 
 /** 「-10」「40-」のような帯に入るか */
 export function inBand(band, v) {

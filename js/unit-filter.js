@@ -2,8 +2,8 @@
 // 相場タブと同じ軸・同じ見た目にしてあるので、どの画面でも同じ感覚で探せる。
 // 対象は allUnits()（売り出し中の部屋＋登録した部屋）。
 import { el, STATUSES } from './util.js';
-import { select, numberInput, combo } from './ui.js';
-import { areaOf } from './analysis.js';
+import { select, numberInput, combo, multiCombo } from './ui.js';
+import { areaOf, wardOf } from './analysis.js';
 import { CLOSED_STATUS } from './price.js';
 import {
   AGE_BANDS, WALK_BANDS, FIRM_KEYS, FIRM_LABEL,
@@ -30,8 +30,9 @@ export const unitUI = {
   own: 'all',
   // 建物名・住所・駅名の文字でも絞れるようにする。件数が増えると選択肢から探せない
   name: '',
-  // 建物の条件。area は最寄駅、town は町名
-  area: 'all', town: 'all', age: 'all', walk: 'all',
+  // 建物の条件。station は最寄駅、ward は区、town は町名
+  // 駅と区はいくつでも選べる（「川崎と横浜の両方」で見たいことが多い）
+  station: [], ward: [], town: 'all', age: 'all', walk: 'all',
   brand: 'all', developer: 'all', builder: 'all', designer: 'all',
   // 部屋の条件。価格と広さは自分で下限・上限を入れる（決め打ちの帯だと刻みが合わない）
   layout: 'all',
@@ -91,13 +92,16 @@ export function unitMatches({ r, b }, except = null, f = unitUI) {
     if (f.listing === 'closed' && !closed) return false;
   }
   if (on('name') && f.name && !nameHit(b, f.name)) return false;
-  if (on('area') && f.area !== 'all' && !stationsOf(b).includes(f.area)) return false;
+  // 複数選んだときは「どれかに当たれば残す」。別の条件どうしは重ねて効く
+  if (on('station') && f.station.length && !stationsOf(b).some((x) => f.station.includes(x))) return false;
+  if (on('ward') && f.ward.length && !f.ward.includes(wardOf(b))) return false;
   if (on('town') && f.town !== 'all' && areaOf(b).town !== f.town) return false;
   for (const k of FIRM_KEYS) {
     if (on(k) && unitUI[k] !== 'all' && (b[k] || '').trim() !== unitUI[k]) return false;
   }
   if (on('age') && !inBand(f.age, ageOf(b))) return false;
-  if (on('walk') && !inBand(f.walk, walkOf(b))) return false;
+  // 駅を選んでいるなら、その駅までの徒歩分で見る（隣の駅が近いから残る、を避ける）
+  if (on('walk') && !inBand(f.walk, walkOf(b, f.station))) return false;
   if (on('layout') && f.layout !== 'all' && layoutLabel(r.layout) !== f.layout) return false;
   if (on('size') && !inRange(r.area, f.areaMin, f.areaMax)) return false;
   if (on('price') && !inRange(r.price, f.priceMin, f.priceMax)) return false;
@@ -127,6 +131,9 @@ export function unitFilterBar(all, shown, rerender, { lead = null, trail = null,
       (v) => { draft[key] = v; rerender(); }, 'fsel'));
   const band = (key, list) =>
     select(draft[key], list, (v) => { draft[key] = v; rerender(); }, 'fsel');
+  // いくつでも選べる条件（駅・区）
+  const many = (key, list) =>
+    multiCombo(draft[key], list, (v) => { draft[key] = v; rerender(); }, 'fsel fcombo-in', `u-${key}`);
   const group = (label, ctrl) => el('div', { class: 'fgroup' }, el('label', {}, label), ctrl);
   const range = (minKey, maxKey, unitLabel) => el('div', { class: 'frange' },
     numberInput({
@@ -168,9 +175,10 @@ export function unitFilterBar(all, shown, rerender, { lead = null, trail = null,
         [['open', '募集中'], ['closed', '募集終了'], ['all', 'すべて']])),
       // 自分が登録した部屋だけを見る使い方が多いので、これは畳まない
       group('検討', band('own', OWN_OPTIONS)),
-      group('エリア（最寄駅）', pick('area', options(buildings('area').flatMap(stationsOf)))),
+      group('駅', many('station', options(buildings('station').flatMap(stationsOf)))),
       // 駅徒歩と築年数は、駅や間取りと同じくらい最初に決める条件。畳まない
       group('駅徒歩', band('walk', WALK_BANDS)),
+      group('エリア（区）', many('ward', options(buildings('ward').map(wardOf)))),
       group('築年数', band('age', AGE_BANDS)),
       group('間取り', pick('layout', options(pool('layout').map((x) => layoutLabel(x.r.layout))))),
       group('価格', range('priceMin', 'priceMax', '万円')),
@@ -222,12 +230,18 @@ function extraCount() {
  */
 export function activeUnitConditions() {
   const label = {
-    name: '建物名', listing: '募集状況', own: '検討', area: 'エリア', town: '住所', age: '築年数',
+    name: '建物名', listing: '募集状況', own: '検討', station: '駅', ward: 'エリア（区）',
+    town: '住所', age: '築年数',
     walk: '駅徒歩', layout: '間取り', brand: 'ブランド', developer: '分譲',
     builder: '施工', designer: '設計',
   };
   const out = [];
   for (const [k, name] of Object.entries(label)) {
+    // いくつでも選べる条件は、選んだぶんだけ別々に出す（1つずつ外せるように）
+    if (Array.isArray(unitUI[k])) {
+      for (const v of unitUI[k]) out.push({ name, value: v, keys: [k], clear: v });
+      continue;
+    }
     if (unitUI[k] === 'all' || unitUI[k] == null || unitUI[k] === '') continue;
     if (k === 'listing' && unitUI.listing === 'open') continue;   // 既定なので出さない
     const shown = k === 'age' || k === 'walk'
@@ -266,8 +280,9 @@ function activeChips(rerender) {
   const list = activeUnitConditions();
   if (!list.length) return null;
   const off = (c) => () => {
-    if (c.keys[0] === 'equip') draft.equip = draft.equip.filter((x) => x !== c.clear);
-    else for (const k of c.keys) draft[k] = c.clear;
+    const k = c.keys[0];
+    if (Array.isArray(draft[k])) draft[k] = draft[k].filter((x) => x !== c.clear);
+    else for (const key of c.keys) draft[key] = c.clear;
     applyDraft();
     rerender();
   };

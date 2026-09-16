@@ -63,6 +63,44 @@ export function combo(value, options, onchange, cls = null, fkey = null) {
     el('datalist', { id }, options.map(([, label]) => el('option', { value: label }))));
 }
 
+/**
+ * いくつでも選べる版の combo。駅や区は「川崎と横浜の両方」で見たいことが多い。
+ *
+ * 選んだものは入力欄の下に札で並べ、札を押すと外れる。
+ * 選ぶたびに入力欄を空にするのは、続けて次を打てるようにするため。
+ *
+ * @param {string[]} values いま選んでいる値
+ * @param {(next: string[]) => void} onChange 選び直したときに呼ぶ
+ */
+export function multiCombo(values, options, onChange, cls = null, fkey = null) {
+  const id = `dl${++comboSeq}`;
+  const chosen = values || [];
+  const labelOf = (v) => (options.find(([x]) => String(x) === String(v)) || [])[1] ?? v;
+  const input = el('input', {
+    type: 'search', list: id, class: cls, 'data-fkey': fkey,
+    placeholder: chosen.length ? '追加で選ぶ' : 'すべて　（打つと絞れます）',
+    value: '',
+    onchange: (e) => {
+      const hit = comboMatch(e.target.value, options);
+      if (hit == null) { e.target.value = ''; return; }        // どれにも決まらないときは何もしない
+      if (hit === 'all') return;                               // 空打ちは「すべて」＝何も足さない
+      e.target.value = '';
+      if (!chosen.includes(hit)) onChange([...chosen, hit]);
+    },
+  });
+  return el('div', { class: 'fcombo fmulti' },
+    input,
+    chosen.length
+      ? el('div', { class: 'fchosen' }, chosen.map((v) => el('button', {
+        class: 'fchip', title: '押すと外します',
+        onclick: () => onChange(chosen.filter((x) => x !== v)),
+      }, labelOf(v).replace(/[（(]\d+[）)]$/, ''), el('i', {}, '×'))))
+      : null,
+    // 候補に出すのは、まだ選んでいないものだけ
+    el('datalist', { id }, options.filter(([v]) => !chosen.includes(v))
+      .map(([, label]) => el('option', { value: label }))));
+}
+
 export function kv(k, v, sub = null) {
   return el('div', {},
     k ? el('div', { class: 'k' }, k) : null,

@@ -5,12 +5,12 @@
 // 単位は売買が万円、賃貸が円。混ぜないこと。
 import { store } from './store.js';
 import { el, mount, fmt, derive, toast } from './util.js';
-import { select, segmented, toggle, controlRow, numberInput, combo } from './ui.js';
+import { select, segmented, toggle, controlRow, numberInput, combo, multiCombo } from './ui.js';
 import {
   scatterChart, chartLegend, histogramChart, thin,
   SERIES_COLORS, SERIES_MUTED, BAND_COLORS,
 } from './chart.js';
-import { linearFit, areaOf } from './analysis.js';
+import { linearFit, areaOf, wardOf } from './analysis.js';
 import {
   unitUI, draft as unitDraft, applyDraft, resetDraft, clearDraft, draftDirty,
   OWN_OPTIONS, inRange, activeUnitConditions,
@@ -222,13 +222,16 @@ export function targetBuildings(except = null, f = ui, u = unitUI) {
     }
     if (on('name') && u.name && !nameHit(b, u.name)) return false;
     if (on('building') && f.building !== 'all' && b.id !== f.building) return false;
-    if (on('area') && u.area !== 'all' && !stationsOf(b).includes(u.area)) return false;
+    // 駅と区は複数選べる。「どれかに当たれば残す」
+    if (on('station') && u.station.length && !stationsOf(b).some((x) => u.station.includes(x))) return false;
+    if (on('ward') && u.ward.length && !u.ward.includes(wardOf(b))) return false;
     if (on('town') && u.town !== 'all' && areaOf(b).town !== u.town) return false;
     for (const k of FIRM_KEYS) {
       if (on(k) && u[k] !== 'all' && (b[k] || '').trim() !== u[k]) return false;
     }
     if (on('age') && !inBand(u.age, ageOf(b))) return false;
-    if (on('walk') && !inBand(u.walk, walkOf(b))) return false;
+    // 駅を選んでいるなら、その駅までの徒歩分で見る
+    if (on('walk') && !inBand(u.walk, walkOf(b, u.station))) return false;
     return true;
   });
 }
@@ -276,6 +279,9 @@ function buildingFilter(targets, loaded, rows, rerender, hitBuildings = null) {
     : select(u[key], [['all', 'すべて'], ...list], (v) => { u[key] = v; rerender(); }, 'fsel'));
   const uBand = (key, list) =>
     select(u[key], list, (v) => { u[key] = v; rerender(); }, 'fsel');
+  // いくつでも選べる条件（駅・区）
+  const uMany = (key, list) =>
+    multiCombo(u[key], list, (v) => { u[key] = v; rerender(); }, 'fsel fcombo-in', `mu-${key}`);
   const uRange = (minKey, maxKey, unitLabel) => el('div', { class: 'frange' },
     numberInput({ value: u[minKey] ?? '', fkey: `m-${minKey}`, cls: 'fnum', placeholder: '下限',
       onInput: (v) => { u[minKey] = v; } }),
@@ -292,7 +298,8 @@ function buildingFilter(targets, loaded, rows, rerender, hitBuildings = null) {
   const buildingOptions = [...pool('building')]
     .sort((a, b) => a.name.localeCompare(b.name, 'ja'))
     .map((b) => [b.id, b.name]);
-  const areaOptions = options(pool('area').flatMap(stationsOf));
+  const stationOptions = options(pool('station').flatMap(stationsOf));
+  const wardOptions = options(pool('ward').map(wardOf));
   const townOptions = options(pool('town').map((b) => areaOf(b).town));
   const firmOptions = (k) => options(pool(k).map((b) => (b[k] || '').trim()));
   const yearOptions = options(rowsFor('year').map((x) => {
@@ -315,9 +322,10 @@ function buildingFilter(targets, loaded, rows, rerender, hitBuildings = null) {
         onkeydown: (e) => { if (e.key === 'Enter') { applyAll(); rerender(); } },
       })),
       group('検討', uBand('own', OWN_OPTIONS)),
-      group('エリア（最寄駅）', uPick('area', areaOptions)),
+      group('駅', uMany('station', stationOptions)),
       // 駅徒歩は駅と同じくらい最初に決める条件なので、一覧と同じく畳まない
       group('駅徒歩', uBand('walk', WALK_BANDS)),
+      group('エリア（区）', uMany('ward', wardOptions)),
       group('建物', pick('building', buildingOptions)),
       group('築年数', uBand('age', AGE_BANDS)),
       group('間取り', uPick('layout', layoutOptions)),
@@ -546,14 +554,23 @@ function axisControls(rerender, { attr = false, group = false, groupLabel = '色
  * 掛け合わせると分類は増えるが、線は多い順に8本までなので画面は破綻しない。
  */
 function activeGroup() {
-  const g1 = MARKET_GROUPS[ui.group] || MARKET_GROUPS.none;
-  const g2 = MARKET_GROUPS[ui.group2];
+  const g1 = withPickedStation(MARKET_GROUPS[ui.group] || MARKET_GROUPS.none);
+  const g2 = withPickedStation(MARKET_GROUPS[ui.group2]);
   if (!g2 || ui.group2 === 'none' || ui.group === 'none' || ui.group2 === ui.group) return g1;
   return {
     label: `${g1.label} × ${g2.label}`,
     // 掛け合わせると帯の順序は意味を失うので、色は通常の系列色に戻す
     get: (x, b) => `${g1.get(x, b) ?? '不明'}・${g2.get(x, b) ?? '不明'}`,
   };
+}
+
+/**
+ * 「駅徒歩」の分類だけ、選んでいる駅までの分で見るように差し替える。
+ * 絞り込みが「豊洲まで10分以内」なのに、グラフの帯は隣の駅までの分、では読めない。
+ */
+function withPickedStation(g) {
+  if (g !== MARKET_GROUPS.walkBand || !unitUI.station.length) return g;
+  return { ...g, get: (x, b) => g.get(x, b, walkOf(b, unitUI.station)) };
 }
 
 /** 掛け合わせに出す選択肢。同じ分類どうしは選べない */
