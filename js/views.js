@@ -131,7 +131,7 @@ function filterBar(all, shown, byRoom) {
 function roomListing(shown) {
   const rooms = [...shown].sort(roomSorter(listUI.sort));
   if (!rooms.length) return el('div', { class: 'empty' }, '条件に合う部屋がありません');
-  return el('div', { class: 'grid' }, rooms.map((x) => propertyCard(x.r, x.b, unitUrl(x))));
+  return el('div', { class: 'grid' }, rooms.map((x) => propertyCard(x.r, x.b, unitUrl(x), x.ambiguous)));
 }
 
 function roomSorter(key) {
@@ -295,13 +295,20 @@ function featureTag(icon, text) {
 }
 
 /** 部屋1室のカード。参考画面と同じ並びにしている */
-function propertyCard(r, b, url = null) {
+function propertyCard(r, b, url = null, ambiguous = null) {
   const c = derive(r, b, store.loanTerms);
   const t = { ...store.loanTerms, ...(r.loan || {}) };
 
   return el('article', { class: 'card pcard', onclick: () => go('r', r.id) },
     el('div', { class: 'pcard-top' },
       pickBox([r.id]),
+      // 同じ階・同じ広さの売り出しが複数あって1件に絞れないときは、
+      // どれかに決めつけず、その旨を出す
+      ambiguous
+        ? el('span', { class: 'badge badge-warn', title:
+          ambiguous.map((x) => `${fmt.man(x.price)} ${x.layout || ''} ${x.direction || ''}`).join(' / ') },
+        `売り出し${ambiguous.length}件と一致`)
+        : null,
       statusBadge(r.status),
     ),
     el('div', { class: 'pcard-img' },

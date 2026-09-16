@@ -457,6 +457,28 @@ const screens = [
     const noUrl = u.allUnits().find((x) => x.listing?.id === 'os3');
     if (u.unitUrl(noUrl) !== store.building('b9').url) throw new Error('建物のページに落ちていない');
   }],
+  ['同じ階・同じ広さの部屋を取り違えない', () => {
+    const u = mods.units;
+    const rows = [
+      { id: 'c1', buildingId: 'b9', floor: 30, area: 80, layout: '3LDK', direction: '南東', price: 14980, open: true },
+      { id: 'c2', buildingId: 'b9', floor: 30, area: 80, layout: '3LDK', direction: '南東', price: 13980, feature: 'リフォーム', open: true },
+      { id: 'c3', buildingId: 'b9', floor: 31, area: 80, layout: '4LDK', direction: '北', price: 12000, open: true },
+    ];
+    // 価格まで一致すれば決まる
+    const hit = u.matchListing({ floor: 30, area: 80, layout: '3LDK', price: 13980 }, rows);
+    if (hit.listing?.id !== 'c2') throw new Error('価格で絞れていない');
+    // 間取りが違えば別の部屋
+    const other = u.matchListing({ floor: 31, area: 80, layout: '3LDK' }, rows);
+    if (other.listing) throw new Error('間取りが違う部屋に当てている');
+    // 決め手が無ければ、どれかに決めつけない
+    const amb = u.matchListing({ floor: 30, area: 80, layout: '3LDK' }, rows);
+    if (amb.listing || amb.ambiguous?.length !== 2) throw new Error('曖昧なまま結びつけている');
+    // 同じ部屋が2社から出ているだけなら、迷わず1件として扱う
+    const dup = [{ ...rows[0] }, { ...rows[0], id: 'c1b' }];
+    if (!u.matchListing({ floor: 30, area: 80, layout: '3LDK' }, dup).listing) {
+      throw new Error('同じ内容の重複掲載で迷っている');
+    }
+  }],
   ['部屋ごとの売り出し履歴', () => {
     const u = mods.units;
     const b = store.data.buildings[0];

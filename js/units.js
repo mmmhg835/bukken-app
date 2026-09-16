@@ -9,12 +9,6 @@ import { store } from './store.js';
 import { RENOVATION } from './spec.js';
 import { builtYearOf, walkMinutesOf } from './analysis.js';
 
-/** 同じ部屋かどうかの鍵。建物・階・専有面積で決める */
-export const unitKey = (buildingId, floor, area) =>
-  `${buildingId}|${floor ?? ''}|${area ?? ''}`;
-
-const keyOfRoom = (r) => unitKey(r.buildingId, r.floor, r.area);
-const keyOfListing = (x) => unitKey(x.buildingId, x.floor, x.area);
 
 /** 「リフォーム・リノベーション」からリノベ区分を決める */
 export function renovationOf(feature = '') {
@@ -62,20 +56,21 @@ export function listingAsRoom(x) {
  * 自分の部屋で売り出しに無いもの（募集が終わった・手で作った）も落とさない。
  */
 export function allUnits() {
-  const mine = new Map();
-  for (const r of store.rooms) mine.set(keyOfRoom(r), r);
-
+  const byBuilding = new Map();
+  for (const x of store.onsaleRows) {
+    if (!byBuilding.has(x.buildingId)) byBuilding.set(x.buildingId, []);
+    byBuilding.get(x.buildingId).push(x);
+  }
   const out = [];
   const used = new Set();
-  for (const x of store.onsaleRows) {
-    const k = keyOfListing(x);
-    const r = mine.get(k);
-    if (r) used.add(k);
-    out.push({ r: r || listingAsRoom(x), b: store.building(x.buildingId), listing: x });
+  for (const r of store.rooms) {
+    const { listing, ambiguous } = matchListing(r, byBuilding.get(r.buildingId) || []);
+    if (listing) used.add(listing.id);
+    out.push({ r, b: store.building(r.buildingId), listing, ambiguous });
   }
-  for (const [k, r] of mine) {
-    if (used.has(k)) continue;
-    out.push({ r, b: store.building(r.buildingId), listing: null });
+  for (const x of store.onsaleRows) {
+    if (used.has(x.id)) continue;
+    out.push({ r: listingAsRoom(x), b: store.building(x.buildingId), listing: x });
   }
   return out.filter((x) => x.b);
 }
@@ -149,13 +144,62 @@ export function unitUrl({ r, b, listing }) {
   return listing?.url || r?.listingUrl || b?.url || '';
 }
 
-/* ===== 募集状況の突き合わせ ===== */
+/* ===== 突き合わせ ===== */
 
-// 面積の許容差。同じ部屋でも、掲載元によって 80.1 と 80.14 のようにぶれる
+// 面積の許容差。まず小数2桁まで一致で探し、見つからないときだけ緩める
+const AREA_EXACT = 0.05;
 const AREA_TOL = 0.6;
+const near = (a, b, tol) =>
+  a != null && b != null && Math.abs(a - b) <= tol;
 const sameUnit = (a, b) =>
-  a.floor != null && a.floor === b.floor
-  && a.area != null && b.area != null && Math.abs(a.area - b.area) <= AREA_TOL;
+  a.floor != null && a.floor === b.floor && near(a.area, b.area, AREA_TOL);
+const norm = (v) => String(v || '').replace(/[\s\u3000]/g, '').toUpperCase();
+
+/**
+ * 間取りを「部屋数＋型」に均す。
+ * 掲載元によって 3LDK+S と 3SLDK、4LDK+W+TS のように書き方が違うので、
+ * 納戸やWICの付け方は無視して、部屋数と LDK/DK/K/R だけで比べる。
+ * 部屋数か型が違えば別の部屋とみなす。
+ */
+export function canonLayout(v) {
+  const t = norm(v).replace(/[＋+]/g, '').replace(/S(?=LDK|DK|K)/, '');
+  const m = t.match(/(\d+)\s*(LDK|DK|K|R)/);
+  return m ? `${m[1]}${m[2]}` : null;
+}
+
+/** 間取りが食い違っていないか。どちらかが分からないときは判断しない */
+const layoutOk = (a, b) => {
+  const x = canonLayout(a), y = canonLayout(b);
+  return !x || !y || x === y;
+};
+
+/**
+ * 部屋に対応する売り出しの行を1つだけ選ぶ。
+ *
+ * 売買に部屋番号は無いので、階と専有面積で探すしかない。ただしタワーは
+ * 同じ階に同じ広さの部屋が複数あるため、それだけでは足りない。
+ * 間取りと価格まで見て1件に絞れなければ、**結びつけない**。
+ * 取り違えて別の部屋の価格や履歴を出すくらいなら、出さない方がよい。
+ *
+ * @returns {{listing: object|null, ambiguous: object[]|null}}
+ */
+export function matchListing(r, rows) {
+  // 間取りが食い違う行は、候補が1件しか無くても別の部屋として外す
+  const onFloor = rows.filter((x) =>
+    x.floor != null && x.floor === r.floor && layoutOk(r.layout, x.layout));
+  let list = onFloor.filter((x) => near(x.area, r.area, AREA_EXACT));
+  if (!list.length) list = onFloor.filter((x) => near(x.area, r.area, AREA_TOL));
+  if (list.length > 1 && r.price != null) {
+    const same = list.filter((x) => x.price === r.price);
+    if (same.length) list = same;
+  }
+  if (list.length > 1) {
+    // 同じ部屋が2社から出ているだけなら、中身は同じなのでどれを選んでも変わらない
+    const sig = (x) => [x.layout, x.direction, x.price, x.feature, x.balcony].join('|');
+    if (new Set(list.map(sig)).size > 1) return { listing: null, ambiguous: list };
+  }
+  return { listing: list[0] || null, ambiguous: null };
+}
 
 /**
  * マンレビの取り込みから見て、その部屋がいま売り出し中かどうか。
@@ -172,15 +216,15 @@ export function listingHint(r, b = null) {
   const building = b || store.building(r.buildingId);
   if (!building) return { state: 'unknown', ym: null };
 
-  const live = store.onsaleRows.filter((x) => x.buildingId === r.buildingId && sameUnit(r, x));
-  if (live.length) {
-    const ym = live.map((x) => x.listedYM).filter(Boolean).sort().pop() || null;
-    return { state: 'open', ym };
-  }
+  const live = store.onsaleRows.filter((x) => x.buildingId === r.buildingId);
+  const { listing, ambiguous } = matchListing(r, live);
+  // どの部屋か決まらないうちは、募集中とも終了とも言わない
+  if (ambiguous) return { state: 'unknown', ym: null };
+  if (listing) return { state: 'open', ym: listing.listedYM || null };
   const market = store.marketOf(r.buildingId);
   if (!market || !(market.sale || []).length) return { state: 'unknown', ym: null };
 
-  const past = market.sale.filter((x) => sameUnit(r, x));
+  const past = market.sale.filter((x) => sameUnit(r, x) && layoutOk(r.layout, x.layout));
   if (!past.length) return { state: 'unknown', ym: null };      // 階も面積も一致しない＝別物
   const ym = past.map((x) => x.closedYM).filter(Boolean).sort().pop() || null;
   return { state: 'closed', ym };
@@ -199,7 +243,9 @@ export function unitHistory(r) {
   if (!r) return [];
   const m = store.marketOf(r.buildingId);
   if (!m) return [];
-  const rows = (m.sale || []).filter((x) => sameUnit(r, x));
+  let rows = (m.sale || []).filter((x) => sameUnit(r, x));
+  // 間取りが分かっているなら、違う間取りは別の部屋。混ぜない
+  rows = rows.filter((x) => layoutOk(r.layout, x.layout));
   const groups = new Map();
   for (const x of rows) {
     const key = (x.direction || '').trim() || '向き不明';
