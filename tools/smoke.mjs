@@ -830,6 +830,46 @@ const screens = [
       f.resetDraft();
     }
   }],
+  ['所在階で絞れる（一覧も相場も同じ結果）', () => {
+    const f = mods['unit-filter'];
+    const u = mods.units;
+    const v = mods['market-view'];
+    const saved = { ...f.unitUI };
+    const all = u.allUnits();
+    const hit = (o) => {
+      Object.assign(f.unitUI, saved,
+        { listing: 'all', own: 'all', floorMin: null, floorMax: null }, o);
+      return all.filter((x) => f.unitMatches(x));
+    };
+    try {
+      const base = hit({}).length;
+      const high = hit({ floorMin: 20 });
+      if (high.length > base) throw new Error('絞ったのに増えている');
+      const low = high.find((x) => (x.r.floor ?? -1) < 20);
+      if (low) throw new Error(`20階未満が残っている（${low.r.floor}階）`);
+      const band = hit({ floorMin: 10, floorMax: 15 });
+      const out = band.find((x) => x.r.floor < 10 || x.r.floor > 15);
+      if (out) throw new Error(`範囲外が残っている（${out.r.floor}階）`);
+      // 階が分からない部屋は、範囲を入れたら外す（入れていなければ残す）
+      if (hit({}).length <= hit({ floorMin: 1 }).length
+        && all.some((x) => x.r.floor == null)) {
+        throw new Error('階が無い部屋が範囲指定でも残っている');
+      }
+      // 相場の売り出し行にも同じ条件が効く
+      Object.assign(f.unitUI, saved, { listing: 'all', own: 'all', floorMin: 20, floorMax: null });
+      const targets = v.targetBuildings();
+      const rows = v.saleRows(targets);
+      const bad = rows.find((x) => (x.floor ?? -1) < 20);
+      if (bad) throw new Error(`相場側に20階未満が残っている（${bad.floor}階）`);
+      // 条件の札にも出る
+      if (!f.activeUnitConditions().some((c) => c.name === '階')) {
+        throw new Error('効いている条件に階が出ない');
+      }
+    } finally {
+      Object.assign(f.unitUI, saved);
+      f.resetDraft();
+    }
+  }],
   ['まとめ方の刻みは、年・半年・3か月・月の4通り', () => {
     const v = mods['market-view'];
     const u = v.marketUI;

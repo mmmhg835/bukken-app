@@ -40,6 +40,8 @@ export const unitUI = {
   // 部屋の条件。価格と広さは自分で下限・上限を入れる（決め打ちの帯だと刻みが合わない）
   layout: 'all',
   priceMin: null, priceMax: null, areaMin: null, areaMax: null,
+  // 所在階。同じ建物でも階で値段が変わるので、下限・上限で切れるようにする
+  floorMin: null, floorMax: null,
   more: false, equip: [],
 };
 
@@ -111,6 +113,7 @@ export function unitMatches({ r, b }, except = null, f = unitUI) {
   if (on('units') && !inRange(Number(b.totalUnits) || null, f.unitsMin, f.unitsMax)) return false;
   if (on('layout') && f.layout !== 'all' && layoutLabel(r.layout) !== f.layout) return false;
   if (on('size') && !inRange(r.area, f.areaMin, f.areaMax)) return false;
+  if (on('floor') && !inRange(r.floor ?? null, f.floorMin, f.floorMax)) return false;
   if (on('price') && !inRange(r.price, f.priceMin, f.priceMax)) return false;
   if (on('equip') && f.equip.length) {
     const tags = [...(r.roomEquipmentTags || []), ...(b.equipmentTags || []),
@@ -189,6 +192,7 @@ export function unitFilterBar(all, shown, rerender, { lead = null, trail = null,
       group('間取り', pick('layout', options(pool('layout').map((x) => layoutLabel(x.r.layout))))),
       group('価格', range('priceMin', 'priceMax', '万円')),
       group('広さ', range('areaMin', 'areaMax', '㎡')),
+      group('階', range('floorMin', 'floorMax', '階')),
       el('button', {
         class: 'btn btn-sm fmore' + (open ? ' is-on' : ''),
         onclick: () => { unitUI.more = !open; rerender(); },
@@ -284,32 +288,19 @@ export function activeUnitConditions() {
   if (unitUI.tower) {
     out.push({ name: '規模', value: `タワー（${TOWER_FLOORS}階以上）`, keys: ['tower'], clear: false });
   }
+  // 片側だけの範囲は「20階〜」「〜5,000万円」と読める形にする
   const money = (v) => Number(v).toLocaleString('ja-JP');
-  if (unitUI.priceMin != null || unitUI.priceMax != null) {
-    out.push({
-      name: '価格',
-      value: `${unitUI.priceMin != null ? money(unitUI.priceMin) : ''}〜`
-        + `${unitUI.priceMax != null ? money(unitUI.priceMax) : ''}万円`,
-      keys: ['priceMin', 'priceMax'],
-      clear: null,
-    });
-  }
-  if (unitUI.unitsMin != null || unitUI.unitsMax != null) {
-    out.push({
-      name: '総戸数',
-      value: `${unitUI.unitsMin ?? ''}〜${unitUI.unitsMax ?? ''}戸`,
-      keys: ['unitsMin', 'unitsMax'],
-      clear: null,
-    });
-  }
-  if (unitUI.areaMin != null || unitUI.areaMax != null) {
-    out.push({
-      name: '広さ',
-      value: `${unitUI.areaMin ?? ''}〜${unitUI.areaMax ?? ''}㎡`,
-      keys: ['areaMin', 'areaMax'],
-      clear: null,
-    });
-  }
+  const span = (name, minKey, maxKey, unit, f = (v) => v) => {
+    const min = unitUI[minKey], max = unitUI[maxKey];
+    if (min == null && max == null) return;
+    const value = min != null && max != null ? `${f(min)}〜${f(max)}${unit}`
+      : min != null ? `${f(min)}${unit}〜` : `〜${f(max)}${unit}`;
+    out.push({ name, value, keys: [minKey, maxKey], clear: null });
+  };
+  span('価格', 'priceMin', 'priceMax', '万円', money);
+  span('総戸数', 'unitsMin', 'unitsMax', '戸');
+  span('広さ', 'areaMin', 'areaMax', '㎡');
+  span('階', 'floorMin', 'floorMax', '階');
   for (const e of unitUI.equip) {
     out.push({ name: '設備', value: e, keys: ['equip'], clear: e });
   }
@@ -350,8 +341,9 @@ export function savedSearches(rerender) {
       title: `${x.name} を呼び出す`,
       onclick: () => {
         for (const k of KEYS()) {
-          const v = x.filter[k];
-          if (v === undefined) continue;
+          // 保存したときに無かった条件（あとから足した「階」など）は既定に戻す。
+          // 飛ばすと、いま打っている値が残って保存した条件と食い違う
+          const v = x.filter[k] === undefined ? DEFAULTS[k] : x.filter[k];
           draft[k] = Array.isArray(v) ? [...v] : v;
         }
         applyDraft();

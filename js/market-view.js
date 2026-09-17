@@ -273,6 +273,7 @@ export function saleRows(buildings, except = null, f = ui, u = unitUI) {
       if (on('listing') && f.listing === 'closed' && isOpen(x)) continue;
       if (on('layout') && u.layout !== 'all' && layoutLabel(x.layout) !== u.layout) continue;
       if (on('size') && !inRange(x.area, u.areaMin, u.areaMax)) continue;
+      if (on('floor') && !inRange(x.floor ?? null, u.floorMin, u.floorMax)) continue;
       if (on('price') && !inRange(x.price, u.priceMin, u.priceMax)) continue;
       out.push(x);
     }
@@ -347,6 +348,7 @@ function buildingFilter(targets, loaded, rows, rerender, hitBuildings = null) {
       group('築年数', uBand('age', AGE_BANDS)),
       group('間取り', uPick('layout', layoutOptions)),
       group('広さ', uRange('areaMin', 'areaMax', '㎡')),
+      group('階', uRange('floorMin', 'floorMax', '階')),
       el('button', {
         class: 'btn btn-sm fmore' + (open ? ' is-on' : ''),
         onclick: () => { ui.more = !open; rerender(); },
