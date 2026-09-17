@@ -303,7 +303,7 @@ function activeChips(rerender) {
  * 打ち直すたびに少しずつ違う条件で見てしまう。名前を付けて残せるようにする。
  * 保存するのは共通の絞り込みだけ（相場だけの条件は画面の状態なので持たない）。
  */
-function savedSearches(rerender) {
+export function savedSearches(rerender) {
   const list = store.searches;
   const dirty = draftDirty();
   return el('div', { class: 'fsaved' },

@@ -15,7 +15,7 @@ import {
 import { linearFit, areaOf, wardOf } from './analysis.js';
 import {
   unitUI, draft as unitDraft, applyDraft, resetDraft, clearDraft, draftDirty,
-  OWN_OPTIONS, inRange, activeUnitConditions,
+  OWN_OPTIONS, inRange, activeUnitConditions, savedSearches,
 } from './unit-filter.js';
 import {
   AGE_BANDS, WALK_BANDS, FIRM_KEYS, FIRM_LABEL,
@@ -355,6 +355,8 @@ function buildingFilter(targets, loaded, rows, rerender, hitBuildings = null) {
         : null,
       store.refsReady ? null : el('span', { class: 'tiny muted' }, '建物を読み込み中'),
     ),
+    // 保存した条件は一覧と共通。どの画面からでも同じものを呼び出せる
+    el('div', { class: 'filterbar-row is-foot' }, savedSearches(rerender)),
     open
       ? el('div', { class: 'filterbar-row is-more' },
         group('住所', uPick('town', townOptions)),
