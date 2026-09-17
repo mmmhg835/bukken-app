@@ -667,6 +667,26 @@ const screens = [
       if (comboMatch(first, stations) !== first) throw new Error(`${first} を選べない`);
     }
   }],
+  ['1つに絞れない打ちかけでも、候補は全部出す', () => {
+    // 「イースト」のように当てはまるものが複数ある打ち方で、
+    // 何も起きないまま行き止まりになっていた（ガーデンタワーズイーストが選べない）
+    const { comboHits, comboMatch } = mods.ui;
+    const opts = [
+      ['b158', 'パークシティ武蔵小杉ザガーデンタワーズイースト'],
+      ['b160', 'パークシティ武蔵小杉ザガーデンタワーズウエスト'],
+      ['b2', 'Wコンフォートタワーズ イースト'],
+      ['b3', 'ブリリア有明シティタワー'],
+    ];
+    const names = (t) => comboHits(t, opts).map(([, n]) => n);
+    if (comboMatch('イースト', opts) !== null) throw new Error('絞れないのに選んでいる');
+    if (names('イースト').length !== 2) throw new Error('「イースト」の候補が2件出ない');
+    if (names('ガーデンタワーズ').length !== 2) throw new Error('東西の2棟が候補に出ない');
+    if (!names('ガーデン').includes('パークシティ武蔵小杉ザガーデンタワーズイースト')) {
+      throw new Error('イーストが候補に出ない');
+    }
+    if (names('').length !== opts.length) throw new Error('打つ前は全部出るはず');
+    if (names('ZZZ').length !== 0) throw new Error('当てはまらないのに候補が出る');
+  }],
   ['駅と区はいくつでも選べる／徒歩は選んだ駅までで見る', () => {
     const f = mods['unit-filter'];
     const u = mods.units;

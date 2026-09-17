@@ -1,5 +1,5 @@
 // 画面をまたいで使う小さな部品。
-import { el, fmt, sanitizeNumeric, numOrNull, isRestoringFocus } from './util.js';
+import { el, fmt, mount, sanitizeNumeric, numOrNull, isRestoringFocus } from './util.js';
 
 export function labeled(label, node) {
   return el('label', { class: 'tiny muted', style: 'display:flex;gap:6px;align-items:center' }, label, node);
@@ -8,6 +8,59 @@ export function labeled(label, node) {
 export function select(value, options, onchange, cls = null) {
   return el('select', { class: cls, onchange: (e) => onchange(e.target.value) },
     options.map(([v, t]) => el('option', { value: v, selected: String(v) === String(value) }, t)));
+}
+
+/** 候補の突き合わせ用。全半角と大小文字、空白、末尾の件数「（352）」を無視する */
+const comboNorm = (t) => String(t || '').normalize('NFKC').toLowerCase()
+  .replace(/\s/g, '').replace(/[（(]\d+[）)]$/, '');
+
+/**
+ * 打った文字に当てはまる候補。打っていなければ全部返す。
+ * 1つに絞れなくても候補は出す（「イースト」で複数出るのは当たり前なので、
+ * そこで行き止まりにしない）
+ */
+export function comboHits(text, options) {
+  const t = comboNorm(text);
+  if (!t) return options;
+  return options.filter(([v, label]) => comboNorm(label).includes(t) || comboNorm(v).includes(t));
+}
+
+/**
+ * 候補をその場に並べて出す。datalist は端末によって出かたが違い、
+ * スマホでは数件しか見えないことがある。「イースト」と打っても
+ * 当てはまるものが複数あると何も起きない、という詰まり方をしていたので自前で出す。
+ *
+ * @param {HTMLElement} input 打ち込む欄
+ * @param {Array<[string,string]>} options [値, 表示名]
+ * @param {(v: string) => void} onPick 候補を押したときに呼ぶ
+ */
+const SUGGEST_MAX = 40;
+function suggestBox(input, options, onPick) {
+  const box = el('div', { class: 'fsug', hidden: true });
+  const close = () => { box.hidden = true; box.replaceChildren(); };
+  const draw = () => {
+    const hit = comboHits(input.value, options);
+    const shown = hit.slice(0, SUGGEST_MAX);
+    // null を渡すと "null" と出てしまうので mount を使う
+    mount(box,
+      ...(shown.length
+        ? shown.map(([v, label]) => el('button', {
+          class: 'fsug-item', type: 'button',
+          // 押した先に blur が走ると、閉じてから選ぶことになって効かない。
+          // pointerdown で拾って、欄から出ないようにする
+          onpointerdown: (e) => { e.preventDefault(); onPick(v); },
+        }, label))
+        : [el('div', { class: 'fsug-none' }, '当てはまるものがありません')]),
+      hit.length > shown.length
+        ? el('div', { class: 'fsug-more' }, `ほか${hit.length - shown.length}件。打つと絞れます`)
+        : null);
+    box.hidden = false;
+  };
+  input.addEventListener('input', draw);
+  input.addEventListener('focus', draw);
+  input.addEventListener('blur', () => setTimeout(close, 120));
+  input.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+  return { box, draw, close };
 }
 
 /**
@@ -19,14 +72,12 @@ export function select(value, options, onchange, cls = null) {
  * @returns {string|null} 選ばれた値。空文字を打ったときは 'all'
  */
 export function comboMatch(text, options) {
-  const norm = (t) => String(t || '').normalize('NFKC').toLowerCase()
-    .replace(/\s/g, '').replace(/[（(]\d+[）)]$/, '');
-  const t = norm(text);
+  const t = comboNorm(text);
   if (!t) return 'all';
-  const exact = options.find(([v, label]) => norm(label) === t || norm(v) === t);
+  const exact = options.find(([v, label]) => comboNorm(label) === t || comboNorm(v) === t);
   if (exact) return exact[0];
   // 打ちかけでも、当てはまるものが1つに絞れていればそれにする
-  const part = options.filter(([v, label]) => norm(label).includes(t) || norm(v).includes(t));
+  const part = comboHits(text, options);
   return part.length === 1 ? part[0][0] : null;
 }
 
@@ -41,13 +92,11 @@ export function comboMatch(text, options) {
  * @param {Array<[string,string]>} options [値, 表示名]。先頭の ['all', 'すべて'] は渡さない
  * @param {(v: string) => void} onchange 選ばれたときに呼ぶ。外したときは 'all' で呼ぶ
  */
-let comboSeq = 0;
 export function combo(value, options, onchange, cls = null, fkey = null) {
-  const id = `dl${++comboSeq}`;
   const labelOf = (v) => (options.find(([x]) => String(x) === String(v)) || [])[1] ?? '';
   const shown = value === 'all' || value == null ? '' : labelOf(value) || String(value);
   const input = el('input', {
-    type: 'search', list: id, class: cls, placeholder: 'すべて　（打つと絞れます）',
+    type: 'search', class: cls, placeholder: 'すべて　（打つと絞れます）',
     value: shown, 'data-fkey': fkey,
     // 打つたびに効かせると、候補が出る前に画面が入れ替わる。選んだとき・離れたときだけ見る
     onchange: (e) => {
@@ -57,10 +106,8 @@ export function combo(value, options, onchange, cls = null, fkey = null) {
       else onchange(hit);
     },
   });
-  return el('div', { class: 'fcombo' },
-    input,
-    // 候補に出すのは表示名だけ。値（建物のidなど）は見せない
-    el('datalist', { id }, options.map(([, label]) => el('option', { value: label }))));
+  const { box } = suggestBox(input, options, (v) => { input.blur(); onchange(v); });
+  return el('div', { class: 'fcombo' }, input, box);
 }
 
 /**
@@ -73,11 +120,13 @@ export function combo(value, options, onchange, cls = null, fkey = null) {
  * @param {(next: string[]) => void} onChange 選び直したときに呼ぶ
  */
 export function multiCombo(values, options, onChange, cls = null, fkey = null) {
-  const id = `dl${++comboSeq}`;
   const chosen = values || [];
   const labelOf = (v) => (options.find(([x]) => String(x) === String(v)) || [])[1] ?? v;
+  const add = (v) => {
+    if (!chosen.includes(v)) onChange([...chosen, v]);
+  };
   const input = el('input', {
-    type: 'search', list: id, class: cls, 'data-fkey': fkey,
+    type: 'search', class: cls, 'data-fkey': fkey,
     placeholder: chosen.length ? '追加で選ぶ' : 'すべて　（打つと絞れます）',
     value: '',
     onchange: (e) => {
@@ -85,20 +134,20 @@ export function multiCombo(values, options, onChange, cls = null, fkey = null) {
       if (hit == null) { e.target.value = ''; return; }        // どれにも決まらないときは何もしない
       if (hit === 'all') return;                               // 空打ちは「すべて」＝何も足さない
       e.target.value = '';
-      if (!chosen.includes(hit)) onChange([...chosen, hit]);
+      add(hit);
     },
   });
+  // 候補に出すのは、まだ選んでいないものだけ
+  const { box } = suggestBox(input, options.filter(([v]) => !chosen.includes(v)), add);
   return el('div', { class: 'fcombo fmulti' },
     input,
+    box,
     chosen.length
       ? el('div', { class: 'fchosen' }, chosen.map((v) => el('button', {
         class: 'fchip', title: '押すと外します',
         onclick: () => onChange(chosen.filter((x) => x !== v)),
       }, labelOf(v).replace(/[（(]\d+[）)]$/, ''), el('i', {}, '×'))))
-      : null,
-    // 候補に出すのは、まだ選んでいないものだけ
-    el('datalist', { id }, options.filter(([v]) => !chosen.includes(v))
-      .map(([, label]) => el('option', { value: label }))));
+      : null);
 }
 
 /* =========================================================
