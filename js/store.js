@@ -242,9 +242,21 @@ class Store extends EventTarget {
   get dealsSource() { return this.#deals?.source ?? ''; }
   get dealsImportedAt() { return this.#deals?.importedAt ?? ''; }
 
-  /** その建物の成約。新しい順 */
-  dealsOf(buildingId) {
-    return this.dealRows.filter((x) => x.buildingId === buildingId);
+  /**
+   * その建物の成約。新しい順。
+   * kind を渡すと売買（sale）か賃貸（rent）だけにする。
+   * 古い行には kind が無いので、その場合は売買として扱う。
+   */
+  dealsOf(buildingId, kind = 'sale') {
+    return this.dealRows.filter((x) => x.buildingId === buildingId
+      && (kind == null || (x.kind || 'sale') === kind));
+  }
+
+  /** 売買・賃貸それぞれ何件持っているか */
+  get dealCounts() {
+    const c = { sale: 0, rent: 0 };
+    for (const x of this.dealRows) c[x.kind === 'rent' ? 'rent' : 'sale']++;
+    return c;
   }
 
   /** deals.json を読む。相場と指値を開いたときに呼ぶ */

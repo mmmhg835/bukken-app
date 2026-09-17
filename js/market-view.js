@@ -10,7 +10,7 @@ import {
 } from './ui.js';
 import {
   scatterChart, chartLegend, histogramChart, thin, seriesStyle,
-  SERIES_COLORS, SERIES_MUTED, BAND_COLORS,
+  SERIES_COLORS, SERIES_MUTED, BAND_COLORS, DEAL_COLOR,
 } from './chart.js';
 import { linearFit, areaOf, wardOf, isTower, TOWER_FLOORS } from './analysis.js';
 import {
@@ -740,7 +740,9 @@ function scatterSection(rows, buildings, rerender) {
   }
 
   const fit = ui.fit ? linearFit(pts) : null;
-  const chart = scatterChart(series, {
+  // 成約を重ねると、売り出しの雲に対して実績がどこに乗るかが見える
+  const deals = ui.withDeals ? dealPoints(rows, ui.attr, ui.metric) : null;
+  const chart = scatterChart(deals ? [...series, deals] : series, {
     xLabel: `${attr.label}（${attr.unit}）`, yLabel: `${metric.label}（${metric.unit}）`,
     xTick: attr.tick, height: 360, fit, labels: ui.names,
     onOpen: (p) => openRoomFromRow(p.row, p.b),
@@ -755,9 +757,10 @@ function scatterSection(rows, buildings, rerender) {
         el('span', {}, el('b', {}, `${fit.n.toLocaleString('ja-JP')}点`)),
       ) : null),
     el('div', { class: 'chartwrap' }, chart),
-    allSeries.length > 1
+    allSeries.length > 1 || deals
       ? el('div', { class: 'legendrow' },
-        chartLegend(allSeries, chart, { hidden, onToggle: (name) => toggleSeries(name, rerender) }),
+        chartLegend(deals ? [...allSeries, deals] : allSeries, chart,
+          { hidden, onToggle: (name) => toggleSeries(name, rerender) }),
         showAllButton(rerender))
       : null,
     el('p', { class: 'tiny muted' }, '点を2回押すと、その部屋を開きます'),
@@ -848,6 +851,9 @@ function trendView(rows, rerender) {
     });
   }
   const { series, all, hidden } = pickSeries(byKey, rowsOf, group);
+  // 成約を重ねる。売り出しは売り手の希望、成約は決まった額。
+  // 同じ時間軸に並べると、出した値と決まった値の開きがそのまま見える
+  const dealLine = ui.withDeals ? dealSeries(target, floor) : null;
   if (!all.length) {
     return el('div', {}, trendControls(rerender),
       el('div', { class: 'empty' }, 'まとめられる期間がありません'));
@@ -861,7 +867,8 @@ function trendView(rows, rerender) {
   }
 
   const fit = ui.fit ? linearFit(series.flatMap((s) => s.points)) : null;
-  const chart = scatterChart(series, {
+  const drawn = dealLine ? [...series, dealLine] : series;
+  const chart = scatterChart(drawn, {
     xLabel: periodAxis(),
     yLabel: `${metric.label}（${metric.unit}）`,
     xTick: (v) => periodLabel(v, true),
@@ -874,6 +881,12 @@ function trendView(rows, rerender) {
     : null;
 
   const { list, cagr } = yearly(target, ui.metric);
+  // 年ごとの成約。売り出しの中央と並べると、出した値と決まった値の開きが分かる
+  const dealsByYear = dealYearly(target, ui.metric);
+  const gapOf = (r) => {
+    const d = dealsByYear.get(r.year);
+    return d && r.median != null ? d.med - r.median : null;
+  };
   return el('div', {},
     list.length
       ? el('div', { class: 'section' },
@@ -891,9 +904,10 @@ function trendView(rows, rerender) {
     trendControls(rerender),
     el('div', { class: 'section' },
       el('div', { class: 'chartwrap' }, chart),
-      all.length > 1
+      all.length > 1 || dealLine
         ? el('div', { class: 'legendrow' },
-          chartLegend(all, chart, { hidden, onToggle: (name) => toggleSeries(name, rerender) }),
+          chartLegend(dealLine ? [...all, dealLine] : all, chart,
+            { hidden, onToggle: (name) => toggleSeries(name, rerender) }),
           showAllButton(rerender))
         : null,
       el('p', { class: 'tiny muted' },
@@ -902,6 +916,10 @@ function trendView(rows, rerender) {
         byKey.size > SERIES_COLORS.length
           ? `色が付くのは売り出しの多い${SERIES_COLORS.length}件で、残りは灰色です`
             + '（凡例にさわると、その線だけ浮かび上がります）。'
+          : '',
+        dealLine
+          ? `太い破線は成約（実績）です。${dealLine.points.length}期間ぶん、`
+            + '対象の建物ぜんぶをまとめた中央値で引いています。'
           : '',
         all.length > 1 ? '凡例を押すと、その分類の線を消せます。' : '',
         floor < ui.minCount
@@ -922,8 +940,24 @@ function trendView(rows, rerender) {
       el('h3', {}, '年ごとの数字'),
       sortableTable('trend-years', [
         { key: 'year', label: '年', cls: 'lab', asc: true, get: (r) => r.year, cell: (r) => `${r.year}年` },
-        { key: 'count', label: '件数', get: (r) => r.count, cell: (r) => r.count.toLocaleString('ja-JP') },
-        { key: 'median', label: '中央', sub: metric.unit, get: (r) => r.median, cell: (r) => fmt.n(r.median, 1) },
+        { key: 'count', label: '件数', sub: '売り出し', get: (r) => r.count, cell: (r) => r.count.toLocaleString('ja-JP') },
+        { key: 'median', label: '中央', sub: `売り出し ${metric.unit}`, get: (r) => r.median, cell: (r) => fmt.n(r.median, 1) },
+        { key: 'dealN', label: '成約', sub: '件数', get: (r) => dealsByYear.get(r.year)?.count ?? null,
+          cell: (r) => (dealsByYear.get(r.year) ? `${dealsByYear.get(r.year).count}件` : '—') },
+        { key: 'dealMed', label: '成約 中央', sub: metric.unit, get: (r) => dealsByYear.get(r.year)?.med ?? null,
+          cell: (r) => (dealsByYear.get(r.year) ? fmt.n(dealsByYear.get(r.year).med, 1) : '—') },
+        { key: 'gap',
+          label: '乖離',
+          sub: '成約 − 売り出し',
+          get: (r) => gapOf(r),
+          cellClass: (r) => (gapOf(r) == null ? null : gapOf(r) >= 0 ? 'up' : 'down'),
+          cell: (r) => {
+            const g = gapOf(r);
+            if (g == null) return '—';
+            const pct = r.median ? (g / r.median) * 100 : null;
+            return `${g > 0 ? '+' : ''}${fmt.n(g, 1)}`
+              + (pct == null ? '' : `（${pct > 0 ? '+' : ''}${fmt.n(pct, 1)}%）`);
+          } },
         { key: 'diff',
           label: '前年から',
           get: (r) => r.diff,
@@ -933,6 +967,107 @@ function trendView(rows, rerender) {
         { key: 'min', label: '最安', get: (r) => r.min, cell: (r) => fmt.n(r.min, 0) },
         { key: 'max', label: '最高', get: (r) => r.max, cell: (r) => fmt.n(r.max, 0) },
       ], list, rerender, { sort: { key: 'year', dir: 'desc' } })));
+}
+
+/** 年ごとの成約。売り出しの表に並べて、開きを見るのに使う */
+function dealYearly(rows, metricKey) {
+  const out = new Map();
+  if (!store.dealsReady) return out;
+  const ids = new Set(rows.map((x) => x.buildingId));
+  const value = (x) => (metricKey === 'tsubo' ? x.tsuboPrice
+    : metricKey === 'sqm' ? x.sqmPrice
+      : metricKey === 'price' ? x.price : null);
+  const by = new Map();
+  for (const x of store.dealRows) {
+    if (!ids.has(x.buildingId) || !x.closedAt) continue;
+    const v = value(x);
+    if (!Number.isFinite(v)) continue;
+    const y = Number(x.closedAt.slice(0, 4));
+    if (!by.has(y)) by.set(y, []);
+    by.get(y).push(v);
+  }
+  for (const [y, vals] of by) out.set(y, { count: vals.length, med: median(vals) });
+  return out;
+}
+
+/**
+ * 散布図に重ねる成約の点。
+ *
+ * 横軸が「売り出した年」なら成約年、「専有面積」なら面積、「築年数」は
+ * 成約した時点の築年数で置く。所在階は REINS が伏せるので、階を横軸に
+ * しているときは重ねない。
+ */
+function dealPoints(rows, attrKey, metricKey) {
+  if (!store.dealsReady || attrKey === 'floor') return null;
+  const ids = new Set(rows.map((x) => x.buildingId));
+  const deals = store.dealRows.filter((x) => ids.has(x.buildingId) && x.closedAt);
+  if (!deals.length) return null;
+  const yOf = (x) => (metricKey === 'tsubo' ? x.tsuboPrice
+    : metricKey === 'sqm' ? x.sqmPrice
+      : metricKey === 'price' ? x.price : null);
+  const xOf = (x) => {
+    if (attrKey === 'area') return x.area;
+    const y = ymToNum(x.closedAt.slice(0, 7));
+    if (attrKey === 'year') return y;
+    if (attrKey === 'age') {                      // 成約した時点の築年数
+      const built = ymToNum(String(buildingOf(x.buildingId)?.builtYM || '').replace('/', '-'));
+      return built == null || y == null ? null : y - built;
+    }
+    return null;
+  };
+  const points = [];
+  for (const x of deals) {
+    const xv = xOf(x); const yv = yOf(x);
+    if (!Number.isFinite(xv) || !Number.isFinite(yv)) continue;
+    points.push({
+      x: xv, y: yv, row: x, b: buildingOf(x.buildingId),
+      label: buildingOf(x.buildingId)?.name ?? '',
+      info: [
+        [x.layout, x.area ? fmt.sqm(x.area) : null].filter(Boolean).join('・'),
+        `成約 ${fmt.man(x.price)}　坪 ${fmt.n(x.tsuboPrice, 0)}万`,
+        `${x.closedAt} 成約（${x.deal || '—'}）`,
+      ],
+    });
+  }
+  return points.length ? { name: '成約（実績）', points, color: DEAL_COLOR } : null;
+}
+
+/**
+ * 成約を1本の線にする。分類では分けず、対象ぜんぶをまとめた中央値。
+ *
+ * 件数が少ない（いまは71件）ので分類ごとに割ると点が立たない。
+ * 見たいのは「売り出しの線に対して、成約がどのあたりに乗るか」なので、
+ * 1本で足りる。売り出しの線と区別できるよう、太い破線で描く。
+ */
+function dealSeries(rows, floor) {
+  if (!store.dealsReady) return null;
+  const ids = new Set(rows.map((x) => x.buildingId));
+  const deals = store.dealRows.filter((x) => ids.has(x.buildingId) && x.closedAt);
+  if (!deals.length) return null;
+  const metric = MARKET_METRICS[ui.metric];
+  // 成約が持つのは坪単価・㎡単価・価格。販売期間は成約には無い
+  const value = (x) => (ui.metric === 'tsubo' ? x.tsuboPrice
+    : ui.metric === 'sqm' ? x.sqmPrice
+      : ui.metric === 'price' ? x.price : null);
+  const by = new Map();
+  for (const x of deals) {
+    const v = value(x);
+    if (!Number.isFinite(v)) continue;
+    const p = periodAt(ymToNum(x.closedAt.slice(0, 7)));
+    if (p == null) continue;
+    if (!by.has(p)) by.set(p, []);
+    by.get(p).push(v);
+  }
+  const points = [...by.entries()]
+    .filter(([, vals]) => vals.length >= Math.min(floor, 2))   // 1件だけの期間は成約でも跳ねる
+    .sort((a, b) => a[0] - b[0])
+    .map(([p, vals]) => ({
+      x: p, y: median(vals), key: '成約',
+      label: `${periodLabel(p)}　成約`,
+      info: [`中央 ${fmt.n(median(vals), 1)}${metric.unit}　${vals.length}件`, '仲介からもらった実績'],
+    }));
+  if (points.length < 2) return null;
+  return { name: '成約（実績）', points, color: DEAL_COLOR, dash: '9 4' };
 }
 
 /**
@@ -1155,7 +1290,11 @@ function trendControls(rerender) {
           el('label', { class: 'tiny muted' }, '各点の下限　',
             select(String(ui.minCount), [['1', '1件'], ['3', '3件'], ['5', '5件'], ['10', '10件']],
               (v) => { ui.minCount = Number(v); rerender(); }, 'fsel')),
-          toggle('トレンドライン', ui.fit, (v) => { ui.fit = v; rerender(); }))),
+          toggle('トレンドライン', ui.fit, (v) => { ui.fit = v; rerender(); }),
+          // 成約は売り出しと性質が違うので、重ねるかどうかを選べるようにする
+          store.dealRows.length
+            ? toggle('成約を重ねる', ui.withDeals, (v) => { ui.withDeals = v; rerender(); })
+            : null)),
     ));
 }
 

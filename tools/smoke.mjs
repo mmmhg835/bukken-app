@@ -889,6 +889,17 @@ const screens = [
       ] });
       v.renderMarket(stubEl(), () => {}, 'deal');
       lp('offer')();
+      // 成約を重ねた状態で、推移・売出のどの軸でも描ける
+      for (const withDeals of [true, false]) {
+        for (const attr of ['year', 'area', 'floor', 'age']) {
+          Object.assign(u, saved, { withDeals, attr, metric: 'tsubo', minCount: 1, loadAll: true });
+          v.renderMarket(stubEl(), () => {}, 'sale');
+        }
+        for (const metric of ['tsubo', 'sqm', 'price', 'months']) {
+          Object.assign(u, saved, { withDeals, metric, minCount: 1, loadAll: true });
+          v.renderMarket(stubEl(), () => {}, 'trend');
+        }
+      }
       // まとめの数字が合っているか
       const s2 = mods.market.dealSummary(store.dealsOf(b.id));
       if (s2.count !== 3) throw new Error('件数が合わない');
