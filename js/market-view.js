@@ -355,14 +355,15 @@ function buildingFilter(targets, loaded, rows, rerender, hitBuildings = null) {
         : null,
       store.refsReady ? null : el('span', { class: 'tiny muted' }, '建物を読み込み中'),
     ),
-    // 保存した条件は一覧と共通。どの画面からでも同じものを呼び出せる
-    el('div', { class: 'filterbar-row is-foot' }, savedSearches(rerender)),
     open
       ? el('div', { class: 'filterbar-row is-more' },
         group('住所', uPick('town', townOptions)),
         FIRM_KEYS.map((k) => group(FIRM_LABEL[k], uPick(k, firmOptions(k)))),
       )
-      : null);
+      : null,
+    // 保存した条件は一覧と共通。どの画面からでも同じものを呼び出せる。
+    // 一覧の検索窓と同じく、いちばん下に置く
+    el('div', { class: 'filterbar-row is-foot' }, savedSearches(rerender)));
 }
 
 /** 入力中の条件をまとめて効かせる（共通の分と相場だけの分の両方） */
