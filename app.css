@@ -622,6 +622,12 @@ table.cmp tr.is-current td{background:var(--accent-soft)}
 .fmulti{flex-direction:column;align-items:flex-start;gap:4px;max-width:200px}
 .fchosen{display:flex;flex-wrap:wrap;gap:4px}
 .fchosen .fchip{font-size:11px;padding:2px 6px}
+/* 絞り込みの中のチェック（タワーだけ、など） */
+.fcheck{display:inline-flex;align-items:center;gap:7px;padding:7px 9px;font-size:13px;
+  font-weight:600;border:1px solid var(--line);border-radius:var(--r-sm);
+  background:var(--surface);cursor:pointer;white-space:nowrap}
+.fcheck:hover{border-color:var(--accent)}
+.fcheck input{width:15px;height:15px;accent-color:var(--accent);cursor:pointer}
 /* 保存した条件。絞り込みの足元に並べる */
 .fsaved{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
 .fchip.is-saved{background:var(--accent-soft);color:var(--accent);font-weight:700}

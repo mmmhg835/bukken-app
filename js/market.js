@@ -3,7 +3,7 @@
 // 手持ちの部屋（rooms）は検討中の物件そのもの、こちらは同じ建物で過去に売りに出た
 // 別の部屋。過去いくらで出ていたか・いくら値下げして・何か月で終わったかを見るための、
 // 建物側のデータとして持つ。
-import { walkMinutesOf, stationsOf, areaOf, wardOf } from './analysis.js';
+import { walkMinutesOf, stationsOf, areaOf, wardOf, isTower, TOWER_FLOORS } from './analysis.js';
 import { TSUBO_SQM } from './util.js';
 
 /** 「2026-08」を 2026.58 のような小数年にする。並べ替えと横軸に使う */
@@ -279,6 +279,21 @@ export const MARKET_GROUPS = {
       const age = nowYear() - built;
       if (age > 35) return '築35年超';
       return `築${Math.max(5, Math.ceil(age / 5) * 5)}年以内`;
+    },
+  },
+  // タワーかどうか。値段の付き方も上がり方も別物なので、まとめて見ると読めない
+  tower: {
+    label: 'タワー', order: [`タワー（${TOWER_FLOORS}階以上）`, 'それ以外'],
+    get: (x, b) => (b?.totalFloors == null ? '不明'
+      : isTower(b) ? `タワー（${TOWER_FLOORS}階以上）` : 'それ以外'),
+  },
+  unitsBand: {
+    label: '総戸数', order: ['50戸未満', '50〜99戸', '100〜199戸', '200〜499戸', '500戸以上'],
+    get: (x, b) => {
+      const n = Number(b?.totalUnits) || 0;
+      if (!n) return '不明';
+      return n < 50 ? '50戸未満' : n < 100 ? '50〜99戸'
+        : n < 200 ? '100〜199戸' : n < 500 ? '200〜499戸' : '500戸以上';
     },
   },
   walkBand: {

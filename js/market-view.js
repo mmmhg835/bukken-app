@@ -12,7 +12,7 @@ import {
   scatterChart, chartLegend, histogramChart, thin,
   SERIES_COLORS, SERIES_MUTED, BAND_COLORS,
 } from './chart.js';
-import { linearFit, areaOf, wardOf } from './analysis.js';
+import { linearFit, areaOf, wardOf, isTower, TOWER_FLOORS } from './analysis.js';
 import {
   unitUI, draft as unitDraft, applyDraft, resetDraft, clearDraft, draftDirty,
   OWN_OPTIONS, inRange, activeUnitConditions, savedSearches,
@@ -234,6 +234,8 @@ export function targetBuildings(except = null, f = ui, u = unitUI) {
     if (on('age') && !inBand(u.age, ageOf(b))) return false;
     // 駅を選んでいるなら、その駅までの徒歩分で見る
     if (on('walk') && !inBand(u.walk, walkOf(b, u.station))) return false;
+    if (on('tower') && u.tower && !isTower(b)) return false;
+    if (on('units') && !inRange(Number(b.totalUnits) || null, u.unitsMin, u.unitsMax)) return false;
     return true;
   });
 }
@@ -314,7 +316,9 @@ function buildingFilter(targets, loaded, rows, rerender, hitBuildings = null) {
   const dirty = marketDirty();
   // よく使う条件だけ出し、残りは「条件を増やす」の中へ。並べすぎると探す画面になる
   const open = ui.more;
-  const extra = ['town', ...FIRM_KEYS].filter((k) => unitDraft[k] !== 'all').length;
+  const extra = ['town', ...FIRM_KEYS].filter((k) => unitDraft[k] !== 'all').length
+    + (unitDraft.tower ? 1 : 0)
+    + (unitDraft.unitsMin != null || unitDraft.unitsMax != null ? 1 : 0);
   return el('div', { class: 'filterbar' + (dirty ? ' is-dirty' : '') },
     el('div', { class: 'filterbar-row' },
       group('建物名', el('input', {
@@ -358,6 +362,13 @@ function buildingFilter(targets, loaded, rows, rerender, hitBuildings = null) {
     open
       ? el('div', { class: 'filterbar-row is-more' },
         group('住所', uPick('town', townOptions)),
+        group('規模', el('label', { class: 'fcheck' },
+          el('input', {
+            type: 'checkbox', checked: u.tower ? '' : null,
+            onchange: (e) => { u.tower = e.target.checked; rerender(); },
+          }),
+          `タワーだけ（${TOWER_FLOORS}階以上）`)),
+        group('総戸数', uRange('unitsMin', 'unitsMax', '戸')),
         FIRM_KEYS.map((k) => group(FIRM_LABEL[k], uPick(k, firmOptions(k)))),
       )
       : null,

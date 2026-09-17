@@ -4,7 +4,7 @@
 import { el, STATUSES, toast } from './util.js';
 import { store } from './store.js';
 import { select, numberInput, combo, multiCombo } from './ui.js';
-import { areaOf, wardOf } from './analysis.js';
+import { areaOf, wardOf, isTower, TOWER_FLOORS } from './analysis.js';
 import { CLOSED_STATUS } from './price.js';
 import {
   AGE_BANDS, WALK_BANDS, FIRM_KEYS, FIRM_LABEL,
@@ -35,6 +35,8 @@ export const unitUI = {
   // 駅と区はいくつでも選べる（「川崎と横浜の両方」で見たいことが多い）
   station: [], ward: [], town: 'all', age: 'all', walk: 'all',
   brand: 'all', developer: 'all', builder: 'all', designer: 'all',
+  // 建物の規模。タワーかどうかと、総戸数の下限・上限
+  tower: false, unitsMin: null, unitsMax: null,
   // 部屋の条件。価格と広さは自分で下限・上限を入れる（決め打ちの帯だと刻みが合わない）
   layout: 'all',
   priceMin: null, priceMax: null, areaMin: null, areaMax: null,
@@ -103,6 +105,9 @@ export function unitMatches({ r, b }, except = null, f = unitUI) {
   if (on('age') && !inBand(f.age, ageOf(b))) return false;
   // 駅を選んでいるなら、その駅までの徒歩分で見る（隣の駅が近いから残る、を避ける）
   if (on('walk') && !inBand(f.walk, walkOf(b, f.station))) return false;
+  // 建物の規模。タワーは値段の付き方が別物なので、絞って見たいことが多い
+  if (on('tower') && f.tower && !isTower(b)) return false;
+  if (on('units') && !inRange(Number(b.totalUnits) || null, f.unitsMin, f.unitsMax)) return false;
   if (on('layout') && f.layout !== 'all' && layoutLabel(r.layout) !== f.layout) return false;
   if (on('size') && !inRange(r.area, f.areaMin, f.areaMax)) return false;
   if (on('price') && !inRange(r.price, f.priceMin, f.priceMax)) return false;
@@ -193,6 +198,13 @@ export function unitFilterBar(all, shown, rerender, { lead = null, trail = null,
     open
       ? el('div', { class: 'filterbar-row is-more' },
         group('住所', pick('town', options(buildings('town').map((b) => areaOf(b).town)))),
+        group('規模', el('label', { class: 'fcheck' },
+          el('input', {
+            type: 'checkbox', checked: draft.tower ? '' : null,
+            onchange: (e) => { draft.tower = e.target.checked; rerender(); },
+          }),
+          `タワーだけ（${TOWER_FLOORS}階以上）`)),
+        group('総戸数', range('unitsMin', 'unitsMax', '戸')),
         FIRM_KEYS.map((k) => group(FIRM_LABEL[k],
           pick(k, options(buildings(k).map((b) => (b[k] || '').trim()))))),
       )
@@ -224,7 +236,10 @@ export function unitFilterBar(all, shown, rerender, { lead = null, trail = null,
 /** 「条件を増やす」の中で、いくつ使われているか */
 function extraCount() {
   const keys = ['town', ...FIRM_KEYS];
-  return keys.filter((k) => draft[k] !== 'all').length + (draft.equip.length ? 1 : 0);
+  return keys.filter((k) => draft[k] !== 'all').length
+    + (draft.equip.length ? 1 : 0)
+    + (draft.tower ? 1 : 0)
+    + (draft.unitsMin != null || draft.unitsMax != null ? 1 : 0);
 }
 
 /**
@@ -254,6 +269,9 @@ export function activeUnitConditions() {
         : unitUI[k];
     out.push({ name, value: String(shown), keys: [k], clear: k === 'name' ? '' : 'all' });
   }
+  if (unitUI.tower) {
+    out.push({ name: '規模', value: `タワー（${TOWER_FLOORS}階以上）`, keys: ['tower'], clear: false });
+  }
   const money = (v) => Number(v).toLocaleString('ja-JP');
   if (unitUI.priceMin != null || unitUI.priceMax != null) {
     out.push({
@@ -261,6 +279,14 @@ export function activeUnitConditions() {
       value: `${unitUI.priceMin != null ? money(unitUI.priceMin) : ''}〜`
         + `${unitUI.priceMax != null ? money(unitUI.priceMax) : ''}万円`,
       keys: ['priceMin', 'priceMax'],
+      clear: null,
+    });
+  }
+  if (unitUI.unitsMin != null || unitUI.unitsMax != null) {
+    out.push({
+      name: '総戸数',
+      value: `${unitUI.unitsMin ?? ''}〜${unitUI.unitsMax ?? ''}戸`,
+      keys: ['unitsMin', 'unitsMax'],
       clear: null,
     });
   }

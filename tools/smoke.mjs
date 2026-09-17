@@ -759,6 +759,49 @@ const screens = [
       f.resetDraft();
     }
   }],
+  ['タワーと総戸数で絞れる／分類できる', () => {
+    const f = mods['unit-filter'];
+    const u = mods.units;
+    const a = mods.analysis;
+    const saved = { ...f.unitUI };
+    const all = u.allUnits();
+    const hit = (o) => {
+      Object.assign(f.unitUI, saved,
+        { listing: 'all', own: 'all', tower: false, unitsMin: null, unitsMax: null }, o);
+      return all.filter((x) => f.unitMatches(x)).length;
+    };
+    try {
+      if (!a.isTower({ totalFloors: a.TOWER_FLOORS })) throw new Error('20階がタワーになっていない');
+      if (a.isTower({ totalFloors: a.TOWER_FLOORS - 1 })) throw new Error('19階をタワーにしている');
+      if (a.isTower({})) throw new Error('階建が無いのにタワーにしている');
+      const base = hit({});
+      const tower = hit({ tower: true });
+      if (tower > base) throw new Error('タワーだけのほうが多い');
+      // 絞った結果がすべて20階以上であること
+      const bad = all.filter((x) => f.unitMatches(x)).find((x) => !a.isTower(x.b));
+      if (bad) throw new Error(`タワーでない建物が残っている（${bad.b.name}）`);
+      // 総戸数の範囲
+      const big = hit({ unitsMin: 500 });
+      const mid = hit({ unitsMin: 100, unitsMax: 300 });
+      if (big > base || mid > base) throw new Error('範囲で絞ったのに増えている');
+      const over = all.filter((x) => f.unitMatches(x)).find((x) => {
+        const n = Number(x.b.totalUnits) || 0;
+        return n < 100 || n > 300;
+      });
+      if (over) throw new Error(`総戸数の範囲外が残っている（${over.b.totalUnits}戸）`);
+      // 分類としても使える
+      const g = mods.market.MARKET_GROUPS;
+      if (!g.tower || !g.unitsBand) throw new Error('分類にタワー／総戸数が無い');
+      if (g.tower.get(null, { totalFloors: 40 }) === g.tower.get(null, { totalFloors: 5 })) {
+        throw new Error('タワーとそれ以外が同じ分類になっている');
+      }
+      if (g.unitsBand.get(null, { totalUnits: 600 }) !== '500戸以上') throw new Error('総戸数の帯が合わない');
+      if (g.unitsBand.get(null, {}) !== '不明') throw new Error('総戸数が無いときに不明にならない');
+    } finally {
+      Object.assign(f.unitUI, saved);
+      f.resetDraft();
+    }
+  }],
   ['相場（絞り込み）', () => {
     const v = mods['market-view'];
     const u = v.marketUI;
