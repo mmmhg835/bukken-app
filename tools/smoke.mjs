@@ -867,6 +867,43 @@ const screens = [
       Object.assign(u, saved);
     }
   }],
+  ['成約：タブと指値の列', () => {
+    const v = mods['market-view'];
+    const u = v.marketUI;
+    const saved = { ...u };
+    const b = store.data.buildings[0];
+    try {
+      // 成約が無いときも描ける
+      store.setDeals({ rows: [] });
+      Object.assign(u, saved, { loadAll: true });
+      v.renderMarket(stubEl(), () => {}, 'deal');
+      lp('offer')();
+      // 入っているとき
+      store.setDeals({ source: 'テスト', importedAt: '2026-09-17', rows: [
+        { id: 'd1', buildingId: b.id, closedAt: '2026-06-30', area: 60.97, price: 9000,
+          tsuboPrice: 488, sqmPrice: 147.7, kanrihi: 16031, layout: '2LDK', deal: '専任' },
+        { id: 'd2', buildingId: b.id, closedAt: '2026-03-21', area: 60.48, price: 9800,
+          tsuboPrice: 535.7, sqmPrice: 162.1, kanrihi: 15931, layout: '2LDK', deal: '専任' },
+        { id: 'd3', buildingId: b.id, closedAt: '2026-03-20', area: 60.25, price: 9900,
+          tsuboPrice: 543.2, sqmPrice: 164.4, kanrihi: 15931, layout: '2LDK', deal: '専属' },
+      ] });
+      v.renderMarket(stubEl(), () => {}, 'deal');
+      lp('offer')();
+      // まとめの数字が合っているか
+      const s2 = mods.market.dealSummary(store.dealsOf(b.id));
+      if (s2.count !== 3) throw new Error('件数が合わない');
+      if (Math.round(s2.tsuboMin) !== 488) throw new Error(`最安が ${s2.tsuboMin}`);
+      if (Math.round(s2.tsuboMed) !== 536) throw new Error(`中央が ${s2.tsuboMed}`);
+      if (Math.round(s2.tsuboMax) !== 543) throw new Error(`最高が ${s2.tsuboMax}`);
+      if (Math.round(s2.tsuboAvg) !== 522) throw new Error(`平均が ${s2.tsuboAvg}`);
+      if (s2.from !== '2026-03-20' || s2.to !== '2026-06-30') throw new Error('期間が合わない');
+      // 別の建物には混ざらない
+      if (store.dealsOf('存在しない').length) throw new Error('別の建物に混ざっている');
+    } finally {
+      Object.assign(u, saved);
+      store.setDeals({ rows: [] });
+    }
+  }],
   ['相場（絞り込み）', () => {
     const v = mods['market-view'];
     const u = v.marketUI;

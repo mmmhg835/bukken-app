@@ -21,6 +21,7 @@ const an = await import(`${APP}js/analysis.js`);
 store.data = j('properties.json');
 const refs = []; for (const f of j('refs/index.json').files) refs.push(...j(f));
 store.setRefs(refs); store.setOnsale(j('onsale.json'));
+try { store.setDeals(j('deals.json')); } catch { store.setDeals({ rows: [] }); }
 for (const f of readdirSync(`${DATA}/market`)) store.setMarket(f.slice(0, -5), j(`market/${f}`));
 
 let ng = 0;
@@ -121,6 +122,27 @@ console.log('\n--- 部屋のある建物が自分側にいるか');
   const noName = store.rooms.filter((r) => !store.building(r.buildingId)?.name);
   ok(noName.length === 0, '建物名が引けない部屋',
     noName.map((r) => r.label).join(', ') || 'なし');
+}
+
+
+/* ===== 6. 成約は正しい建物についているか ===== */
+console.log('\n--- 成約');
+{
+  const rows = store.dealRows;
+  if (!rows.length) {
+    console.log('（成約の記録なし）');
+  } else {
+    const ids = new Set(store.allBuildings.map((b) => b.id));
+    const stray = rows.filter((x) => !ids.has(x.buildingId));
+    ok(stray.length === 0, '建物が見つからない成約', `${stray.length}件`);
+    // 坪単価が価格と面積に合っているか。読み取り違いはここで出る
+    const off = rows.filter((x) => x.price && x.area && x.tsuboPrice
+      && Math.abs(x.price / (x.area / 3.305785) - x.tsuboPrice) > 3);
+    ok(off.length === 0, '坪単価が価格÷坪数と合わない成約', `${off.length}件`);
+    const future = rows.filter((x) => x.closedAt > new Date().toISOString().slice(0, 10));
+    ok(future.length === 0, '成約日が未来の行', `${future.length}件`);
+    console.log(`   ${rows.length}件 / ${new Set(rows.map((x) => x.buildingId)).size}棟`);
+  }
 }
 
 console.log(ng ? `\n❌ ${ng}件ずれています` : '\n✅ すべて一致');

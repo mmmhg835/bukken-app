@@ -28,11 +28,12 @@ import {
   sortRents, rentSummary, rentTsuboOf, rentSqmOf,
   sortNewPrices, newSummary, newTsuboOf, grossYield, vsNew, recent,
   MARKET_METRICS, MARKET_ATTRS, MARKET_GROUPS, yearly, groupBy, bands, nowYear, minMax,
+  dealSummary,
 } from './market.js';
 
 const SUBTABS = [
   ['overview', '概況'], ['sale', '売出'], ['trend', '推移'], ['supply', '供給'],
-  ['dist', '分布'], ['group', '建物別'], ['rent', '賃貸'], ['new', '新築'],
+  ['dist', '分布'], ['group', '建物別'], ['deal', '成約'], ['rent', '賃貸'], ['new', '新築'],
 ];
 
 /** 一度に読みに行く建物の上限。これを超えたら条件を絞ってもらう */
@@ -132,6 +133,7 @@ const MARKET_DEFAULTS = JSON.parse(JSON.stringify(ui));
 export function renderMarket(root, rerender, view = 'overview') {
   // 参考建物（相場だけ見る建物）はここで初めて読む
   store.ensureRefs();
+  store.ensureDeals();   // 成約は相場の中で見る
   const targets = targetBuildings();
   const ids = targets.map((b) => b.id);
   if (ids.length && (ids.length <= LOAD_LIMIT || ui.loadAll)) store.ensureMarkets(ids);
@@ -179,14 +181,15 @@ export function renderMarket(root, rerender, view = 'overview') {
   }
 
   const body = view === 'report' ? reportView(rows, loaded, rerender)
-    : view === 'rent' ? rentView(loaded, rerender)
-      : view === 'new' ? newView(loaded, rerender)
-        : view === 'trend' ? trendView(rows, rerender)
-          : view === 'supply' ? supplyView(rows, loaded, rerender)
-            : view === 'dist' ? distView(rows, rerender)
-              : view === 'group' ? groupView(rows, rerender)
-                : view === 'sale' ? saleView(rows, loaded, rerender)
-                  : overview(rows, loaded);
+    : view === 'deal' ? dealView(loaded, rerender)
+      : view === 'rent' ? rentView(loaded, rerender)
+        : view === 'new' ? newView(loaded, rerender)
+          : view === 'trend' ? trendView(rows, rerender)
+            : view === 'supply' ? supplyView(rows, loaded, rerender)
+              : view === 'dist' ? distView(rows, rerender)
+                : view === 'group' ? groupView(rows, rerender)
+                  : view === 'sale' ? saleView(rows, loaded, rerender)
+                    : overview(rows, loaded, rerender);
 
   mount(root, head, body);
 }
@@ -1652,6 +1655,86 @@ function renovationOf(feature = '') {
   if (/リノベーション/.test(feature)) return RENOVATION[2];
   if (/リフォーム/.test(feature)) return RENOVATION[1];
   return RENOVATION[0];
+}
+
+/* =========================================================
+   成約（仲介からもらった実績）
+   ========================================================= */
+/**
+ * 実際に決まった値段。売り出し価格は売り手の希望だが、これは結果。
+ * 指値を決めるときにいちばん効く数字なので、売り出しとは混ぜずに別のタブで持つ。
+ *
+ * 出どころは仲介からの提供なので、取り込みは手作業。
+ * 件数が少ないぶん、1件ずつ読めるように表で出す。
+ */
+function dealView(buildings, rerender) {
+  if (!store.dealsReady) return el('div', { class: 'empty' }, '読み込み中');
+  const ids = new Set(buildings.map((b) => b.id));
+  const rows = store.dealRows.filter((x) => ids.has(x.buildingId));
+  if (!rows.length) {
+    return el('div', {},
+      el('div', { class: 'empty' },
+        store.dealRows.length
+          ? 'この条件の建物に成約の記録がありません'
+          : '成約の記録がまだありません'),
+      el('p', { class: 'tiny muted' },
+        '成約は仲介からもらった資料を取り込んで持っています。'
+        + (store.dealRows.length
+          ? `いま持っているのは ${store.dealRows.length}件（${
+            new Set(store.dealRows.map((x) => x.buildingId)).size}棟）です。`
+          : '')));
+  }
+  const s = dealSummary(rows);
+  const per = new Map();
+  for (const x of rows) {
+    if (!per.has(x.buildingId)) per.set(x.buildingId, []);
+    per.get(x.buildingId).push(x);
+  }
+  const list = [...per.entries()].map(([id, rs]) => ({ id, name: buildingOf(id)?.name ?? id, ...dealSummary(rs) }))
+    .sort((a, b) => b.count - a.count);
+
+  return el('div', {},
+    el('div', { class: 'section' },
+      el('div', { class: 'calcgrid calcgrid-4' },
+        cell('成約', `${s.count.toLocaleString('ja-JP')}件`, `${per.size}棟`),
+        cell('坪単価 中央', `${fmt.n(s.tsuboMed, 0)}万`,
+          `${fmt.n(s.tsuboMin, 0)}〜${fmt.n(s.tsuboMax, 0)}万`),
+        cell('坪単価 平均', `${fmt.n(s.tsuboAvg, 0)}万`),
+        cell('期間', `${s.from ?? '—'}`, `〜${s.to ?? '—'}`),
+      )),
+    el('div', { class: 'section' },
+      el('h3', {}, '建物ごとの成約'),
+      sortableTable('deal-buildings', [
+        { key: 'name', label: '建物', cls: 'lab', asc: true, get: (r) => r.name },
+        { key: 'count', label: '件数', get: (r) => r.count },
+        { key: 'min', label: '最安', sub: '万/坪', get: (r) => r.tsuboMin, cell: (r) => fmt.n(r.tsuboMin, 0) },
+        { key: 'med', label: '中央', sub: '万/坪', get: (r) => r.tsuboMed, cell: (r) => fmt.n(r.tsuboMed, 0) },
+        { key: 'avg', label: '平均', sub: '万/坪', get: (r) => r.tsuboAvg, cell: (r) => fmt.n(r.tsuboAvg, 0) },
+        { key: 'max', label: '最高', sub: '万/坪', get: (r) => r.tsuboMax, cell: (r) => fmt.n(r.tsuboMax, 0) },
+        { key: 'span', label: '期間', asc: true, get: (r) => r.from,
+          cell: (r) => `${r.from ?? '—'}〜${r.to ?? '—'}` },
+      ], list, rerender, { sort: { key: 'count', dir: 'desc' } })),
+    el('div', { class: 'section' },
+      el('h3', {}, '成約の一覧'),
+      sortableTable('deal-rows', [
+        { key: 'closedAt', label: '成約', cls: 'lab', get: (r) => r.closedAt },
+        { key: 'name', label: '建物', cls: 'lab', asc: true,
+          get: (r) => buildingOf(r.buildingId)?.name ?? '', cell: (r) => buildingOf(r.buildingId)?.name ?? '—' },
+        { key: 'layout', label: '間取り', cls: 'lab', asc: true, get: (r) => r.layout || '', cell: (r) => r.layout || '—' },
+        { key: 'area', label: '専有', get: (r) => r.area, cell: (r) => (r.area != null ? fmt.n(r.area, 2) : '—') },
+        { key: 'price', label: '成約価格', sub: '万円', get: (r) => r.price,
+          cell: (r) => (r.price != null ? fmt.man1(r.price) : '—') },
+        { key: 'tsubo', label: '坪単価', sub: '万円', get: (r) => r.tsuboPrice,
+          cell: (r) => (r.tsuboPrice != null ? fmt.n(r.tsuboPrice, 1) : '—') },
+        { key: 'sqm', label: '㎡単価', sub: '万円', get: (r) => r.sqmPrice,
+          cell: (r) => (r.sqmPrice != null ? fmt.n(r.sqmPrice, 1) : '—') },
+        { key: 'kanrihi', label: '管理費', sub: '円', get: (r) => r.kanrihi,
+          cell: (r) => (r.kanrihi != null ? r.kanrihi.toLocaleString('ja-JP') : '—') },
+        { key: 'deal', label: '取引', cls: 'lab', asc: true, get: (r) => r.deal || '', cell: (r) => r.deal || '—' },
+      ], rows, rerender, { sort: { key: 'closedAt', dir: 'desc' } })),
+    el('p', { class: 'tiny muted' },
+      `${store.dealsSource || '仲介からの提供'}。取り込み ${store.dealsImportedAt || '—'}。`
+      + '成約は売り出し価格と違い、実際に決まった額です。共有・転載はできません。'));
 }
 
 /* =========================================================

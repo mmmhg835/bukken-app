@@ -21,6 +21,7 @@ const REFS_INDEX = 'refs/index.json';
 // 販売中の行だけを取り出したファイル。一覧・比較・ライフプランはここだけを読む。
 // 相場は436ファイル13MBあり、全部読むのは無理なので取り出し済みの形を用意してある。
 const ONSALE = 'onsale.json';
+const DEALS = 'deals.json';
 
 /**
  * 初期データ。項目を直接並べず migrate() に通して作る。
@@ -47,6 +48,8 @@ class Store extends EventTarget {
   // 販売中の物件。行と、その建物の最小限の情報
   #onsale = null;
   #onsaleState = 'idle';
+  #deals = null;
+  #dealsState = 'idle';
 
   emit() { this.dispatchEvent(new Event('change')); }
 
@@ -228,6 +231,45 @@ class Store extends EventTarget {
   setOnsale(v) {
     this.#onsale = { buildings: {}, rows: [], ...v };
     this.#onsaleState = 'ready';
+    this.emit();
+  }
+
+  // ===== 成約事例 =====
+  // 仲介からもらった REINS の成約。売り出し価格とは別物なので、混ぜずに持つ。
+  // 実際にいくらで決まったかは、指値を決めるときのいちばん強い手がかりになる。
+  get dealsReady() { return this.#dealsState === 'ready'; }
+  get dealRows() { return this.#deals?.rows ?? []; }
+  get dealsSource() { return this.#deals?.source ?? ''; }
+  get dealsImportedAt() { return this.#deals?.importedAt ?? ''; }
+
+  /** その建物の成約。新しい順 */
+  dealsOf(buildingId) {
+    return this.dealRows.filter((x) => x.buildingId === buildingId);
+  }
+
+  /** deals.json を読む。相場と指値を開いたときに呼ぶ */
+  ensureDeals() {
+    if (this.#dealsState !== 'idle') return;
+    this.#dealsState = 'loading';
+    (async () => {
+      let v = await idb.get('kv', 'deals').catch(() => null);
+      if (this.configured) {
+        try {
+          const got = await this.repo.getJson(DEALS);
+          v = got ? got.data : { rows: [] };
+          await idb.set('kv', 'deals', v);
+        } catch { /* 取れなければ手元の控えのまま */ }
+      }
+      this.#deals = v || { rows: [] };
+      this.#dealsState = 'ready';
+      this.emit();
+    })();
+  }
+
+  /** 読み込み済みとして差し込む。smoke から使う */
+  setDeals(v) {
+    this.#deals = { rows: [], ...v };
+    this.#dealsState = 'ready';
     this.emit();
   }
 

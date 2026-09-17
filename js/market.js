@@ -308,6 +308,30 @@ export const MARKET_GROUPS = {
 };
 
 /**
+ * 成約のまとめ。指値を決めるときに見る数字。
+ *
+ * 売り出し価格は「売り手の希望」だが、成約は「実際に決まった額」。
+ * 最安・中央・平均・最高を出すのは、中央だけだと幅が見えないため。
+ *
+ * @param {Array} rows deals.json の行
+ */
+export function dealSummary(rows) {
+  const t = rows.map((x) => x.tsuboPrice).filter(Number.isFinite);
+  const p = rows.map((x) => x.price).filter(Number.isFinite);
+  if (!t.length) return { count: rows.length, tsuboMin: null, tsuboMed: null, tsuboAvg: null, tsuboMax: null };
+  const [tsuboMin, tsuboMax] = minMax(t);
+  const dates = rows.map((x) => x.closedAt).filter(Boolean).sort();
+  return {
+    count: rows.length,
+    tsuboMin, tsuboMax,
+    tsuboMed: median(t),
+    tsuboAvg: t.reduce((a, b) => a + b, 0) / t.length,
+    priceMed: p.length ? median(p) : null,
+    from: dates[0] ?? null, to: dates[dates.length - 1] ?? null,
+  };
+}
+
+/**
  * 年ごとの坪単価。上がっているのか下がっているのかを字面でも見たいので、
  * グラフと同じ数字を表にも出せる形で返す。
  * 価格変更のあった行は、変更後の価格でもその月に出ていたものとして数える。

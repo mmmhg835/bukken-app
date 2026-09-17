@@ -47,6 +47,7 @@ const units = await import(`${APP}/js/units.js`);
 store.data = j('properties.json');
 const refs = []; for (const f of j('refs/index.json').files) refs.push(...j(f));
 store.setRefs(refs); store.setOnsale(j('onsale.json'));
+try { store.setDeals(j('deals.json')); } catch { store.setDeals({ rows: [] }); }
 for (const f of readdirSync(`${DATA}/market`)) store.setMarket(f.slice(0, -5), j(`market/${f}`));
 views.bindRouter(() => {}, () => {});
 const t = (n, fn, times = 1) => {

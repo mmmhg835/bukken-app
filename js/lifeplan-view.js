@@ -1,5 +1,6 @@
 // ライフプランタブ。項目を編集しながら、物件ごとの月次収支を試算する。
 import { store } from './store.js';
+import { dealSummary } from './market.js';
 import { el, fmt, mount, toast, uid, preserveFocus, STATUSES } from './util.js';
 import { kv, select, toggle, segmented, numberInput } from './ui.js';
 // 指値の表から比較に送れるようにする。選択は一覧・比較と同じものを使う
@@ -1043,6 +1044,7 @@ function scenarioSection(plan, currentRoom, currentBuilding) {
 const MARKET_SOURCES = [['marketIsoge', 'ISOGE'], ['marketMrev', 'マンレビ']];
 
 function offerView(mark, rerender, all = store.rooms) {
+  store.ensureDeals();          // 成約は指値を決めるときに使う
   const terms = planTerms();
   const shown = all.filter((r) =>
     (!ui.offer.filter.status || r.status === ui.offer.filter.status)
@@ -1053,8 +1055,10 @@ function offerView(mark, rerender, all = store.rooms) {
     const t = { ...terms, ...(r.loan || {}) };
     const offer = r.offerPrice ?? null;
     const base = offer ?? r.price ?? null;
+    // その建物の成約（仲介からもらった実績）。指値を決めるときの拠りどころ
+    const deals = store.dealsOf(r.buildingId);
     return {
-      r, b, d, t, offer,
+      r, b, d, t, offer, deals: deals.length ? dealSummary(deals) : null,
       offerTsubo: offer != null && d.tsubo ? offer / d.tsubo : null,
       // 諸費用は指値に対して出す。指値がまだ無い部屋は売り出し価格で見る
       fees: base == null ? null : (base * (Number(t.costRate) || 0)) / 100 + (Number(t.costFixed) || 0),
@@ -1074,6 +1078,16 @@ function offerView(mark, rerender, all = store.rooms) {
     if (key === 'offerTsubo') return x.offerTsubo;
     if (key === 'fees') return x.fees;
     if (key === 'running') return x.d.kanriShuzen;
+    if (key === 'deal:n') return x.deals?.count ?? null;
+    if (key === 'deal:min') return x.deals?.tsuboMin ?? null;
+    if (key === 'deal:med') return x.deals?.tsuboMed ?? null;
+    if (key === 'deal:avg') return x.deals?.tsuboAvg ?? null;
+    if (key === 'deal:max') return x.deals?.tsuboMax ?? null;
+    // 指値が成約の中央値からどれだけ離れているか。＋なら成約より安く買おうとしている
+    if (key === 'deal:gap') {
+      return x.deals?.tsuboMed != null && x.offerTsubo != null
+        ? x.deals.tsuboMed - x.offerTsubo : null;
+    }
     for (const [mk] of MARKET_SOURCES) {
       const m = x.r[mk] ?? null;
       if (key === mk) return m;
@@ -1122,6 +1136,26 @@ function offerView(mark, rerender, all = store.rooms) {
     ? el('span', { class: 'muted' }, '—')
     : el('span', { class: v >= 0 ? 'pos' : 'neg' }, `${v >= 0 ? '+' : '▲'}${fmt.n(Math.abs(v), 0)}`));
 
+  /**
+   * その建物の成約のセル。件数・最安・中央・平均・最高と、指値との差。
+   *
+   * 成約は「実際に決まった額」なので、指値を決めるときにいちばん効く。
+   * 中央だけだと幅が見えないので、最安と最高も並べる。
+   */
+  const dealCells = ({ deals, offerTsubo }) => {
+    const n = (v) => (v == null ? el('span', { class: 'muted' }, '—') : fmt.n(v, 0));
+    if (!deals) return [0, 1, 2, 3, 4, 5].map(() => el('td', { class: 'muted' }, '—'));
+    const gap = deals.tsuboMed != null && offerTsubo != null ? deals.tsuboMed - offerTsubo : null;
+    return [
+      el('td', {}, `${deals.count}件`),
+      el('td', { class: 'muted' }, n(deals.tsuboMin)),
+      el('td', { class: 'best' }, n(deals.tsuboMed)),
+      el('td', { class: 'muted' }, n(deals.tsuboAvg)),
+      el('td', { class: 'muted' }, n(deals.tsuboMax)),
+      el('td', {}, signed(gap)),
+    ];
+  };
+
   /** 相場1つ分のセル3つ。坪単価・グロス・差（売出と指値）を並べる */
   const marketCells = ({ r, d, offerTsubo }, key) => {
     const m = r[key] ?? null;
@@ -1168,6 +1202,7 @@ function offerView(mark, rerender, all = store.rooms) {
       el('td', { class: 'muted' }, man(d.tsuboPrice)),
       el('td', { class: offerTsubo != null ? 'best' : 'muted' }, man(offerTsubo)),
       ...MARKET_SOURCES.flatMap(([key]) => marketCells(row, key)),
+      ...dealCells(row),
       el('td', { class: feesOnOffer ? null : 'muted' }, man(fees)),
       el('td', {}, d.kanriShuzen != null ? `${fmt.n(d.kanriShuzen, 2)}万` : '—'),
     );
@@ -1200,6 +1235,12 @@ function offerView(mark, rerender, all = store.rooms) {
             sortTh(`${mk}:gross`, `${label} 価格`, '相場坪 × 坪数'),
             sortTh(`${mk}:gap`, `${label}との差`, '＋ほど相場より安い'),
           ]),
+          sortTh('deal:n', '成約', '件数'),
+          sortTh('deal:min', '成約 最安', '万円/坪'),
+          sortTh('deal:med', '成約 中央', '万円/坪'),
+          sortTh('deal:avg', '成約 平均', '万円/坪'),
+          sortTh('deal:max', '成約 最高', '万円/坪'),
+          sortTh('deal:gap', '成約中央との差', '＋ほど成約より安い'),
           sortTh('fees', '諸費用', `指値の${t0.costRate}%${t0.costFixed ? ` ＋ ${t0.costFixed}万` : ''}`),
           sortTh('running', '管理＋修繕', '月額'),
         )),
