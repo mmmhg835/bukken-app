@@ -110,5 +110,18 @@ for (const [label, cond] of [
   ok(stray.length === 0, label, `一覧にあって相場に無い建物 ${stray.length}棟`);
 }
 
+
+/* ===== 5. 部屋を持つ建物は、参考側ではなく自分の建物側にいるか ===== */
+console.log('\n--- 部屋のある建物が自分側にいるか');
+{
+  const own = new Set(store.buildings.map((b) => b.id));
+  const stray = [...new Set(store.rooms.map((r) => r.buildingId))].filter((id) => !own.has(id));
+  ok(stray.length === 0, '部屋があるのに参考側に残っている建物',
+    stray.map((id) => `${store.building(id)?.name ?? id}`).join(', ') || 'なし');
+  const noName = store.rooms.filter((r) => !store.building(r.buildingId)?.name);
+  ok(noName.length === 0, '建物名が引けない部屋',
+    noName.map((r) => r.label).join(', ') || 'なし');
+}
+
 console.log(ng ? `\n❌ ${ng}件ずれています` : '\n✅ すべて一致');
 process.exit(ng ? 1 : 0);
