@@ -276,7 +276,8 @@ room.priceHistory = [
 
 // 一覧・比較・ライフプランは販売中の物件（onsale.json）が主役。
 // 自分が登録した部屋と、まだ登録していない売り出しの両方を通す。
-store.setOnsale({
+// 差し替える試験があるので、そのまま戻せるように控えておく
+const ONSALE_FIXTURE = {
   buildings: {
     b9: { name: '相場タワー', address: '東京都江東区東雲2-2-2', stations: '東雲 / 辰巳',
       walk: '東雲5分・辰巳9分', builtYM: '2016/03', totalUnits: 200, url: 'https://www.mansion-review.jp/mansion/999999.html', photo: null,
@@ -296,7 +297,8 @@ store.setOnsale({
     // 階も面積も無い行。写し損ねでこの形になりうる
     { id: 'os3', buildingId: 'b9', listedYM: '2026-07', open: true, priceHistory: [] },
   ],
-});
+};
+store.setOnsale(structuredClone(ONSALE_FIXTURE));
 
 // ライフプランは物件を選んでいないと住居費・段階表・指値の比較まで届かない。
 // 選ばないまま検査していたため、その配下が未定義参照でも気づけなかった。
@@ -913,6 +915,31 @@ const screens = [
     } finally {
       Object.assign(u, saved);
       store.setDeals({ rows: [] });
+    }
+  }],
+  ['参考建物を読む前に部屋を足しても、建物名が出る', () => {
+    // 一覧は onsale だけで動くので、相場を開く前に部屋を足すとこの経路になる
+    const id = 'lateref1';
+    const before = store.data.buildings.length;
+    try {
+      const fx = structuredClone(ONSALE_FIXTURE);
+      fx.buildings[id] = { name: 'あとから来る建物', totalUnits: 100 };
+      store.setOnsale(fx);
+      const r = store.addRoom(id, { label: '5階', price: 8000, area: 60 });
+      if (!store.data.buildings.some((b) => b.id === id)) {
+        throw new Error('部屋を足したのに自分の建物になっていない');
+      }
+      if (!store.building(id)?.name) throw new Error('建物名が引けない');
+      // あとから参考建物が来ても、自分の建物として残り、中身が埋まる
+      store.setRefs([{ id, name: 'あとから来る建物', address: '東京都どこか', builtYM: '2020/01' }]);
+      const b = store.data.buildings.find((x) => x.id === id);
+      if (!b) throw new Error('参考建物が来たら自分の建物から消えた');
+      if (b.address !== '東京都どこか') throw new Error('空いていた項目が埋まっていない');
+      store.data.rooms = store.data.rooms.filter((x) => x.id !== r.id);
+    } finally {
+      store.data.buildings = store.data.buildings.filter((b) => b.id !== id);
+      store.setOnsale(structuredClone(ONSALE_FIXTURE));
+      if (store.data.buildings.length !== before) throw new Error('後片付けに失敗');
     }
   }],
   ['建物名はいくつでも選べる', () => {

@@ -297,7 +297,19 @@ class Store extends EventTarget {
 
   /** 読み込み済みとして参考建物を差し込む。取り込みと smoke から使う */
   setRefs(list) {
-    for (const b of list) this.#refs.set(b.id, b);
+    // すでに自分の建物になっているものは、空いている項目だけ埋める。
+    // 参考側で上書きすると、自分で直した値（駐車場代など）が消える
+    const own = new Map(this.data.buildings.map((b) => [b.id, b]));
+    for (const b of list) {
+      const mine = own.get(b.id);
+      if (mine) {
+        for (const [k, v] of Object.entries(b)) {
+          if (k !== 'id' && (mine[k] === null || mine[k] === undefined || mine[k] === '')) mine[k] = v;
+        }
+        continue;
+      }
+      this.#refs.set(b.id, b);
+    }
     this.#refsState = 'ready';
     this.emit();
   }
@@ -331,11 +343,24 @@ class Store extends EventTarget {
    * 参考建物を検討中へ移す。部屋を足した建物は編集の対象になるので、
    * 読み取り専用の refs から properties.json 側へ持ってくる。
    */
+  /**
+   * 参考の建物を自分の建物に移す。部屋を足したときに呼ぶ。
+   *
+   * 参考建物（refs）はタブを開くまで読まないので、一覧から部屋を足すと
+   * まだ手元に無いことがある。そのときは onsale に埋めてある最小限の
+   * 記録で器だけ作っておく。あとで refs が来たときに setRefs が中身を埋める。
+   * ここで作り損ねると、部屋に建物名が付かない状態になる。
+   */
   #promote(buildingId) {
-    const b = this.#refs.get(buildingId);
-    if (!b) return;
-    this.#refs.delete(buildingId);
-    this.data.buildings.push(b);
+    if (this.data.buildings.some((b) => b.id === buildingId)) return;
+    const ref = this.#refs.get(buildingId);
+    if (ref) {
+      this.#refs.delete(buildingId);
+      this.data.buildings.push(ref);
+      return;
+    }
+    const min = this.building(buildingId);
+    if (min) this.data.buildings.push({ ...buildingDefaults(), ...min });
   }
 
   addBuilding(partial = {}) {
