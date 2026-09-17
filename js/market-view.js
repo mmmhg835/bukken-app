@@ -65,16 +65,26 @@ const ui = {
 };
 export const marketUI = ui;
 
-/** 下の表から押したときに、その分類を必ず線にする／やめる */
-function togglePin(name, rerender) {
-  const set = new Set(ui.pin);
-  if (set.has(name)) set.delete(name);
-  else {
-    set.add(name);
-    // 消していた分類を選び直したときは、消した指定のほうを外す
+/**
+ * 下の表の行を押したときの出し入れ。
+ *
+ * いま線になっているものを押したら消す、なっていないものを押したら線にする。
+ * 「pin に入れる／外す」だけにしていたときは、すでに線になっている分類を
+ * 押しても何も起きず、行の説明（押すとグラフから外します）と食い違っていた。
+ *
+ * @param {boolean} drawn いまその分類が線になっているか
+ */
+function toggleRow(name, drawn, rerender) {
+  if (drawn) {
+    // 消す。選んでいた指定も外さないと、消したそばから戻ってくる
+    ui.pin = ui.pin.filter((x) => x !== name);
+    if (!ui.hide.includes(name)) ui.hide = [...ui.hide, name];
+    if (ui.pick && ui.pick.key === name) ui.pick = null;
+  } else {
+    // 線にする。消していた指定のほうを外す
     ui.hide = ui.hide.filter((x) => x !== name);
+    if (!ui.pin.includes(name)) ui.pin = [...ui.pin, name];
   }
-  ui.pin = [...set];
   rerender();
 }
 
@@ -1031,7 +1041,7 @@ function growthSection(target, series, metric, rerender) {
       rowAttrs: (r) => ({
         class: 'pickrow' + (r.color ? ' is-on' : ''),
         title: r.color ? '押すとグラフから外します' : '押すとグラフに出します',
-        onclick: () => togglePin(r.name, rerender),
+        onclick: () => toggleRow(r.name, !!r.color, rerender),
       }),
     }),
     el('p', { class: 'tiny muted' },
@@ -1087,6 +1097,21 @@ export const periodLabelOf = (x) => periodLabel(periodOf(x));
 export const periodCountOf = () => new Set(
   store.allBuildings.flatMap((b) => store.listingsOf(b.id))
     .map((x) => periodOf(x)).filter((p) => p != null)).size;
+
+/** 表の行を押したときの動きを smoke から確かめる */
+export const toggleRowForTest = toggleRow;
+
+/** いま「分類ごとの伸び」の表に並ぶ分類名。消したぶんが落ちているかを見る */
+export function growthRowsOf(rows) {
+  const g = activeGroup();
+  const hidden = hiddenSet();
+  const names = new Set();
+  for (const x of rows) {
+    const k = g.get(x, buildingOf(x.buildingId)) ?? '不明';
+    if (!hidden.has(k)) names.add(k);
+  }
+  return [...names];
+}
 
 /** 横軸の名前。刻みによって「月」「年」と言い切れない */
 const periodAxis = () => (ui.step === 'month' ? '売り出した月'
@@ -1297,7 +1322,7 @@ function supplyTable(rows, grouped, group, rerender) {
       rowAttrs: (r) => ({
         class: 'pickrow' + (drawn.has(r.name) ? ' is-on' : ''),
         title: drawn.has(r.name) ? '押すとグラフから外します' : '押すとグラフに出します',
-        onclick: () => togglePin(r.name, rerender),
+        onclick: () => toggleRow(r.name, drawn.has(r.name), rerender),
       }),
     }),
     el('p', { class: 'tiny muted' },

@@ -841,6 +841,32 @@ const screens = [
       Object.assign(u, saved);
     }
   }],
+  ['凡例で消した分類は、下の表からも消える', () => {
+    const v = mods['market-view'];
+    const u = v.marketUI;
+    const saved = { ...u };
+    try {
+      const rows = store.allBuildings.flatMap((b) => store.listingsOf(b.id));
+      Object.assign(u, saved, { group: 'layout', group2: 'none', hide: [], pin: [] });
+      const before = v.growthRowsOf(rows);
+      if (before.length < 2) return;               // 分類が1つなら見るものが無い
+      const target = before[0];
+      Object.assign(u, saved, { group: 'layout', group2: 'none', hide: [target], pin: [] });
+      const after = v.growthRowsOf(rows);
+      if (after.includes(target)) throw new Error(`消した「${target}」が表に残っている`);
+      if (after.length !== before.length - 1) throw new Error('消した数と合わない');
+      // 表の行を押したときは、いま線なら消す・線でないなら出す
+      Object.assign(u, saved, { group: 'layout', group2: 'none', hide: [], pin: [] });
+      v.toggleRowForTest(target, true, () => {});
+      if (!u.hide.includes(target)) throw new Error('線になっている行を押しても消えない');
+      if (v.growthRowsOf(rows).includes(target)) throw new Error('押したのに表に残っている');
+      v.toggleRowForTest(target, false, () => {});
+      if (u.hide.includes(target)) throw new Error('もう一度押しても戻らない');
+      if (!u.pin.includes(target)) throw new Error('戻したのに線に選ばれていない');
+    } finally {
+      Object.assign(u, saved);
+    }
+  }],
   ['相場（絞り込み）', () => {
     const v = mods['market-view'];
     const u = v.marketUI;
