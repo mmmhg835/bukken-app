@@ -101,6 +101,80 @@ export function multiCombo(values, options, onChange, cls = null, fkey = null) {
       .map(([, label]) => el('option', { value: label }))));
 }
 
+/* =========================================================
+   並び替えできる表
+   ========================================================= */
+
+/**
+ * 表ごとの並び順。画面を描き直しても、タブを行き来しても覚えておく。
+ * 保存はしない（見方の話なので、次に開いたときは既定でよい）。
+ */
+const sortState = new Map();
+
+/** 表の並び順を読む。既定は呼ぶ側が渡す */
+export function tableSort(id, fallback) {
+  return sortState.get(id) || fallback;
+}
+
+/**
+ * 見出しを押すと並び替わる表。
+ *
+ * どの表も「多い順に見たい」「少ない順に見たい」が入れ替わるので、
+ * 表ごとに並び替えを書かずに済むようにまとめている。
+ * 値の無い行は、昇順でも降順でも末尾に送る（見たい行が押し下げられるため）。
+ *
+ * @param {string} id 並び順を覚えておく名前
+ * @param {Array} columns [{ key, label, sub, get, cell, cls, asc }]
+ *   get(r) は並べ替えに使う値、cell(r) は表示（省略すると get の値）。
+ *   asc を true にすると、最初に押したとき昇順になる（名前や年など）。
+ * @param {Array} rows
+ * @param {Function} rerender
+ * @param {object} [opts] sort=既定の並び / tclass=表のclass / rowAttrs(r)=行の属性
+ */
+export function sortableTable(id, columns, rows, rerender, opts = {}) {
+  const { sort: fallback = {}, tclass = 'cmp markettbl', rowAttrs = null, limit = 0 } = opts;
+  const { key: sortKey, dir } = tableSort(id, fallback);
+  const col = columns.find((c) => c.key === sortKey);
+
+  const sorted = col ? [...rows] : rows;
+  if (col) {
+    // 空の行は向きに関わらず末尾へ。比べたい行が押し下げられないようにする
+    sorted.sort((a, b) => {
+      const va = col.get(a); const vb = col.get(b);
+      const ea = va == null || va === '' || Number.isNaN(va);
+      const eb = vb == null || vb === '' || Number.isNaN(vb);
+      if (ea || eb) return ea && eb ? 0 : (ea ? 1 : -1);
+      if (typeof va === 'string' || typeof vb === 'string') {
+        return dir === 'asc'
+          ? String(va).localeCompare(String(vb), 'ja') : String(vb).localeCompare(String(va), 'ja');
+      }
+      return dir === 'asc' ? va - vb : vb - va;
+    });
+  }
+  const shown = limit ? sorted.slice(0, limit) : sorted;
+
+  const th = (c) => el('th', {
+    class: [c.cls, 'sortable', sortKey === c.key ? 'is-sorted' : null].filter(Boolean).join(' '),
+    title: '押すと並び替えます',
+    onclick: () => {
+      sortState.set(id, sortKey === c.key
+        ? { key: c.key, dir: dir === 'asc' ? 'desc' : 'asc' }
+        : { key: c.key, dir: c.asc ? 'asc' : 'desc' });
+      rerender();
+    },
+  }, el('div', { class: 'thsub' },
+    el('b', {}, c.label, el('span', { class: 'sortmark' },
+      sortKey === c.key ? (dir === 'asc' ? '▲' : '▼') : '')),
+    c.sub ? el('span', {}, c.sub) : null));
+
+  return el('div', { class: 'tablewrap' },
+    el('table', { class: tclass },
+      el('thead', {}, el('tr', {}, columns.map(th))),
+      el('tbody', {}, shown.map((r) => el('tr', rowAttrs ? rowAttrs(r) : {},
+        columns.map((c) => el('td', { class: c.cellClass ? c.cellClass(r) : c.cls || null },
+          c.cell ? c.cell(r) : c.get(r))))))));
+}
+
 export function kv(k, v, sub = null) {
   return el('div', {},
     k ? el('div', { class: 'k' }, k) : null,

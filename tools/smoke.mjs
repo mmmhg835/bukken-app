@@ -698,6 +698,29 @@ const screens = [
       f.resetDraft();
     }
   }],
+  ['表は見出しを押すと並び替わる', () => {
+    const { sortableTable } = mods.ui;
+    const rows = [
+      { name: 'い', n: 3 }, { name: 'あ', n: 1 }, { name: 'う', n: null }, { name: 'え', n: 2 },
+    ];
+    // cell が呼ばれた順で、実際に並んだ順を見る
+    const order = (key, dir) => {
+      const seen = [];
+      sortableTable(`t-${key}-${dir}`, [
+        { key: 'name', label: '名前', asc: true, get: (r) => r.name },
+        { key: 'n', label: '数', get: (r) => r.n, cell: (r) => { seen.push(r.name); return ''; } },
+      ], rows, () => {}, { sort: { key, dir } });
+      return seen.join('');
+    };
+    // 値の無い行（う）は、昇順でも降順でも末尾に送る
+    if (order('n', 'desc') !== 'いえあう') throw new Error(`多い順が ${order('n', 'desc')}`);
+    if (order('n', 'asc') !== 'あえいう') throw new Error(`少ない順が ${order('n', 'asc')}`);
+    // 文字は五十音順（localeCompare）
+    if (order('name', 'asc') !== 'あいうえ') throw new Error(`名前の昇順が ${order('name', 'asc')}`);
+    if (order('name', 'desc') !== 'えういあ') throw new Error(`名前の降順が ${order('name', 'desc')}`);
+    // 元の配列は壊さない（呼ぶ側が別の用途で使っている）
+    if (rows[0].name !== 'い') throw new Error('渡した配列を並べ替えてしまっている');
+  }],
   ['相場（絞り込み）', () => {
     const v = mods['market-view'];
     const u = v.marketUI;

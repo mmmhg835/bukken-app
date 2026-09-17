@@ -4,8 +4,10 @@
 // 売り出しに対して同じことをするほうが、相場の話としては筋が通るため。
 // 単位は売買が万円、賃貸が円。混ぜないこと。
 import { store } from './store.js';
-import { el, mount, fmt, derive, toast } from './util.js';
-import { select, segmented, toggle, controlRow, numberInput, combo, multiCombo } from './ui.js';
+import { el, mount, fmt, derive, toast, TSUBO_SQM } from './util.js';
+import {
+  select, segmented, toggle, controlRow, numberInput, combo, multiCombo, sortableTable,
+} from './ui.js';
 import {
   scatterChart, chartLegend, histogramChart, thin,
   SERIES_COLORS, SERIES_MUTED, BAND_COLORS,
@@ -165,8 +167,8 @@ export function renderMarket(root, rerender, view = 'overview') {
   }
 
   const body = view === 'report' ? reportView(rows, loaded, rerender)
-    : view === 'rent' ? rentView(loaded)
-      : view === 'new' ? newView(loaded)
+    : view === 'rent' ? rentView(loaded, rerender)
+      : view === 'new' ? newView(loaded, rerender)
         : view === 'trend' ? trendView(rows, rerender)
           : view === 'supply' ? supplyView(rows, loaded, rerender)
             : view === 'dist' ? distView(rows, rerender)
@@ -402,7 +404,7 @@ const cell = (k, v, sub = null) =>
 /* =========================================================
    概況
    ========================================================= */
-function overview(rows, buildings) {
+function overview(rows, buildings, rerender) {
   const rent = buildings.flatMap((b) => store.rentsOf(b.id));
   const news = buildings.flatMap((b) => store.newPricesOf(b.id));
   const s = summary(recent(rows)), r = rentSummary(recent(rent, 1, 'ym')), n = newSummary(news);
@@ -438,7 +440,7 @@ function overview(rows, buildings) {
           yr.list.length > 1 ? `${yr.list[0].year}年〜${yr.list[yr.list.length - 1].year}年` : null),
       )),
     onSaleNow(rows, buildings),
-    myRooms(buildings, s, r),
+    myRooms(buildings, s, r, rerender),
   );
 }
 
@@ -465,31 +467,35 @@ function onSaleNow(rows, buildings) {
 }
 
 /** 検討中の部屋を相場の中に置く。買おうとしている値がどのあたりか */
-function myRooms(buildings, s, r) {
+function myRooms(buildings, s, r, rerender) {
   const rooms = buildings.flatMap((b) => store.roomsOf(b.id).map((x) => ({ b, x })))
     .filter(({ b, x }) => derive(x, b, store.loanTerms).tsuboPrice);
   if (!rooms.length) return null;
+  // 並べ替えに使う値を先に出しておく。見出しを押すたびに計算し直さないため
+  const list = rooms.map(({ b, x }) => {
+    const t = derive(x, b, store.loanTerms).tsuboPrice;
+    const tsubo = x.area ? x.area / TSUBO_SQM : null;
+    return {
+      name: `${b.name} ${x.label}`,
+      tsuboPrice: t,
+      diff: s.tsuboMed != null ? t - s.tsuboMed : null,
+      rentGuess: r.tsuboMed != null && tsubo ? r.tsuboMed * tsubo : null,
+      yield: grossYield(t, r.tsuboMed),
+    };
+  });
   return el('div', { class: 'section' },
     el('h3', {}, '検討中の部屋'),
-    el('div', { class: 'tablewrap' },
-      el('table', { class: 'cmp markettbl' },
-        el('thead', {}, el('tr', {},
-          ['部屋', '坪単価', '売出中央との差', '想定賃料', '表面利回り'].map((c, i) =>
-            el('th', { class: i === 0 ? 'lab' : null }, c)))),
-        el('tbody', {}, rooms.map(({ b, x }) => {
-          const t = derive(x, b, store.loanTerms).tsuboPrice;
-          const diff = s.tsuboMed != null ? t - s.tsuboMed : null;
-          const tsubo = x.area ? x.area / 3.305785 : null;
-          const rentGuess = r.tsuboMed != null && tsubo ? r.tsuboMed * tsubo : null;
-          const y = grossYield(t, r.tsuboMed);
-          return el('tr', {},
-            el('td', { class: 'lab' }, `${b.name} ${x.label}`),
-            el('td', {}, `${fmt.n(t, 0)}万`),
-            el('td', { class: diff != null && diff > 0 ? 'worse' : null },
-              diff != null ? `${diff > 0 ? '+' : ''}${fmt.n(diff, 0)}万` : '—'),
-            el('td', {}, rentGuess != null ? `${fmt.n(rentGuess, 0)}円/月` : '—'),
-            el('td', {}, y != null ? `${fmt.n(y, 2)}%` : '—'));
-        })))));
+    sortableTable('my-rooms', [
+      { key: 'name', label: '部屋', cls: 'lab', asc: true, get: (x) => x.name },
+      { key: 'tsubo', label: '坪単価', get: (x) => x.tsuboPrice, cell: (x) => `${fmt.n(x.tsuboPrice, 0)}万` },
+      { key: 'diff', label: '売出中央との差', get: (x) => x.diff,
+        cellClass: (x) => (x.diff != null && x.diff > 0 ? 'worse' : null),
+        cell: (x) => (x.diff != null ? `${x.diff > 0 ? '+' : ''}${fmt.n(x.diff, 0)}万` : '—') },
+      { key: 'rent', label: '想定賃料', get: (x) => x.rentGuess,
+        cell: (x) => (x.rentGuess != null ? `${fmt.n(x.rentGuess, 0)}円/月` : '—') },
+      { key: 'yield', label: '表面利回り', get: (x) => x.yield,
+        cell: (x) => (x.yield != null ? `${fmt.n(x.yield, 2)}%` : '—') },
+    ], list, rerender, { sort: { key: 'tsubo', dir: 'asc' } }));
 }
 
 /* =========================================================
@@ -879,20 +885,19 @@ function trendView(rows, rerender) {
       : null,
     el('div', { class: 'section' },
       el('h3', {}, '年ごとの数字'),
-      el('div', { class: 'tablewrap' },
-        el('table', { class: 'cmp markettbl' },
-          el('thead', {}, el('tr', {},
-            ['年', '件数', `中央（${metric.unit}）`, '前年から', '平均', '最安', '最高']
-              .map((c, i) => el('th', { class: i === 0 ? 'lab' : null }, c)))),
-          el('tbody', {}, [...list].reverse().map((r) => el('tr', {},
-            el('td', { class: 'lab' }, `${r.year}年`),
-            el('td', {}, r.count.toLocaleString('ja-JP')),
-            el('td', {}, fmt.n(r.median, 1)),
-            el('td', { class: r.diff == null ? null : r.diff >= 0 ? 'up' : 'down' },
-              r.diff == null ? '—' : `${r.diff > 0 ? '+' : ''}${fmt.n(r.diff, 1)}%`),
-            el('td', {}, fmt.n(r.avg, 1)),
-            el('td', {}, fmt.n(r.min, 0)),
-            el('td', {}, fmt.n(r.max, 0)))))))));
+      sortableTable('trend-years', [
+        { key: 'year', label: '年', cls: 'lab', asc: true, get: (r) => r.year, cell: (r) => `${r.year}年` },
+        { key: 'count', label: '件数', get: (r) => r.count, cell: (r) => r.count.toLocaleString('ja-JP') },
+        { key: 'median', label: '中央', sub: metric.unit, get: (r) => r.median, cell: (r) => fmt.n(r.median, 1) },
+        { key: 'diff',
+          label: '前年から',
+          get: (r) => r.diff,
+          cellClass: (r) => (r.diff == null ? null : r.diff >= 0 ? 'up' : 'down'),
+          cell: (r) => (r.diff == null ? '—' : `${r.diff > 0 ? '+' : ''}${fmt.n(r.diff, 1)}%`) },
+        { key: 'avg', label: '平均', get: (r) => r.avg, cell: (r) => fmt.n(r.avg, 1) },
+        { key: 'min', label: '最安', get: (r) => r.min, cell: (r) => fmt.n(r.min, 0) },
+        { key: 'max', label: '最高', get: (r) => r.max, cell: (r) => fmt.n(r.max, 0) },
+      ], list, rerender, { sort: { key: 'year', dir: 'desc' } })));
 }
 
 /**
@@ -983,30 +988,33 @@ function growthSection(target, series, metric, rerender) {
           `${ui.span === 'all' ? '全期間' : `直近${ui.span}年`}・${metric.label}の中央値`
           + `　${GROWTH_MIN}件以上の${group.label} ${rated.length}件から`))
       : null,
-    el('div', { class: 'tablewrap' },
-      el('table', { class: 'cmp markettbl' },
-        el('thead', {}, el('tr', {},
-          ['', group.label, '件数', '期間', `最初（${metric.unit}）`, `最後（${metric.unit}）`,
-            '年平均の伸び', '倍率'].map((c, i) =>
-            el('th', { class: i === 1 ? 'lab' : null }, c)))),
-        el('tbody', {}, list.map((r) => el('tr', {
-          class: 'pickrow' + (r.color ? ' is-on' : ''),
-          title: r.color ? '押すとグラフから外します' : '押すとグラフに出します',
-          onclick: () => togglePin(r.name, rerender),
-        },
-        el('td', {}, el('i', {
+    sortableTable('growth', [
+      { key: 'on', label: '', get: (r) => (r.color ? 0 : 1),
+        cell: (r) => el('i', {
           class: 'seriesdot' + (r.color ? '' : ' is-off'),
           style: r.color ? `background:${r.color}` : null,
-        })),
-        el('td', { class: 'lab' }, r.name),
-          el('td', {}, r.rows.toLocaleString('ja-JP')),
-          el('td', {}, r.first ? `${r.first.year}年〜${(r.last || r.first).year}年` : '—'),
-          el('td', {}, r.first ? fmt.n(r.first.median, 1) : '—'),
-          el('td', {}, r.last ? fmt.n(r.last.median, 1) : '—'),
-          el('td', { class: r.cagr == null ? null : r.cagr >= 0 ? 'up' : 'down' },
-            r.cagr == null ? '—' : pct(r.cagr)),
-          el('td', {}, r.times == null ? '—' : `${fmt.n(r.times, 2)}倍`),
-        ))))),
+        }) },
+      { key: 'name', label: group.label, cls: 'lab', asc: true, get: (r) => r.name },
+      { key: 'rows', label: '件数', get: (r) => r.rows, cell: (r) => r.rows.toLocaleString('ja-JP') },
+      { key: 'span', label: '期間', asc: true, get: (r) => r.first?.year ?? null,
+        cell: (r) => (r.first ? `${r.first.year}年〜${(r.last || r.first).year}年` : '—') },
+      { key: 'first', label: '最初', sub: metric.unit, get: (r) => r.first?.median ?? null,
+        cell: (r) => (r.first ? fmt.n(r.first.median, 1) : '—') },
+      { key: 'last', label: '最後', sub: metric.unit, get: (r) => r.last?.median ?? null,
+        cell: (r) => (r.last ? fmt.n(r.last.median, 1) : '—') },
+      { key: 'cagr', label: '年平均の伸び', get: (r) => r.cagr,
+        cellClass: (r) => (r.cagr == null ? null : r.cagr >= 0 ? 'up' : 'down'),
+        cell: (r) => (r.cagr == null ? '—' : pct(r.cagr)) },
+      { key: 'times', label: '倍率', get: (r) => r.times,
+        cell: (r) => (r.times == null ? '—' : `${fmt.n(r.times, 2)}倍`) },
+    ], list, rerender, {
+      sort: { key: 'cagr', dir: 'desc' },
+      rowAttrs: (r) => ({
+        class: 'pickrow' + (r.color ? ' is-on' : ''),
+        title: r.color ? '押すとグラフから外します' : '押すとグラフに出します',
+        onclick: () => togglePin(r.name, rerender),
+      }),
+    }),
     el('p', { class: 'tiny muted' },
       `色が付いている${SERIES_COLORS.length}件がグラフの線です。行を押すと、その${group.label}を`
       + 'グラフに出し入れできます。'
@@ -1176,17 +1184,17 @@ function supplyView(rows, buildings, rerender) {
     grouped ? supplyTable(rows, grouped, group, rerender) : null,
     el('div', { class: 'section' },
       el('h3', {}, '期間ごとの数字'),
-      el('div', { class: 'tablewrap' },
-        el('table', { class: 'cmp markettbl' },
-          el('thead', {}, el('tr', {},
-            ['期間', '売り出し', '掲載終了', '差引'].map((c, i) =>
-              el('th', { class: i === 0 ? 'lab' : null }, c)))),
-          el('tbody', {}, [...list].reverse().slice(0, 120).map((c) => el('tr', {},
-            el('td', { class: 'lab' }, periodLabel(c.from)),
-            el('td', {}, c.a || '—'),
-            el('td', {}, c.b || '—'),
-            el('td', { class: c.a - c.b > 0 ? 'up' : c.a - c.b < 0 ? 'down' : null },
-              c.a - c.b > 0 ? `+${c.a - c.b}` : String(c.a - c.b)))))))));
+      sortableTable('supply-periods', [
+        { key: 'period', label: '期間', cls: 'lab', asc: true,
+          get: (c) => c.from, cell: (c) => periodLabel(c.from) },
+        { key: 'a', label: '売り出し', get: (c) => c.a, cell: (c) => c.a || '—' },
+        { key: 'b', label: '掲載終了', get: (c) => c.b, cell: (c) => c.b || '—' },
+        { key: 'net',
+          label: '差引',
+          get: (c) => c.a - c.b,
+          cellClass: (c) => (c.a - c.b > 0 ? 'up' : c.a - c.b < 0 ? 'down' : null),
+          cell: (c) => (c.a - c.b > 0 ? `+${c.a - c.b}` : String(c.a - c.b)) },
+      ], list, rerender, { sort: { key: 'period', dir: 'desc' }, limit: 120 })));
 }
 
 /**
@@ -1214,27 +1222,29 @@ function supplyTable(rows, grouped, group, rerender) {
 
   return el('div', { class: 'section' },
     el('h3', {}, `${group.label}ごとの供給`),
-    el('div', { class: 'tablewrap' },
-      el('table', { class: 'cmp markettbl' },
-        el('thead', {}, el('tr', {},
-          ['', group.label, 'この期間に出た数', '直近1年に出た数', '直近1年に終わった数',
-            'いま出ている数'].map((c, i) =>
-            el('th', { class: i === 1 ? 'lab' : null }, c)))),
-        el('tbody', {}, list.map((r) => el('tr', {
-          class: 'pickrow' + (drawn.has(r.name) ? ' is-on' : ''),
-          title: drawn.has(r.name) ? '押すとグラフから外します' : '押すとグラフに出します',
-          onclick: () => togglePin(r.name, rerender),
-        },
-        el('td', {}, el('i', {
+    sortableTable('supply-groups', [
+      { key: 'on', label: '', get: (r) => (drawn.has(r.name) ? 0 : 1),
+        cell: (r) => el('i', {
           class: 'seriesdot' + (drawn.has(r.name) ? '' : ' is-off'),
           style: drawn.has(r.name) ? `background:${drawn.get(r.name)}` : null,
-        })),
-        el('td', { class: 'lab' }, r.name),
-        el('td', {}, r.all.toLocaleString('ja-JP')),
-        el('td', {}, r.year.toLocaleString('ja-JP')),
-        el('td', {}, r.ended.toLocaleString('ja-JP')),
-        el('td', {}, r.open ? r.open.toLocaleString('ja-JP') : '—'),
-        ))))),
+        }) },
+      { key: 'name', label: group.label, cls: 'lab', asc: true, get: (r) => r.name },
+      { key: 'all', label: 'この期間に出た数', get: (r) => r.all,
+        cell: (r) => r.all.toLocaleString('ja-JP') },
+      { key: 'year', label: '直近1年に出た数', get: (r) => r.year,
+        cell: (r) => r.year.toLocaleString('ja-JP') },
+      { key: 'ended', label: '直近1年に終わった数', get: (r) => r.ended,
+        cell: (r) => r.ended.toLocaleString('ja-JP') },
+      { key: 'open', label: 'いま出ている数', get: (r) => r.open,
+        cell: (r) => (r.open ? r.open.toLocaleString('ja-JP') : '—') },
+    ], list, rerender, {
+      sort: { key: 'all', dir: 'desc' },
+      rowAttrs: (r) => ({
+        class: 'pickrow' + (drawn.has(r.name) ? ' is-on' : ''),
+        title: drawn.has(r.name) ? '押すとグラフから外します' : '押すとグラフに出します',
+        onclick: () => togglePin(r.name, rerender),
+      }),
+    }),
     el('p', { class: 'tiny muted' },
       `色が付いている${grouped.series.length}件がグラフの線です。行を押すと出し入れできます。`
       + (stat.size > list.length
@@ -1315,14 +1325,14 @@ function reportView(rows, buildings, rerender) {
 
   // 3つ目は表に残す行数。グラフの大きい節は少なく、表だけの節は多く載せる
   const sections = [
-    ['概況', () => overview(rows, buildings), 12],
+    ['概況', () => overview(rows, buildings, rerender), 12],
     ['売出', () => saleView(rows, buildings, rerender), 10],
     ['推移', () => trendView(rows, rerender), 10],
     ['供給', () => supplyView(rows, buildings, rerender), 12],
     ['分布', () => distView(rows, rerender), 24],
     ['建物別', () => groupView(rows, rerender), 24],
-    ['賃貸', () => rentView(buildings), 10],
-    ['新築', () => newView(buildings), 10],
+    ['賃貸', () => rentView(buildings, rerender), 10],
+    ['新築', () => newView(buildings, rerender), 10],
   ];
 
   // グラフを描き終えてから保存の画面を出す。すぐ呼ぶと白いまま印刷される
@@ -1422,60 +1432,70 @@ function groupView(rows, rerender) {
   const metric = MARKET_METRICS[ui.metric];
   const stats = groupBy(rows, buildingOf,
     ui.group === 'none' ? MARKET_GROUPS.building : activeGroup(), ui.metric);
-  const body = el('tbody', {}, stats.map((r) => el('tr', {},
-    el('td', { class: 'lab' }, r.name),
-    el('td', {}, r.count.toLocaleString('ja-JP')),
-    el('td', {}, `${fmt.n(r.ratio, 1)}%`),
-    el('td', {}, fmt.n(r.median, 1)),
-    el('td', {}, fmt.n(r.avg, 1)),
-    el('td', {}, fmt.n(r.min, 0)),
-    el('td', {}, fmt.n(r.max, 0)))));
   return el('div', {},
     axisControls(rerender, { group: true, groupLabel: '区分' }),
     el('div', { class: 'section' },
-      el('div', { class: 'tablewrap' },
-        el('table', { class: 'cmp markettbl' },
-          el('thead', {}, el('tr', {},
-            ['区分', '件数', '割合', `中央（${metric.unit}）`, '平均', '最安', '最高']
-              .map((c, i) => el('th', { class: i === 0 ? 'lab' : null }, c)))),
-          body))));
+      sortableTable('group-stats', [
+        { key: 'name', label: '区分', cls: 'lab', asc: true, get: (r) => r.name },
+        { key: 'count', label: '件数', get: (r) => r.count, cell: (r) => r.count.toLocaleString('ja-JP') },
+        { key: 'ratio', label: '割合', get: (r) => r.ratio, cell: (r) => `${fmt.n(r.ratio, 1)}%` },
+        { key: 'median', label: '中央', sub: metric.unit, get: (r) => r.median, cell: (r) => fmt.n(r.median, 1) },
+        { key: 'avg', label: '平均', get: (r) => r.avg, cell: (r) => fmt.n(r.avg, 1) },
+        { key: 'min', label: '最安', get: (r) => r.min, cell: (r) => fmt.n(r.min, 0) },
+        { key: 'max', label: '最高', get: (r) => r.max, cell: (r) => fmt.n(r.max, 0) },
+      ], stats, rerender, { sort: { key: 'median', dir: 'desc' } })));
 }
 
 /* =========================================================
    売出の表
    ========================================================= */
-const SALE_COLS = ['建物', '売り出し', '終了', '階', '間取り', '向き', '特徴', '専有', 'バルコニー',
-  '価格', '価格変更', '坪単価', '㎡単価', '管理費', '修繕', ''];
-
+/**
+ * 売出の表。見出しを押すと並び替わる。
+ * 既定は新しい順（渡ってくる時点で sortRows() 済み）。
+ */
 function saleTable(rows, total, rerender) {
-  const body = el('tbody', {}, rows.map((x) => {
-    const cut = cutOf(x);
-    const months = monthsOf(x);
-    const b = buildingOf(x.buildingId);
-    return el('tr', {},
-      el('td', { class: 'lab' }, b?.name ?? '—'),
-      el('td', { class: 'lab' }, ymLabel(x.listedYM)),
-      el('td', { class: 'lab' },
+  const cols = [
+    { key: 'name', label: '建物', cls: 'lab', asc: true,
+      get: (x) => buildingOf(x.buildingId)?.name ?? '', cell: (x) => buildingOf(x.buildingId)?.name ?? '—' },
+    { key: 'listed', label: '売り出し', cls: 'lab', get: (x) => ymToNum(x.listedYM),
+      cell: (x) => ymLabel(x.listedYM) },
+    { key: 'closed',
+      label: '終了',
+      cls: 'lab',
+      // 販売中は「まだ終わっていない」ので、終了順に並べたら先頭に来るのが自然
+      get: (x) => (isOpen(x) ? Infinity : ymToNum(x.closedYM)),
+      cell: (x) => [
         isOpen(x) ? el('b', { class: 'openmark' }, '販売中') : el('span', {}, ymLabel(x.closedYM)),
-        months ? el('div', { class: 'tiny muted' }, `${months}か月`) : null),
-      el('td', { class: 'lab' }, x.floor != null ? `${x.floor}階` : '—'),
-      el('td', { class: 'lab' }, x.layout || '—'),
-      el('td', { class: 'lab' }, x.direction || '—'),
-      el('td', { class: 'lab' }, x.feature || '—'),
-      el('td', {}, x.area != null ? fmt.n(x.area, 2) : '—'),
-      el('td', {}, x.balcony != null ? fmt.n(x.balcony, 1) : '—'),
-      el('td', {}, x.price != null ? fmt.n(x.price, 0) : '—'),
-      el('td', { class: 'lab' },
+        monthsOf(x) ? el('div', { class: 'tiny muted' }, `${monthsOf(x)}か月`) : null,
+      ] },
+    { key: 'floor', label: '階', cls: 'lab', get: (x) => x.floor,
+      cell: (x) => (x.floor != null ? `${x.floor}階` : '—') },
+    { key: 'layout', label: '間取り', cls: 'lab', asc: true, get: (x) => x.layout || '', cell: (x) => x.layout || '—' },
+    { key: 'direction', label: '向き', cls: 'lab', asc: true, get: (x) => x.direction || '', cell: (x) => x.direction || '—' },
+    { key: 'feature', label: '特徴', cls: 'lab', asc: true, get: (x) => x.feature || '', cell: (x) => x.feature || '—' },
+    { key: 'area', label: '専有', get: (x) => x.area, cell: (x) => (x.area != null ? fmt.n(x.area, 2) : '—') },
+    { key: 'balcony', label: 'バルコニー', get: (x) => x.balcony,
+      cell: (x) => (x.balcony != null ? fmt.n(x.balcony, 1) : '—') },
+    { key: 'price', label: '価格', get: (x) => x.price, cell: (x) => (x.price != null ? fmt.n(x.price, 0) : '—') },
+    { key: 'cut', label: '価格変更', cls: 'lab', get: (x) => cutOf(x),
+      cell: (x) => [
         (x.priceHistory || []).length
           ? el('div', {}, x.priceHistory.map((h) =>
             el('div', { class: 'tiny' }, `${ymLabel(h.ym)} ${fmt.n(h.price, 0)}`)))
           : '—',
-        cut != null && cut < 0 ? el('div', { class: 'tiny cutmark' }, `${fmt.n(cut, 1)}%`) : null),
-      el('td', {}, tsuboOf(x) != null ? fmt.n(tsuboOf(x), 2) : '—'),
-      el('td', {}, sqmOf(x) != null ? fmt.n(sqmOf(x), 2) : '—'),
-      el('td', {}, x.kanrihi != null ? fmt.n(x.kanrihi, 2) : '—'),
-      el('td', {}, x.shuzen != null ? fmt.n(x.shuzen, 2) : '—'),
-      el('td', {},
+        cutOf(x) != null && cutOf(x) < 0
+          ? el('div', { class: 'tiny cutmark' }, `${fmt.n(cutOf(x), 1)}%`) : null,
+      ] },
+    { key: 'tsubo', label: '坪単価', get: (x) => tsuboOf(x),
+      cell: (x) => (tsuboOf(x) != null ? fmt.n(tsuboOf(x), 2) : '—') },
+    { key: 'sqm', label: '㎡単価', get: (x) => sqmOf(x),
+      cell: (x) => (sqmOf(x) != null ? fmt.n(sqmOf(x), 2) : '—') },
+    { key: 'kanrihi', label: '管理費', get: (x) => x.kanrihi,
+      cell: (x) => (x.kanrihi != null ? fmt.n(x.kanrihi, 2) : '—') },
+    { key: 'shuzen', label: '修繕', get: (x) => x.shuzen,
+      cell: (x) => (x.shuzen != null ? fmt.n(x.shuzen, 2) : '—') },
+    { key: 'act', label: '', get: () => null,
+      cell: (x) => [
         isOpen(x) ? roomButton(x, rerender) : null,
         el('button', {
           class: 'btn btn-sm',
@@ -1484,19 +1504,16 @@ function saleTable(rows, total, rerender) {
             store.deleteListing(x.buildingId, x.id);
             rerender();
           },
-        }, '削除')));
-  }));
+        }, '削除'),
+      ] },
+  ];
   return el('div', { class: 'section' },
     total > rows.length
       ? el('div', { class: 'filterrow' },
         el('span', { class: 'tiny muted' },
           `${total.toLocaleString('ja-JP')}件のうち新しい ${rows.length} 件`))
       : null,
-    el('div', { class: 'tablewrap' },
-      el('table', { class: 'cmp markettbl' },
-        el('thead', {}, el('tr', {}, SALE_COLS.map((c, i) =>
-          el('th', { class: i < 7 ? 'lab' : null }, c)))),
-        body)));
+    sortableTable('sale-rows', cols, rows, rerender, { sort: { key: 'listed', dir: 'desc' } }));
 }
 
 /**
@@ -1549,7 +1566,7 @@ function renovationOf(feature = '') {
 /* =========================================================
    賃貸
    ========================================================= */
-function rentView(buildings) {
+function rentView(buildings, rerender) {
   const rows = sortRents(buildings.flatMap((b) => store.rentsOf(b.id)));
   if (!rows.length) return el('div', { class: 'empty' }, '賃料履歴がありません');
   const r = rentSummary(rows);
@@ -1570,23 +1587,27 @@ function rentView(buildings) {
     xTick: (v) => String(Math.round(v)), height: 300, fit,
   });
 
-  const cols = ['建物', '募集', '階', '間取り', '向き', '専有', '賃料', '坪単価', '㎡単価',
-    '管理費', '敷金', '礼金', '保証金'];
+  const money = (key, label) => ({
+    key, label, get: (x) => x[key], cell: (x) => (x[key] != null ? fmt.n(x[key], 0) : '—'),
+  });
+  const cols = [
+    { key: 'name', label: '建物', cls: 'lab', asc: true,
+      get: (x) => buildingOf(x.buildingId)?.name ?? '', cell: (x) => buildingOf(x.buildingId)?.name ?? '—' },
+    { key: 'ym', label: '募集', cls: 'lab', get: (x) => ymToNum(x.ym), cell: (x) => ymLabel(x.ym) },
+    { key: 'floor', label: '階', cls: 'lab', get: (x) => x.floor,
+      cell: (x) => (x.floor != null ? `${x.floor}階` : '—') },
+    { key: 'layout', label: '間取り', cls: 'lab', asc: true, get: (x) => x.layout || '', cell: (x) => x.layout || '—' },
+    { key: 'direction', label: '向き', cls: 'lab', asc: true, get: (x) => x.direction || '', cell: (x) => x.direction || '—' },
+    { key: 'area', label: '専有', get: (x) => x.area, cell: (x) => (x.area != null ? fmt.n(x.area, 2) : '—') },
+    money('rent', '賃料'),
+    { key: 'tsubo', label: '坪単価', get: (x) => rentTsuboOf(x),
+      cell: (x) => (rentTsuboOf(x) != null ? fmt.n(rentTsuboOf(x), 0) : '—') },
+    { key: 'sqm', label: '㎡単価', get: (x) => rentSqmOf(x),
+      cell: (x) => (rentSqmOf(x) != null ? fmt.n(rentSqmOf(x), 0) : '—') },
+    money('kanrihi', '管理費'), money('deposit', '敷金'),
+    money('keyMoney', '礼金'), money('guarantee', '保証金'),
+  ];
   const shown = rows.slice(0, 400);
-  const body = el('tbody', {}, shown.map((x) => el('tr', {},
-    el('td', { class: 'lab' }, buildingOf(x.buildingId)?.name ?? '—'),
-    el('td', { class: 'lab' }, ymLabel(x.ym)),
-    el('td', { class: 'lab' }, x.floor != null ? `${x.floor}階` : '—'),
-    el('td', { class: 'lab' }, x.layout || '—'),
-    el('td', { class: 'lab' }, x.direction || '—'),
-    el('td', {}, x.area != null ? fmt.n(x.area, 2) : '—'),
-    el('td', {}, x.rent != null ? fmt.n(x.rent, 0) : '—'),
-    el('td', {}, rentTsuboOf(x) != null ? fmt.n(rentTsuboOf(x), 0) : '—'),
-    el('td', {}, rentSqmOf(x) != null ? fmt.n(rentSqmOf(x), 0) : '—'),
-    el('td', {}, x.kanrihi != null ? fmt.n(x.kanrihi, 0) : '—'),
-    el('td', {}, x.deposit != null ? fmt.n(x.deposit, 0) : '—'),
-    el('td', {}, x.keyMoney != null ? fmt.n(x.keyMoney, 0) : '—'),
-    el('td', {}, x.guarantee != null ? fmt.n(x.guarantee, 0) : '—'))));
 
   return el('div', {},
     el('div', { class: 'section' },
@@ -1605,17 +1626,13 @@ function rentView(buildings) {
           el('span', { class: 'tiny muted' },
             `${rows.length.toLocaleString('ja-JP')}件のうち新しい ${shown.length} 件`))
         : null,
-      el('div', { class: 'tablewrap' },
-        el('table', { class: 'cmp markettbl' },
-          el('thead', {}, el('tr', {}, cols.map((c, i) =>
-            el('th', { class: i < 5 ? 'lab' : null }, c)))),
-          body))));
+      sortableTable('rent-rows', cols, shown, rerender, { sort: { key: 'ym', dir: 'desc' } })));
 }
 
 /* =========================================================
    新築
    ========================================================= */
-function newView(buildings) {
+function newView(buildings, rerender) {
   const rows = sortNewPrices(buildings.flatMap((b) => store.newPricesOf(b.id)));
   if (!rows.length) return el('div', { class: 'empty' }, '新築分譲価格がありません');
   const n = newSummary(rows);
@@ -1635,18 +1652,23 @@ function newView(buildings) {
     xTick: (v) => String(Math.round(v)), height: 300, fit,
   });
 
-  const cols = ['建物', '階', '向き', '間取り', '専有', 'バルコニー', '新築時価格', '坪単価'];
+  const cols = [
+    { key: 'name', label: '建物', cls: 'lab', asc: true,
+      get: (x) => buildingOf(x.buildingId)?.name ?? '', cell: (x) => buildingOf(x.buildingId)?.name ?? '—' },
+    { key: 'floor', label: '階', cls: 'lab', get: (x) => x.floor,
+      cell: (x) => (x.floor != null ? `${x.floor}階` : '—') },
+    { key: 'direction', label: '向き', cls: 'lab', asc: true, get: (x) => x.direction || '', cell: (x) => x.direction || '—' },
+    { key: 'layout', label: '間取り', cls: 'lab', asc: true, get: (x) => x.layout || '', cell: (x) => x.layout || '—' },
+    { key: 'area', label: '専有', get: (x) => x.area, cell: (x) => (x.area != null ? fmt.n(x.area, 2) : '—') },
+    { key: 'balcony', label: 'バルコニー', get: (x) => x.balcony,
+      cell: (x) => (x.balcony != null ? fmt.n(x.balcony, 1) : '—') },
+    { key: 'price', label: '新築時価格', get: (x) => x.price,
+      cell: (x) => (x.price != null ? fmt.n(x.price, 0) : '—') },
+    { key: 'tsubo', label: '坪単価', get: (x) => newTsuboOf(x),
+      cell: (x) => (newTsuboOf(x) != null ? fmt.n(newTsuboOf(x), 2) : '—') },
+  ];
   // 全部並べると数千行になり、それだけで表示が止まる。上から400行に絞る
   const shown = rows.slice(0, 400);
-  const body = el('tbody', {}, shown.map((x) => el('tr', {},
-    el('td', { class: 'lab' }, buildingOf(x.buildingId)?.name ?? '—'),
-    el('td', { class: 'lab' }, x.floor != null ? `${x.floor}階` : '—'),
-    el('td', { class: 'lab' }, x.direction || '—'),
-    el('td', { class: 'lab' }, x.layout || '—'),
-    el('td', {}, x.area != null ? fmt.n(x.area, 2) : '—'),
-    el('td', {}, x.balcony != null ? fmt.n(x.balcony, 1) : '—'),
-    el('td', {}, x.price != null ? fmt.n(x.price, 0) : '—'),
-    el('td', {}, newTsuboOf(x) != null ? fmt.n(newTsuboOf(x), 2) : '—'))));
 
   return el('div', {},
     el('div', { class: 'section' },
@@ -1664,9 +1686,5 @@ function newView(buildings) {
         ? el('p', { class: 'tiny muted' },
           `${rows.length.toLocaleString('ja-JP')}件のうち階の高い ${shown.length} 件`)
         : null,
-      el('div', { class: 'tablewrap' },
-        el('table', { class: 'cmp markettbl' },
-          el('thead', {}, el('tr', {}, cols.map((c, i) =>
-            el('th', { class: i < 4 ? 'lab' : null }, c)))),
-          body))));
+      sortableTable('new-rows', cols, shown, rerender, { sort: { key: 'floor', dir: 'desc' } })));
 }
