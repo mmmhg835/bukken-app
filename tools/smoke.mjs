@@ -721,6 +721,44 @@ const screens = [
     // 元の配列は壊さない（呼ぶ側が別の用途で使っている）
     if (rows[0].name !== 'い') throw new Error('渡した配列を並べ替えてしまっている');
   }],
+  ['検索条件を名前を付けて残せる', () => {
+    const f = mods['unit-filter'];
+    const saved = { ...f.unitUI };
+    const before = store.searches.length;
+    try {
+      Object.assign(f.unitUI, saved,
+        { listing: 'all', own: 'all', layout: '3LDK', station: ['豊洲'], areaMin: 70 });
+      const filter = {};
+      for (const k of Object.keys(f.unitUI)) {
+        if (k === 'more') continue;
+        filter[k] = Array.isArray(f.unitUI[k]) ? [...f.unitUI[k]] : f.unitUI[k];
+      }
+      const entry = store.saveSearch('テスト条件', filter);
+      if (store.searches.length !== before + 1) throw new Error('保存されていない');
+      // 同じ名前で保存し直しても増えない（上書き）
+      store.saveSearch('テスト条件', filter);
+      if (store.searches.length !== before + 1) throw new Error('同じ名前で増えている');
+      // 条件を変えてから呼び出すと、保存した中身に戻る
+      Object.assign(f.unitUI, saved, { layout: 'all', station: [], areaMin: null });
+      const got = store.searches.find((x) => x.id === entry.id);
+      for (const [k, v] of Object.entries(got.filter)) {
+        f.unitUI[k] = Array.isArray(v) ? [...v] : v;
+      }
+      if (f.unitUI.layout !== '3LDK') throw new Error('呼び出しても間取りが戻らない');
+      if (f.unitUI.station.join() !== '豊洲') throw new Error('呼び出しても駅が戻らない');
+      if (f.unitUI.areaMin !== 70) throw new Error('呼び出しても広さが戻らない');
+      // 保存した条件が並んでいる状態でも、どの画面も描ける
+      for (const render of [() => mods.views.renderList(stubEl()),
+        () => mods.views.renderCompare(stubEl()),
+        () => mods['viewing-view'].renderViewing(stubEl(), () => {}),
+        () => mods['market-view'].renderMarket(stubEl(), () => {}, 'sale')]) render();
+      store.removeSearch(entry.id);
+      if (store.searches.length !== before) throw new Error('消せていない');
+    } finally {
+      Object.assign(f.unitUI, saved);
+      f.resetDraft();
+    }
+  }],
   ['相場（絞り込み）', () => {
     const v = mods['market-view'];
     const u = v.marketUI;

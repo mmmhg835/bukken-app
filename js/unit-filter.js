@@ -1,7 +1,8 @@
 // 一覧・比較・ライフプランで共通に使う絞り込み。
 // 相場タブと同じ軸・同じ見た目にしてあるので、どの画面でも同じ感覚で探せる。
 // 対象は allUnits()（売り出し中の部屋＋登録した部屋）。
-import { el, STATUSES } from './util.js';
+import { el, STATUSES, toast } from './util.js';
+import { store } from './store.js';
 import { select, numberInput, combo, multiCombo } from './ui.js';
 import { areaOf, wardOf } from './analysis.js';
 import { CLOSED_STATUS } from './price.js';
@@ -213,6 +214,8 @@ export function unitFilterBar(all, shown, rerender, { lead = null, trail = null,
       el('span', { class: 'fcount' }, `${shown.length.toLocaleString('ja-JP')}件の${unit}`),
       activeChips(rerender),
       el('div', { class: 'spacer' }),
+      savedSearches(rerender),
+      el('div', { class: 'spacer' }),
       trail,
     ),
   );
@@ -289,6 +292,59 @@ function activeChips(rerender) {
   return el('div', { class: 'fchips' },
     list.map((c) => el('button', { class: 'fchip', onclick: off(c) },
       `${c.name}：${c.value}`, el('i', {}, '×'))));
+}
+
+/* ===== 保存した条件 ===== */
+
+/**
+ * いまの条件をまるごと保存する／呼び出す。
+ *
+ * 「豊洲の3LDK・70㎡以上」のような条件は毎回打ち直すことになり、
+ * 打ち直すたびに少しずつ違う条件で見てしまう。名前を付けて残せるようにする。
+ * 保存するのは共通の絞り込みだけ（相場だけの条件は画面の状態なので持たない）。
+ */
+function savedSearches(rerender) {
+  const list = store.searches;
+  const dirty = draftDirty();
+  return el('div', { class: 'fsaved' },
+    list.map((x) => el('button', {
+      class: 'fchip is-saved',
+      title: `${x.name} を呼び出す`,
+      onclick: () => {
+        for (const k of KEYS()) {
+          const v = x.filter[k];
+          if (v === undefined) continue;
+          draft[k] = Array.isArray(v) ? [...v] : v;
+        }
+        applyDraft();
+        rerender();
+        toast(`「${x.name}」の条件にしました`);
+      },
+    }, x.name, el('i', {
+      title: '消す',
+      onclick: (e) => {
+        e.stopPropagation();
+        if (!confirm(`「${x.name}」を消しますか`)) return;
+        store.removeSearch(x.id);
+        rerender();
+      },
+    }, '×'))),
+    el('button', {
+      class: 'btn btn-sm',
+      title: dirty ? '検索を押してから保存してください' : 'いまの条件に名前を付けて残す',
+      onclick: () => {
+        // 入力中のまま保存すると、画面と保存の中身が食い違う
+        if (dirty) applyDraft();
+        const guess = activeUnitConditions().map((c) => c.value).join('・').slice(0, 20);
+        const name = prompt('この条件に名前を付けます', guess || '条件');
+        if (!name) return;
+        const filter = {};
+        for (const k of KEYS()) filter[k] = Array.isArray(unitUI[k]) ? [...unitUI[k]] : unitUI[k];
+        store.saveSearch(name.trim(), filter);
+        rerender();
+        toast(`「${name.trim()}」で保存しました`);
+      },
+    }, '＋ この条件を保存'));
 }
 
 /**

@@ -559,6 +559,27 @@ class Store extends EventTarget {
     this.markDirty();
   }
 
+  // ===== 保存した検索条件 =====
+  // 「豊洲の3LDK・70㎡以上」のような条件を何度も打ち直さずに済ませる。
+  // 端末をまたいで使うので、画面の状態ではなく properties.json に持つ。
+  get searches() { return this.data.settings.searches || []; }
+
+  saveSearch(name, filter) {
+    this.data.settings.searches ||= [];
+    const at = new Date().toISOString();
+    const i = this.data.settings.searches.findIndex((x) => x.name === name);
+    const entry = { id: i >= 0 ? this.data.settings.searches[i].id : uid('s'), name, filter, at };
+    if (i >= 0) this.data.settings.searches[i] = entry;
+    else this.data.settings.searches.push(entry);
+    this.markDirty();
+    return entry;
+  }
+
+  removeSearch(id) {
+    this.data.settings.searches = this.searches.filter((x) => x.id !== id);
+    this.markDirty();
+  }
+
   /** 建物・部屋のどちらでも受け取れる汎用の取得 */
   owner(id) { return this.building(id) || this.room(id); }
 

@@ -37,6 +37,7 @@ export function migrate(data) {
   d.settings ||= {};
   d.settings.loan = { ...DEFAULT_TERMS, ...(d.settings.loan || {}) };
   d.settings.places ||= [];   // 職場・駅など、地図上の参照地点
+  d.settings.searches ||= [];  // 名前を付けて残した絞り込み
   d.settings.sale = { ...DEFAULT_SALE, ...(d.settings.sale || {}) };
   d.schemaVersion = CURRENT_SCHEMA;
   return d;
