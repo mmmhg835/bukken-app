@@ -974,7 +974,10 @@ function growthSection(target, series, metric, rerender) {
     byKey.get(k).push(x);
   }
   const drawn = new Map(series.map((x) => [x.name, x.color]));
-  const all = [...byKey.entries()].map(([name, rows]) => {
+  // 凡例で消した分類は表からも外す。分類が多いと、消したはずのものが
+  // 表に残っていてノイズになる（戻すのは凡例から）
+  const hidden = hiddenSet();
+  const all = [...byKey.entries()].filter(([name]) => !hidden.has(name)).map(([name, rows]) => {
     const { list: years, cagr } = yearly(rows, ui.metric);
     const first = years[0] || null;
     const last = years.length > 1 ? years[years.length - 1] : null;
@@ -1036,7 +1039,8 @@ function growthSection(target, series, metric, rerender) {
       + '1年ぶんしか記録が無い分類は「—」になります。'
       + (all.length > list.length
         ? `　${all.length.toLocaleString('ja-JP')}件のうち伸びの高い順に${GROWTH_ROWS}件を出しています。`
-        : '')));
+        : '')
+      + (hidden.size ? `　消している${group.label} ${hidden.size}件は外しています（凡例から戻せます）。` : '')));
 }
 
 /** 売り出した月（または年）を小数年で返す */
@@ -1223,8 +1227,10 @@ function supplyTable(rows, grouped, group, rerender) {
     if (!stat.has(k)) stat.set(k, { name: k, all: 0, year: 0, ended: 0, open: 0 });
     return stat.get(k);
   };
+  const hidden = hiddenSet();
   for (const x of rows) {
     const k = g.get(x, buildingOf(x.buildingId)) ?? '不明';
+    if (hidden.has(k)) continue;        // 凡例で消した分類は表からも外す
     const c = at(k);
     c.all++;
     if ((ymToNum(x.listedYM) ?? -Infinity) >= since) c.year++;
@@ -1263,7 +1269,8 @@ function supplyTable(rows, grouped, group, rerender) {
       `色が付いている${grouped.series.length}件がグラフの線です。行を押すと出し入れできます。`
       + (stat.size > list.length
         ? `　${stat.size.toLocaleString('ja-JP')}件のうち多い順に${GROWTH_ROWS}件を出しています。`
-        : '')));
+        : '')
+      + (hidden.size ? `　消している${group.label} ${hidden.size}件は外しています（凡例から戻せます）。` : '')));
 }
 
 /**

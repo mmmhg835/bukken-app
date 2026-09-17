@@ -514,6 +514,12 @@ const screens = [
       v.renderMarket(stubEl(), () => {}, 'supply');
       Object.assign(u, saved, { group: 'layout', group2: 'none', pick: null, hide: ['2LDK'], pin: ['3LDK'] });
       v.renderMarket(stubEl(), () => {}, 'supply');
+      // 凡例で消しても、対象の行そのものは減らない（表示から外すだけ）
+      Object.assign(u, saved, { group: 'layout', group2: 'none', hide: [], pin: [] });
+      const before = v.marketCounts().rows;
+      Object.assign(u, saved, { group: 'layout', group2: 'none', hide: ['2LDK'], pin: [] });
+      if (v.marketCounts().rows !== before) throw new Error('消したら対象の行まで減っている');
+      for (const tab of ['trend', 'supply']) v.renderMarket(stubEl(), () => {}, tab);
     } finally {
       Object.assign(u, saved);
     }

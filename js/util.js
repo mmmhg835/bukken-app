@@ -2,7 +2,7 @@
 import { calcLoan, DEFAULT_TERMS } from './loan.js';
 
 /** 表示用の版数。更新が届いているかを設定画面で確認できるようにしている */
-export const APP_VERSION = 'v131';
+export const APP_VERSION = 'v132';
 
 export const TSUBO_SQM = 3.305785;          // 1坪 = 3.305785㎡
 // 検討の段階。「本命」と「申込検討」は実際には同じ状態で、どちらを付ければ
