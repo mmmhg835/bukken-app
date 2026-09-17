@@ -40,8 +40,8 @@ function render() {
   const key = `${route.view}/${route.id ?? ''}`;
   const keepScroll = key === lastKey ? window.scrollY : 0;
   lastKey = key;
-  // 建物・部屋の詳細と取り込みは「一覧」タブの配下として扱う
-  const tabOf = { b: 'list', r: 'list', import: 'list' }[route.view] || route.view;
+  // 建物・部屋の詳細は「一覧」タブの配下として扱う
+  const tabOf = { b: 'list', r: 'list' }[route.view] || route.view;
   $$('#tabs .tab').forEach((t) => t.classList.toggle('is-active', t.dataset.view === tabOf));
 
   // QR から来た設定リンクは画面を描く前に取り込む（起動済みのアプリで踏まれた場合もここを通る）
