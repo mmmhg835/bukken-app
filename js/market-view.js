@@ -842,7 +842,7 @@ function trendView(rows, rerender) {
 
   const fit = ui.fit ? linearFit(series.flatMap((s) => s.points)) : null;
   const chart = scatterChart(series, {
-    xLabel: ui.step === 'month' ? '売り出した月' : '売り出した年',
+    xLabel: periodAxis(),
     yLabel: `${metric.label}（${metric.unit}）`,
     xTick: (v) => periodLabel(v, true),
     height: 340, fit, line: true,
@@ -1043,19 +1043,52 @@ function growthSection(target, series, metric, rerender) {
       + (hidden.size ? `　消している${group.label} ${hidden.size}件は外しています（凡例から戻せます）。` : '')));
 }
 
-/** 売り出した月（または年）を小数年で返す */
-function periodOf(x) {
-  const y = ymToNum(x.listedYM);
+/**
+ * まとめ方の刻み。粗いほど動きが均され、細かいほど振れが出る。
+ * 月ごとだと1〜2件の月が跳ね、年ごとだと年内の動きが潰れるので、
+ * そのあいだの刻みも選べるようにしている。
+ */
+const STEPS = [['year', '年ごと'], ['half', '半年ごと'], ['quarter', '3か月ごと'], ['month', '月ごと']];
+const STEP_MONTHS = { year: 12, half: 6, quarter: 3, month: 1 };
+
+/** 小数年を、いまの刻みの区切りの先頭に寄せる */
+function periodAt(y) {
   if (y == null) return null;
-  return ui.step === 'month' ? Math.round(y * 12) / 12 : Math.floor(y);
+  const year = Math.floor(y);
+  const mo = Math.round((y - year) * 12);          // 0〜11
+  const n = STEP_MONTHS[ui.step] ?? 12;
+  return year + (Math.floor(mo / n) * n) / 12;
+}
+
+/** 売り出した時期を小数年で返す */
+function periodOf(x) {
+  return periodAt(ymToNum(x.listedYM));
 }
 
 function periodLabel(v, short = false) {
   const y = Math.floor(v + 1e-6);
-  if (ui.step !== 'month') return `${y}年`;
-  const mo = Math.round((v - y) * 12) + 1;
+  const mo = Math.round((v - y) * 12) + 1;         // 1〜12
+  if (ui.step === 'year') return `${y}年`;
+  if (ui.step === 'half') {
+    return mo <= 6
+      ? (short ? `${y}/上` : `${y}年 上期`)
+      : (short ? `${y}/下` : `${y}年 下期`);
+  }
+  if (ui.step === 'quarter') {
+    return short ? `${y}/${mo}-${mo + 2}` : `${y}年${mo}〜${mo + 2}月`;
+  }
   return short ? `${y}/${String(mo).padStart(2, '0')}` : `${y}年${mo}月`;
 }
+
+/** 刻みの寄せ方と見出しを smoke から確かめられるように出しておく */
+export const periodLabelOf = (x) => periodLabel(periodOf(x));
+export const periodCountOf = () => new Set(
+  store.allBuildings.flatMap((b) => store.listingsOf(b.id))
+    .map((x) => periodOf(x)).filter((p) => p != null)).size;
+
+/** 横軸の名前。刻みによって「月」「年」と言い切れない */
+const periodAxis = () => (ui.step === 'month' ? '売り出した月'
+  : ui.step === 'year' ? '売り出した年' : '売り出した時期');
 
 /** 推移の操作。分類・粒度・点にまとめる下限・トレンドライン */
 function trendControls(rerender) {
@@ -1071,7 +1104,7 @@ function trendControls(rerender) {
           el('span', { class: 'tiny muted' }, '×'),
           select(ui.group2, group2Options(),
             (k) => { ui.group2 = k; ui.pick = null; ui.hide = []; ui.pin = []; rerender(); }, 'picksel'),
-          segmented(ui.step, [['year', '年ごと'], ['month', '月ごと']],
+          segmented(ui.step, STEPS,
             (k) => { ui.step = k; ui.pick = null; rerender(); }),
           // 期間。既定は直近7年。それ以上は線が詰まって、いまの動きが読めない
           el('label', { class: 'tiny muted' }, '期間　',
@@ -1103,7 +1136,7 @@ function supplyView(rows, buildings, rerender) {
   const period = (ym) => {
     const y = ymToNum(ym);
     if (y == null || y < from) return null;
-    return ui.step === 'month' ? Math.round(y * 12) / 12 : Math.floor(y);
+    return periodAt(y);
   };
 
   // 区間ごとに、始まった募集と終わった募集を数える
@@ -1320,7 +1353,7 @@ function supplyControls(rerender) {
           el('span', { class: 'tiny muted' }, '　分類を選ぶと、エリアごとの折れ線になります'))),
       controlRow('◍', 'まとめ方',
         el('div', { style: 'display:flex;align-items:center;gap:18px;flex-wrap:wrap' },
-          segmented(ui.step, [['year', '年ごと'], ['month', '月ごと']],
+          segmented(ui.step, STEPS,
             (k) => { ui.step = k; ui.pick = null; rerender(); }),
           el('label', { class: 'tiny muted' }, '期間　',
             select(String(ui.span),

@@ -502,7 +502,7 @@ const screens = [
     const saved = { ...u };
     try {
       for (const group of ['station', 'ward', 'layout', 'ageBand']) {
-        for (const step of ['year', 'month']) {
+        for (const step of ['year', 'half', 'quarter', 'month']) {
           Object.assign(u, saved, { group, group2: 'none', step, pick: null, hide: [], pin: [] });
           v.renderMarket(stubEl(), () => {}, 'supply');
         }
@@ -529,7 +529,7 @@ const screens = [
     const u = v.marketUI;
     const saved = { ...u };
     try {
-      for (const step of ['year', 'month']) {
+      for (const step of ['year', 'half', 'quarter', 'month']) {
         for (const span of [3, 'all']) {
           Object.assign(u, saved, { mine: 'all', step, span, pick: null });
           v.renderMarket(stubEl(), () => {}, 'supply');
@@ -552,7 +552,7 @@ const screens = [
     try {
       // 分類はどれを選んでも描ける（エリア別・住所別を足したときに落ちた経験がある）
       for (const group of Object.keys(mods.market.MARKET_GROUPS)) {
-        for (const step of ['year', 'month']) {
+        for (const step of ['year', 'half', 'quarter', 'month']) {
           Object.assign(u, saved, { mine: 'all', group, step, minCount: 1, pick: null });
           v.renderMarket(stubEl(), () => {}, 'trend');
         }
@@ -806,6 +806,39 @@ const screens = [
     } finally {
       Object.assign(f.unitUI, saved);
       f.resetDraft();
+    }
+  }],
+  ['まとめ方の刻みは、年・半年・3か月・月の4通り', () => {
+    const v = mods['market-view'];
+    const u = v.marketUI;
+    const saved = { ...u };
+    try {
+      // 同じ月が、刻みごとに正しい区切りへ寄ること
+      const want = {
+        year: { '2026-01': '2026年', '2026-12': '2026年' },
+        half: { '2026-01': '2026年 上期', '2026-06': '2026年 上期', '2026-07': '2026年 下期', '2026-12': '2026年 下期' },
+        quarter: { '2026-01': '2026年1〜3月', '2026-04': '2026年4〜6月', '2026-10': '2026年10〜12月' },
+        month: { '2026-01': '2026年1月', '2026-08': '2026年8月' },
+      };
+      for (const [step, cases] of Object.entries(want)) {
+        u.step = step;
+        for (const [ym, label] of Object.entries(cases)) {
+          const got = v.periodLabelOf({ listedYM: ym });
+          if (got !== label) throw new Error(`${step} の ${ym} が「${got}」（「${label}」のはず）`);
+        }
+      }
+      // 粗い刻みほど点は少なくなる（同じ期間をまとめるので）
+      const counts = {};
+      for (const step of ['year', 'half', 'quarter', 'month']) {
+        Object.assign(u, saved, { step, group: 'none', minCount: 1, pick: null });
+        counts[step] = v.periodCountOf();
+      }
+      if (!(counts.year <= counts.half && counts.half <= counts.quarter
+        && counts.quarter <= counts.month)) {
+        throw new Error(`刻みと点の数が噛み合わない ${JSON.stringify(counts)}`);
+      }
+    } finally {
+      Object.assign(u, saved);
     }
   }],
   ['相場（絞り込み）', () => {
