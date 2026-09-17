@@ -53,6 +53,14 @@ class Store extends EventTarget {
 
   emit() { this.dispatchEvent(new Event('change')); }
 
+  /**
+   * 背景で読んだデータ（参考建物・売り出し・成約・相場）が届いた合図。
+   * 最初の描画のあとに届くので、これを受けて描き直さないと、
+   * 画面は「まだ読めていなかったとき」の中身のままになる
+   * （建物名の候補に自分の建物しか出ない、など）。
+   */
+  emitLoaded() { this.dispatchEvent(new Event('loaded')); this.emit(); }
+
   get repo() { return new GitHubRepo(this.config); }
   get configured() { return this.repo.configured; }
 
@@ -223,7 +231,7 @@ class Store extends EventTarget {
       }
       this.#onsale = v || { buildings: {}, rows: [] };
       this.#onsaleState = 'ready';
-      this.emit();
+      this.emitLoaded();
     })();
   }
 
@@ -274,7 +282,7 @@ class Store extends EventTarget {
       }
       this.#deals = v || { rows: [] };
       this.#dealsState = 'ready';
-      this.emit();
+      this.emitLoaded();
     })();
   }
 
@@ -330,12 +338,28 @@ class Store extends EventTarget {
         }
         return v;
       };
+      const take = (list) => { for (const b of list ?? []) this.#refs.set(b.id, b); };
       const idx = await read(REFS_INDEX, 'refs:index');
       const files = idx?.files ?? [];
-      const lists = await Promise.all(files.map((f) => read(f, `refs:${f}`)));
-      for (const list of lists) for (const b of list ?? []) this.#refs.set(b.id, b);
+      // 25本を一度に投げると GitHub 側に止められることがある。相場と同じく少しずつ流し、
+      // 読めた分から画面に出す。全部そろうまで何も出ないより、増えていく方がよい
+      let i = 0;
+      const failed = [];
+      const worker = async () => {
+        while (i < files.length) {
+          const f = files[i++];
+          const list = await read(f, `refs:${f}`);
+          if (list) take(list);
+          else failed.push(f);
+          this.emitLoaded();
+        }
+      };
+      await Promise.all(Array.from({ length: 4 }, worker));
+      // 取れなかった分は一度だけやり直す。黙って「参考建物が無い」状態で
+      // 確定させると、建物名で探しても出てこない画面になる
+      for (const f of failed) take(await read(f, `refs:${f}`));
       this.#refsState = 'ready';
-      this.emit();
+      this.emitLoaded();
     })();
   }
 
@@ -415,7 +439,7 @@ class Store extends EventTarget {
       }
       this.#market.set(buildingId, m || { ...emptyMarket(), sha: null });
       this.#marketLoading.delete(buildingId);
-      this.emit();
+      this.emitLoaded();
     })();
   }
 
@@ -438,7 +462,7 @@ class Store extends EventTarget {
         const m = await idb.get('kv', `market:${id}`).catch(() => null);
         if (m) { this.#market.set(id, m); hit++; }
       }));
-      if (hit) this.emit();
+      if (hit) this.emitLoaded();
 
       // 2) 取り直し。6件ずつ流し、25件ごとに描き直して進み具合を見せる
       if (!this.configured) {
@@ -464,11 +488,11 @@ class Store extends EventTarget {
             if (!this.#market.has(id)) this.#market.set(id, { ...emptyMarket(), sha: null });
           }
           this.#marketLoading.delete(id);
-          if (++done % 25 === 0) this.emit();
+          if (++done % 25 === 0) this.emitLoaded();
         }
       };
       await Promise.all(Array.from({ length: 6 }, worker));
-      this.emit();
+      this.emitLoaded();
     })();
   }
 

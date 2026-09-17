@@ -336,7 +336,9 @@ function buildingFilter(targets, loaded, rows, rerender, hitBuildings = null) {
     + (unitDraft.unitsMin != null || unitDraft.unitsMax != null ? 1 : 0);
   return el('div', { class: 'filterbar' + (dirty ? ' is-dirty' : '') },
     el('div', { class: 'filterbar-row' },
-      group('建物名', uMany('buildings', buildingOptions)),
+      // 参考建物は描いたあとから届く。そろう前は候補が自分の建物だけになるので、そう書く
+      group(store.refsReady ? '建物名' : '建物名（読み込み中）',
+        uMany('buildings', buildingOptions)),
       group('検討', uBand('own', OWN_OPTIONS)),
       group('駅', uMany('station', stationOptions)),
       // 駅徒歩は駅と同じくらい最初に決める条件なので、一覧と同じく畳まない

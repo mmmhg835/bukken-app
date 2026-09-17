@@ -1,6 +1,6 @@
 // 起動・ルーティング・自動保存
 import { store } from './store.js';
-import { $, $$, toast, debounce } from './util.js';
+import { $, $$, toast, debounce, preserveFocus } from './util.js';
 import {
   route, bindRouter, renderList, renderBuilding, renderRoom,
   renderCompare, renderMap, renderSettings,
@@ -94,6 +94,19 @@ const autosave = debounce(async () => {
 store.addEventListener('change', () => {
   paintStatus();
   if (store.dirty || store.marketDirty.size) autosave();
+});
+
+// 参考建物・売り出し・成約・相場は、画面を描いたあとから届く。
+// 届いた時点で描き直さないと、画面は「まだ何も無かったとき」のままになる。
+// 相場を開いた直後の建物名の候補に自分の建物しか出ない、という形で表に出ていた。
+// 1フレームにまとめるのは、次々に届くたびに描き直すと重くなるため。
+// 打ちかけの欄は preserveFocus で戻す（候補を打っている最中に届くことがある）
+let repaint = 0;
+store.addEventListener('loaded', () => {
+  if (repaint) return;
+  // タイマーで待つ。requestAnimationFrame は画面が裏に回っていると止まるので、
+  // 裏で読み終わったデータがそのまま反映されないことがある
+  repaint = setTimeout(() => { repaint = 0; preserveFocus(render); }, 16);
 });
 
 $('#tabs').addEventListener('click', (e) => {

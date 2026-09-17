@@ -1294,6 +1294,23 @@ const screens = [
     if (at('#/analysis').view !== 'market') throw new Error('分析が相場に飛んでいない');
     location.hash = '';
   }],
+  ['あとから届いたデータで、開いている画面を描き直す', () => {
+    // 参考建物・売り出し・成約・相場は描画のあとに届く。描き直していなかったため、
+    // 相場を開いた直後の建物名の候補に自分の建物しか出ていなかった
+    let asked = 0;
+    const orig = globalThis.setTimeout;
+    globalThis.setTimeout = (fn, ms) => { asked++; fn(); return orig(() => {}, 0); };
+    try {
+      store.emitLoaded();
+      if (!asked) throw new Error('届いても描き直していない');
+      // 立て続けに届いても、まとめて1回にする
+      const before = asked;
+      store.emitLoaded(); store.emitLoaded();
+      if (asked - before > 2) throw new Error('届くたびに描き直している');
+    } finally {
+      globalThis.setTimeout = orig;
+    }
+  }],
 ];
 
 mods.views.bindRouter(() => {}, () => {});

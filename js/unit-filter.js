@@ -173,7 +173,8 @@ export function unitFilterBar(all, shown, rerender, { lead = null, trail = null,
     el('div', { class: 'filterbar-row' },
       lead,
       // 建物は名前で選ぶ。打つと候補が絞られ、いくつでも足せる
-      group('建物名', many('buildings', [...buildings('buildings')]
+      group(store.onsaleReady ? '建物名' : '建物名（読み込み中）',
+        many('buildings', [...buildings('buildings')]
         .sort((a, b) => a.name.localeCompare(b.name, 'ja'))
         .map((b) => [b.id, b.name]))),
       group('募集状況', band('listing',

@@ -2,7 +2,7 @@
 import { calcLoan, DEFAULT_TERMS } from './loan.js';
 
 /** 表示用の版数。更新が届いているかを設定画面で確認できるようにしている */
-export const APP_VERSION = 'v143';
+export const APP_VERSION = 'v144';
 
 export const TSUBO_SQM = 3.305785;          // 1坪 = 3.305785㎡
 // 検討の段階。「本命」と「申込検討」は実際には同じ状態で、どちらを付ければ
@@ -144,6 +144,9 @@ export function preserveFocus(render) {
     next.focus();
     if (typed != null) next.value = typed;
     if (start != null) next.setSelectionRange(start, end);
+    // 候補を出す欄は、打ちかけの文字で並べ直す。
+    // 焦点を戻しただけだと、候補が閉じたり全件に戻ったりしてしまう
+    if (next.dataset.combo) next.dispatchEvent(new Event('input'));
   } catch { /* type によっては選択範囲を扱えないので無視してよい */ }
   restoringFocus = false;
 }

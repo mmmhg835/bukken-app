@@ -97,7 +97,8 @@ export function combo(value, options, onchange, cls = null, fkey = null) {
   const shown = value === 'all' || value == null ? '' : labelOf(value) || String(value);
   const input = el('input', {
     type: 'search', class: cls, placeholder: 'すべて　（打つと絞れます）',
-    value: shown, 'data-fkey': fkey,
+    // data-raw / data-combo は、描き直しをまたいで打ちかけの文字と候補を保つ目印
+    value: shown, 'data-fkey': fkey, 'data-raw': '1', 'data-combo': '1',
     // 打つたびに効かせると、候補が出る前に画面が入れ替わる。選んだとき・離れたときだけ見る
     onchange: (e) => {
       const hit = comboMatch(e.target.value, options);
@@ -126,7 +127,7 @@ export function multiCombo(values, options, onChange, cls = null, fkey = null) {
     if (!chosen.includes(v)) onChange([...chosen, v]);
   };
   const input = el('input', {
-    type: 'search', class: cls, 'data-fkey': fkey,
+    type: 'search', class: cls, 'data-fkey': fkey, 'data-raw': '1', 'data-combo': '1',
     placeholder: chosen.length ? '追加で選ぶ' : 'すべて　（打つと絞れます）',
     value: '',
     onchange: (e) => {
