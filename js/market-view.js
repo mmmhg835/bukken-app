@@ -969,6 +969,88 @@ function trendView(rows, rerender) {
       ], list, rerender, { sort: { key: 'year', dir: 'desc' } })));
 }
 
+/**
+ * 分類ごとの乖離。売り出しの値と、実際に決まった値の開き。
+ *
+ * この開きはエリアでまるで違う。手元のデータだと 有明テニスの森 -13.1% に対して
+ * 武蔵小杉 -0.7% で、武蔵小杉はほぼ言い値で決まっている。
+ * 「1割引ける」と一律に構えると、決まる物件を逃す。
+ *
+ * 比べる売り出しは、成約が起きている期間に売り出されたものに揃える。
+ * 期間がずれると、相場そのものの動きを乖離と読み違える。
+ */
+function gapSection(deals, buildings, rerender) {
+  const group = activeGroup();
+  const dates = deals.map((x) => x.closedAt).filter(Boolean).sort();
+  const from = ymToNum(dates[0]?.slice(0, 7));
+  const to = ymToNum(dates[dates.length - 1]?.slice(0, 7));
+  if (from == null) return null;
+  const value = (x) => (ui.metric === 'tsubo' ? x.tsuboPrice
+    : ui.metric === 'sqm' ? x.sqmPrice : ui.metric === 'price' ? x.price : null);
+  const metric = MARKET_METRICS[ui.metric];
+
+  const g = new Map();
+  const at = (k) => {
+    if (!g.has(k)) g.set(k, { name: k, deals: [], asks: [], bs: new Set() });
+    return g.get(k);
+  };
+  for (const x of deals) {
+    const b = buildingOf(x.buildingId);
+    const c = at(group.get(x, b) ?? '不明');
+    const v = value(x);
+    if (Number.isFinite(v)) c.deals.push(v);
+    c.bs.add(x.buildingId);
+  }
+  // 同じ建物・同じ期間の売り出しと比べる
+  const ids = new Set(deals.map((x) => x.buildingId));
+  for (const b of buildings) {
+    if (!ids.has(b.id)) continue;
+    for (const x of store.listingsOf(b.id)) {
+      const y = ymToNum(x.listedYM);
+      if (y == null || y < from || (to != null && y > to)) continue;
+      const c = at(group.get(x, b) ?? '不明');
+      const v = MARKET_METRICS[ui.metric].get(x, b);
+      if (Number.isFinite(v)) c.asks.push(v);
+    }
+  }
+  const list = [...g.values()].map((c) => {
+    const dm = c.deals.length ? median(c.deals) : null;
+    const am = c.asks.length ? median(c.asks) : null;
+    return {
+      name: c.name, buildings: c.bs.size, n: c.deals.length, asks: c.asks.length,
+      dealMed: dm, askMed: am,
+      gap: dm != null && am != null ? dm - am : null,
+      pct: dm != null && am ? ((dm - am) / am) * 100 : null,
+    };
+  }).filter((r) => r.n).sort((a, b) => (a.pct ?? 0) - (b.pct ?? 0));
+
+  return el('div', { class: 'section' },
+    el('h3', {}, `${group.label}ごとの乖離`),
+    el('p', { class: 'tiny muted' },
+      '売り出しの値と、実際に決まった値の開きです。'
+      + `成約のある期間（${dates[0]}〜${dates[dates.length - 1]}）に売り出された行と比べています。`),
+    sortableTable('deal-gap', [
+      { key: 'name', label: group.label, cls: 'lab', asc: true, get: (r) => r.name },
+      { key: 'bs', label: '棟数', get: (r) => r.buildings },
+      { key: 'n', label: '成約', sub: '件数', get: (r) => r.n },
+      { key: 'dealMed', label: '成約 中央', sub: metric.unit, get: (r) => r.dealMed,
+        cell: (r) => (r.dealMed != null ? fmt.n(r.dealMed, 0) : '—') },
+      { key: 'asks', label: '売り出し', sub: '件数', get: (r) => r.asks },
+      { key: 'askMed', label: '売り出し 中央', sub: metric.unit, get: (r) => r.askMed,
+        cell: (r) => (r.askMed != null ? fmt.n(r.askMed, 0) : '—') },
+      { key: 'gap', label: '乖離', sub: metric.unit, get: (r) => r.gap,
+        cellClass: (r) => (r.gap == null ? null : r.gap >= 0 ? 'up' : 'down'),
+        cell: (r) => (r.gap == null ? '—' : `${r.gap > 0 ? '+' : ''}${fmt.n(r.gap, 0)}`) },
+      { key: 'pct', label: '乖離率', get: (r) => r.pct,
+        cellClass: (r) => (r.pct == null ? null : r.pct >= 0 ? 'up' : 'down'),
+        cell: (r) => (r.pct == null ? '—' : `${r.pct > 0 ? '+' : ''}${fmt.n(r.pct, 1)}%`) },
+    ], list, rerender, { sort: { key: 'pct', dir: 'asc' } }),
+    el('p', { class: 'tiny muted' },
+      'マイナスが大きいほど、売り出しから値を下げないと決まらないエリアです。'
+      + '0に近いエリアは言い値で決まるので、値引き前提で構えると買い逃します。'
+      + '件数の少ない区分は振れるので、成約の件数と一緒に見てください。'));
+}
+
 /** 年ごとの成約。売り出しの表に並べて、開きを見るのに使う */
 function dealYearly(rows, metricKey) {
   const out = new Map();
@@ -1833,6 +1915,7 @@ function dealView(buildings, rerender) {
     .sort((a, b) => b.count - a.count);
 
   return el('div', {},
+    axisControls(rerender, { group: true, groupLabel: '分類' }),
     el('div', { class: 'section' },
       el('div', { class: 'calcgrid calcgrid-4' },
         cell('成約', `${s.count.toLocaleString('ja-JP')}件`, `${per.size}棟`),
@@ -1841,6 +1924,7 @@ function dealView(buildings, rerender) {
         cell('坪単価 平均', `${fmt.n(s.tsuboAvg, 0)}万`),
         cell('期間', `${s.from ?? '—'}`, `〜${s.to ?? '—'}`),
       )),
+    gapSection(rows, buildings, rerender),
     el('div', { class: 'section' },
       el('h3', {}, '建物ごとの成約'),
       sortableTable('deal-buildings', [
