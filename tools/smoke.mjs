@@ -422,7 +422,7 @@ const screens = [
     try {
       const all = set({ common: { own: 'all' } });
       if (!all.buildings || !all.rows) throw new Error('全建物で何も出ていない');
-      const one = set({ market: { building: 'ref1' }, common: { own: 'all' } });
+      const one = set({ common: { own: 'all', buildings: ['ref1'] } });
       if (one.buildings !== 1) throw new Error('建物を選んでも1棟に絞れていない');
       if (one.rows >= all.rows) throw new Error('1棟に絞ったのに行が減っていない');
       const layout = set({ common: { own: 'all', layout: '2LDK' } });
@@ -915,13 +915,42 @@ const screens = [
       store.setDeals({ rows: [] });
     }
   }],
+  ['建物名はいくつでも選べる', () => {
+    const f = mods['unit-filter'];
+    const u = mods.units;
+    const saved = { ...f.unitUI };
+    const all = u.allUnits();
+    const hit = (o) => {
+      Object.assign(f.unitUI, saved, { listing: 'all', own: 'all', name: '', buildings: [] }, o);
+      return all.filter((x) => f.unitMatches(x));
+    };
+    try {
+      const ids = [...new Set(all.map((x) => x.b.id))];
+      if (ids.length < 2) return;
+      const base = hit({}).length;
+      const one = hit({ buildings: [ids[0]] });
+      const two = hit({ buildings: [ids[0], ids[1]] });
+      if (one.some((x) => x.b.id !== ids[0])) throw new Error('選んでいない建物が残っている');
+      if (two.length <= one.length) throw new Error('2棟選んだのに増えていない');
+      if (two.length > base) throw new Error('選んだのに全件より多い');
+      if (two.some((x) => ![ids[0], ids[1]].includes(x.b.id))) throw new Error('選んでいない建物が混ざっている');
+      // 該当しないidを選んだら0件（黙って全件に戻らない）
+      if (hit({ buildings: ['存在しないid'] }).length !== 0) throw new Error('当たらないidで全件出ている');
+      // 文字で探すのは別枠として残っている
+      const b0 = store.building(ids[0]);
+      if (b0?.name && !hit({ name: b0.name }).length) throw new Error('文字で探せなくなっている');
+    } finally {
+      Object.assign(f.unitUI, saved);
+      f.resetDraft();
+    }
+  }],
   ['相場（絞り込み）', () => {
     const v = mods['market-view'];
     const u = v.marketUI;
     const saved = { ...u };
     for (const patch of [
       { scope: 'all' },
-      { building: 'b1' },
+      { },
       { firm: '長谷工' },
       { station: ['東雲'] },
       { ward: ['江東区'] },
@@ -942,7 +971,7 @@ const screens = [
       { metric: 'price', attr: 'age', group: 'layout' },
       { metric: 'months', attr: 'floor', group: 'status' },
       { metric: 'sqm', attr: 'area', group: 'none', fit: false },
-      { building: '該当しないid' },
+      { },
     ]) {
       Object.assign(u, saved, patch);
       for (const tab of ['overview', 'sale', 'trend', 'supply', 'dist', 'group', 'report']) {

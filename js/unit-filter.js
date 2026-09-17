@@ -32,8 +32,8 @@ export const unitUI = {
   // 建物名・住所・駅名の文字でも絞れるようにする。件数が増えると選択肢から探せない
   name: '',
   // 建物の条件。station は最寄駅、ward は区、town は町名
-  // 駅と区はいくつでも選べる（「川崎と横浜の両方」で見たいことが多い）
-  station: [], ward: [], town: 'all', age: 'all', walk: 'all',
+  // 建物・駅・区はいくつでも選べる（「川崎と横浜の両方」で見たいことが多い）
+  buildings: [], station: [], ward: [], town: 'all', age: 'all', walk: 'all',
   brand: 'all', developer: 'all', builder: 'all', designer: 'all',
   // 建物の規模。タワーかどうかと、総戸数の下限・上限
   tower: false, unitsMin: null, unitsMax: null,
@@ -94,6 +94,7 @@ export function unitMatches({ r, b }, except = null, f = unitUI) {
     if (f.listing === 'open' && closed) return false;
     if (f.listing === 'closed' && !closed) return false;
   }
+  if (on('buildings') && f.buildings.length && !f.buildings.includes(b.id)) return false;
   if (on('name') && f.name && !nameHit(b, f.name)) return false;
   // 複数選んだときは「どれかに当たれば残す」。別の条件どうしは重ねて効く
   if (on('station') && f.station.length && !stationsOf(b).some((x) => f.station.includes(x))) return false;
@@ -171,12 +172,10 @@ export function unitFilterBar(all, shown, rerender, { lead = null, trail = null,
   return el('div', { class: 'filterbar' + (dirty ? ' is-dirty' : '') },
     el('div', { class: 'filterbar-row' },
       lead,
-      group('建物名', el('input', {
-        class: 'ftext', type: 'search', placeholder: '建物名・住所・駅',
-        value: draft.name, 'data-fkey': 'unit-name',
-        oninput: (e) => { draft.name = e.target.value; },
-        onkeydown: (e) => { if (e.key === 'Enter') { applyDraft(); rerender(); } },
-      })),
+      // 建物は名前で選ぶ。打つと候補が絞られ、いくつでも足せる
+      group('建物名', many('buildings', [...buildings('buildings')]
+        .sort((a, b) => a.name.localeCompare(b.name, 'ja'))
+        .map((b) => [b.id, b.name]))),
       group('募集状況', band('listing',
         [['open', '募集中'], ['closed', '募集終了'], ['all', 'すべて']])),
       // 自分が登録した部屋だけを見る使い方が多いので、これは畳まない
@@ -198,6 +197,13 @@ export function unitFilterBar(all, shown, rerender, { lead = null, trail = null,
     open
       ? el('div', { class: 'filterbar-row is-more' },
         group('住所', pick('town', options(buildings('town').map((b) => areaOf(b).town)))),
+        // 建物名で選びきれないとき用。住所や駅名でも引ける
+        group('文字で探す', el('input', {
+          class: 'ftext', type: 'search', placeholder: '建物名・住所・駅',
+          value: draft.name, 'data-fkey': 'unit-name',
+          oninput: (e) => { draft.name = e.target.value; },
+          onkeydown: (e) => { if (e.key === 'Enter') { applyDraft(); rerender(); } },
+        })),
         group('規模', el('label', { class: 'fcheck' },
           el('input', {
             type: 'checkbox', checked: draft.tower ? '' : null,
@@ -239,7 +245,8 @@ function extraCount() {
   return keys.filter((k) => draft[k] !== 'all').length
     + (draft.equip.length ? 1 : 0)
     + (draft.tower ? 1 : 0)
-    + (draft.unitsMin != null || draft.unitsMax != null ? 1 : 0);
+    + (draft.unitsMin != null || draft.unitsMax != null ? 1 : 0)
+    + (draft.name ? 1 : 0);
 }
 
 /**
@@ -248,12 +255,16 @@ function extraCount() {
  */
 export function activeUnitConditions() {
   const label = {
-    name: '建物名', listing: '募集状況', own: '検討', station: '駅', ward: 'エリア（区）',
+    name: '文字で探す', listing: '募集状況', own: '検討', station: '駅', ward: 'エリア（区）',
     town: '住所', age: '築年数',
     walk: '駅徒歩', layout: '間取り', brand: 'ブランド', developer: '分譲',
     builder: '施工', designer: '設計',
   };
   const out = [];
+  // 建物は id で持っているので、名前にして出す
+  for (const id of unitUI.buildings) {
+    out.push({ name: '建物名', value: store.building(id)?.name ?? id, keys: ['buildings'], clear: id });
+  }
   for (const [k, name] of Object.entries(label)) {
     // いくつでも選べる条件は、選んだぶんだけ別々に出す（1つずつ外せるように）
     if (Array.isArray(unitUI[k])) {

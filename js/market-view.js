@@ -46,7 +46,7 @@ const LOAD_LIMIT = 400;
 /** 画面の状態。保存する値ではないので、smoke から作れるように出しておく */
 const ui = {
   // 相場だけの条件。建物ひとつを選ぶ・売り出し年・募集状況
-  building: 'all', from: 'all', to: 'all', listing: 'all',
+  from: 'all', to: 'all', listing: 'all',
   // 分類の既定は駅。まず「どこか」で見たいことがいちばん多い
   metric: 'tsubo', attr: 'year', group: 'station', group2: 'none',
   fit: true, names: true, more: false,
@@ -115,7 +115,7 @@ const showAllButton = (rerender) => (ui.hide.length || ui.pin.length
  * 表示の仕方（表示単位・色分けの軸・物件名を出すか）は即座に効かせる。
  */
 // 相場だけの条件。ほかは一覧・比較と共通（unit-filter）
-const SEARCH_KEYS = ['building', 'from', 'to', 'listing'];
+const SEARCH_KEYS = ['from', 'to', 'listing'];
 export const marketDraft = {};
 
 /** いまの条件で何棟・何行が対象かを返す。検証と smoke から使う */
@@ -238,7 +238,7 @@ export function targetBuildings(except = null, f = ui, u = unitUI) {
       if (!rooms.some((r) => r.status === u.own)) return false;
     }
     if (on('name') && u.name && !nameHit(b, u.name)) return false;
-    if (on('building') && f.building !== 'all' && b.id !== f.building) return false;
+    if (on('buildings') && u.buildings.length && !u.buildings.includes(b.id)) return false;
     // 駅と区は複数選べる。「どれかに当たれば残す」
     if (on('station') && u.station.length && !stationsOf(b).some((x) => u.station.includes(x))) return false;
     if (on('ward') && u.ward.length && !u.ward.includes(wardOf(b))) return false;
@@ -314,7 +314,7 @@ function buildingFilter(targets, loaded, rows, rerender, hitBuildings = null) {
   const pool = (key) => targetBuildings(key, marketDraft, unitDraft);
   const rowsFor = (key) => saleRows(loaded, key, marketDraft, unitDraft);
   // 建物名は id で選ぶ。同じ名前の建物があっても取り違えない
-  const buildingOptions = [...pool('building')]
+  const buildingOptions = [...pool('buildings')]
     .sort((a, b) => a.name.localeCompare(b.name, 'ja'))
     .map((b) => [b.id, b.name]);
   const stationOptions = options(pool('station').flatMap(stationsOf));
@@ -336,18 +336,12 @@ function buildingFilter(targets, loaded, rows, rerender, hitBuildings = null) {
     + (unitDraft.unitsMin != null || unitDraft.unitsMax != null ? 1 : 0);
   return el('div', { class: 'filterbar' + (dirty ? ' is-dirty' : '') },
     el('div', { class: 'filterbar-row' },
-      group('建物名', el('input', {
-        class: 'ftext', type: 'search', placeholder: '建物名・住所・駅',
-        value: u.name, 'data-fkey': 'market-name',
-        oninput: (e) => { u.name = e.target.value; },
-        onkeydown: (e) => { if (e.key === 'Enter') { applyAll(); rerender(); } },
-      })),
+      group('建物名', uMany('buildings', buildingOptions)),
       group('検討', uBand('own', OWN_OPTIONS)),
       group('駅', uMany('station', stationOptions)),
       // 駅徒歩は駅と同じくらい最初に決める条件なので、一覧と同じく畳まない
       group('駅徒歩', uBand('walk', WALK_BANDS)),
       group('エリア（区）', uMany('ward', wardOptions)),
-      group('建物', pick('building', buildingOptions)),
       group('築年数', uBand('age', AGE_BANDS)),
       group('間取り', uPick('layout', layoutOptions)),
       group('広さ', uRange('areaMin', 'areaMax', '㎡')),
@@ -377,6 +371,12 @@ function buildingFilter(targets, loaded, rows, rerender, hitBuildings = null) {
     open
       ? el('div', { class: 'filterbar-row is-more' },
         group('住所', uPick('town', townOptions)),
+        group('文字で探す', el('input', {
+          class: 'ftext', type: 'search', placeholder: '建物名・住所・駅',
+          value: u.name, 'data-fkey': 'market-name',
+          oninput: (e) => { u.name = e.target.value; },
+          onkeydown: (e) => { if (e.key === 'Enter') { applyAll(); rerender(); } },
+        })),
         group('規模', el('label', { class: 'fcheck' },
           el('input', {
             type: 'checkbox', checked: u.tower ? '' : null,
@@ -1708,9 +1708,6 @@ export function activeConditions() {
   // 建物名・エリア・間取りなどは共通の絞り込みが持っている。取りこぼすと
   // 「何で絞ったレポートか」が紙の上で分からなくなる
   const out = activeUnitConditions().map((c) => [c.name, c.value]);
-  if (ui.building !== 'all') {
-    out.unshift(['建物', buildingOf(ui.building)?.name ?? ui.building]);
-  }
   if (ui.listing !== 'all') {
     out.push(['募集状況', ui.listing === 'open' ? '販売中' : '終了']);
   }
