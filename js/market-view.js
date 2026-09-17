@@ -9,7 +9,7 @@ import {
   select, segmented, toggle, controlRow, numberInput, combo, multiCombo, sortableTable,
 } from './ui.js';
 import {
-  scatterChart, chartLegend, histogramChart, thin,
+  scatterChart, chartLegend, histogramChart, thin, seriesStyle,
   SERIES_COLORS, SERIES_MUTED, BAND_COLORS,
 } from './chart.js';
 import { linearFit, areaOf, wardOf, isTower, TOWER_FLOORS } from './analysis.js';
@@ -624,10 +624,11 @@ function colorOf(names, group = null) {
     // 4段までなら濃さが順に変わる色を当てる。それより細かく刻むと、
     // 濃さの差が小さすぎて線を見分けられないので、通常の系列色を順番どおりに当てる
     const ramp = group.order.length <= BAND_COLORS.length ? BAND_COLORS : SERIES_COLORS;
-    group.order.forEach((k, i) => map.set(k, ramp[Math.min(i, ramp.length - 1)]));
+    group.order.forEach((k, i) => map.set(k, { color: ramp[Math.min(i, ramp.length - 1)] }));
     return map;
   }
-  names.forEach((k, i) => map.set(k, i < SERIES_COLORS.length ? SERIES_COLORS[i] : null));
+  // 12色を使い切ったら、線の形（破線・点線）を変えてもう一周する
+  names.forEach((k, i) => map.set(k, seriesStyle(i)));
   return map;
 }
 
@@ -699,7 +700,7 @@ function scatterSection(rows, buildings, rerender) {
   const OTHER = 'その他';
   const byKey = new Map();
   for (const p of shownPts) {
-    const k = colors.get(p.key) ? p.key : OTHER;
+    const k = colors.get(p.key)?.color ? p.key : OTHER;
     if (!byKey.has(k)) byKey.set(k, []);
     byKey.get(k).push({
       x: p.x, y: p.y, row: p.row, b: p.b,
@@ -719,7 +720,11 @@ function scatterSection(rows, buildings, rerender) {
   };
   const allSeries = [...byKey.entries()]
     .sort((a, b) => rank(a[0]) - rank(b[0]))
-    .map(([name, points]) => ({ name, points, color: name === OTHER ? SERIES_MUTED : colors.get(name) }));
+    .map(([name, points]) => ({
+      name, points,
+      color: name === OTHER ? SERIES_MUTED : colors.get(name)?.color,
+      dash: name === OTHER ? null : colors.get(name)?.dash,
+    }));
   // 凡例で消した分類は描かない。凡例には残す（戻せなくなるため）
   const hidden = hiddenSet();
   const series = allSeries.filter((x) => !hidden.has(x.name));
@@ -890,9 +895,10 @@ function trendView(rows, rerender) {
         : null,
       el('p', { class: 'tiny muted' },
         // 絞り込みで減ったと誤解されるので、何件のうち何本を描いているかを必ず出す
-        byKey.size > series.length
-          ? `${group.label}は${byKey.size.toLocaleString('ja-JP')}件あります。`
-            + `売り出しの多い${series.length}件を線にしています（下の表は全件）。`
+        `${group.label} ${byKey.size.toLocaleString('ja-JP')}件をすべて出しています。`,
+        byKey.size > SERIES_COLORS.length
+          ? `色が付くのは売り出しの多い${SERIES_COLORS.length}件で、残りは灰色です`
+            + '（凡例にさわると、その線だけ浮かび上がります）。'
           : '',
         all.length > 1 ? '凡例を押すと、その分類の線を消せます。' : '',
         floor < ui.minCount
@@ -941,30 +947,34 @@ function trendView(rows, rerender) {
  */
 function pickSeries(byKey, rowsOf, group) {
   const hidden = hiddenSet();
+  // まず「描く候補」を件数の多い順に決める。消した分類をここで除くと、
+  // 1本消すたびに次が繰り上がってきて、もぐら叩きになる
   const ranked = [...byKey.entries()]
-    .filter(([name]) => !hidden.has(name))
     .sort((a, b) => (rowsOf.get(b[0]) || 0) - (rowsOf.get(a[0]) || 0));
+  // 絞り込んだ結果は全部描く。ここで間引くと「絞ったのに出てこない」になる
   const pinned = ranked.filter(([name]) => ui.pin.includes(name));
-  const drawnKeys = [...pinned, ...ranked.filter(([name]) => !ui.pin.includes(name))]
-    .slice(0, SERIES_COLORS.length);
-  // 色は「描くと決まった系列」に配る（全分類に配ると、描く線が灰色ばかりになる）
-  const colors = colorOf(drawnKeys.map(([name]) => name), group);
+  const picked = [...pinned, ...ranked.filter(([name]) => !ui.pin.includes(name))];
+  // 色と線の形を、描く系列すべてに配る
+  const colors = colorOf(picked.map(([name]) => name), group);
   // 築年数のように順序のある区分は、凡例も新しい順に並べる（件数順だと読めない）
   if (group.order) {
     const rank = (name) => {
       const i = group.order.indexOf(name);
       return i < 0 ? 999 : i;
     };
-    drawnKeys.sort((a, b) => rank(a[0]) - rank(b[0]));
+    picked.sort((a, b) => rank(a[0]) - rank(b[0]));
   }
-  const series = drawnKeys.map(([name, points]) => ({
-    name, points: [...points].sort((a, b) => a.x - b.x),
-    color: colors.get(name) || SERIES_MUTED,
-  }));
-  const all = [...series,
-    ...[...byKey.keys()].filter((name) => hidden.has(name))
-      .map((name) => ({ name, points: byKey.get(name), color: SERIES_MUTED }))];
-  return { series, all, hidden };
+  const build = ([name, points]) => {
+    const st = colors.get(name) || {};
+    return {
+      name, points: [...points].sort((a, b) => a.x - b.x),
+      color: st.color || SERIES_MUTED, dash: st.dash || null,
+    };
+  };
+  const all = picked.map(build);
+  // 描くのは、そのうち消していないぶん。消しても他が繰り上がってはこない
+  const series = all.filter((x) => !hidden.has(x.name));
+  return { series, all, hidden, total: byKey.size };
 }
 
 /**

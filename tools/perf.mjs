@@ -92,3 +92,8 @@ t('pricePoints(全件)', () => mk.pricePoints(allRows), 3);
 // 絞り込みバーの選択肢づくり。1回の描画で何度も全行をなめていないかを見る
 t('targetBuildings(全件)', () => market.targetBuildings(), 5);
 t('saleRows(全件)', () => market.saleRows(store.allBuildings), 3);
+// 分類ごとに線を全部引いたときの重さ（絞り込みなしは最悪ケース）
+market.marketUI.group = 'building'; market.marketUI.minCount = 1;
+t('相場 推移（建物ごと・全件）', () => market.renderMarket(stubEl(), () => {}, 'trend'));
+market.marketUI.group = 'station';
+t('相場 推移（駅ごと・全件）', () => market.renderMarket(stubEl(), () => {}, 'trend'));

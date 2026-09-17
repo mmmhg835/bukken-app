@@ -3,10 +3,22 @@
 
 const NS = 'http://www.w3.org/2000/svg';
 // 系列の色。色覚シミュレーション（P型・D型・T型）込みで、隣り合う色の差と
-// 背景とのコントラストを検証した8色。線は8本までなので、この8色で足りる。
-// 8色を超えたら色を増やさず「その他」にまとめる（見分けられない色を足しても意味がない）。
-export const SERIES_COLORS = ['#3186e9', '#cf7b26', '#00a089', '#ba3661',
-  '#0089a8', '#864ebc', '#577000', '#e0508a'];
+// 背景とのコントラストを検証した12色。明・暗どちらの画面でも全項目通っている。
+// これ以上増やすと色だけでは見分けられないので、13本目からは線の形を変える
+// （SERIES_DASH）。12色 × 3種類で36本まで。
+export const SERIES_COLORS = ['#3186e9', '#b0431f', '#00a089', '#864ebc',
+  '#9a6a00', '#0089a8', '#ba3661', '#4a8f00',
+  '#e0508a', '#0e6bbd', '#cf7b26', '#577000'];
+
+/**
+ * 色が一周したあとの線の形。実線 → 破線 → 点線。
+ * 色だけで36本を見分けるのは無理なので、形を足して区別する。
+ */
+export const SERIES_DASH = [null, '7 4', '2 3'];
+export const seriesStyle = (i) => ({
+  color: SERIES_COLORS[i % SERIES_COLORS.length],
+  dash: SERIES_DASH[Math.floor(i / SERIES_COLORS.length) % SERIES_DASH.length],
+});
 // 色が尽きた系列をまとめる中立色。個々の識別は点を押したときの吹き出しが担う
 export const SERIES_MUTED = '#7d7a72';
 
@@ -146,7 +158,11 @@ export function chartLegend(series, chart = null, { hidden = null, onToggle = nu
     const item = document.createElement(live ? 'button' : 'span');
     if (live) item.type = 'button';
     const color = s.color || SERIES_COLORS[i % SERIES_COLORS.length];
-    item.innerHTML = `<i style="background:${color}"></i>`;
+    // 線の形も見せる。色が一周したあとは、形が違うことが手がかりになる
+    const mark = s.dash
+      ? `background:repeating-linear-gradient(90deg,${color} 0 3px,transparent 3px 5px)`
+      : `background:${color}`;
+    item.innerHTML = `<i style="${mark}"></i>`;
     item.append(s.name);
     if (off(s.name)) {
       item.classList.add('is-off');
@@ -284,11 +300,14 @@ export function scatterChart(series, opts = {}) {
     for (const [si, s] of series.entries()) {
       const sorted = [...s.points].sort((a, b) => a.x - b.x);
       if (sorted.length < 2) continue;
+      const color = s.color || SERIES_COLORS[si % SERIES_COLORS.length];
+      const muted = color === SERIES_MUTED;
       const path = n('path', {
         d: sorted.map((p, i) => `${i ? 'L' : 'M'} ${X(p.x)} ${Y(p.y)}`).join(' '),
-        fill: 'none', stroke: s.color || SERIES_COLORS[si % SERIES_COLORS.length],
-        'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round',
-        opacity: '.9', class: 'sline',
+        fill: 'none', stroke: color,
+        'stroke-width': muted ? 1 : 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round',
+        'stroke-dasharray': s.dash || null,
+        opacity: muted ? '.35' : '.9', class: 'sline',
       });
       svg.append(path);
       lines.push({ el: path, name: s.name });
@@ -301,8 +320,10 @@ export function scatterChart(series, opts = {}) {
   const dots = [];
   series.forEach((s, si) => {
     const color = s.color || SERIES_COLORS[si % SERIES_COLORS.length];
+    const dim = color === SERIES_MUTED;
     for (const p of s.points) {
-      const c = n('circle', { cx: X(p.x), cy: Y(p.y), r: R, fill: color, opacity: '.9',
+      const c = n('circle', { cx: X(p.x), cy: Y(p.y), r: dim ? R * 0.7 : R, fill: color,
+        opacity: dim ? '.4' : '.9',
         stroke: 'var(--surface)', 'stroke-width': Math.min(2, R / 2.6), class: 'dot' });
       svg.append(c);
       dots.push({ el: c, name: s.name, x: X(p.x), y: Y(p.y), p, text: p.label || s.name });
