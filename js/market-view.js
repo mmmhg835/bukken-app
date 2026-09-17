@@ -46,12 +46,14 @@ const LOAD_LIMIT = 400;
 const ui = {
   // 相場だけの条件。建物ひとつを選ぶ・売り出し年・募集状況
   building: 'all', from: 'all', to: 'all', listing: 'all',
-  metric: 'tsubo', attr: 'year', group: 'ageBand', group2: 'none',
+  // 分類の既定は駅。まず「どこか」で見たいことがいちばん多い
+  metric: 'tsubo', attr: 'year', group: 'station', group2: 'none',
   fit: true, names: true, more: false,
   // 同じ部屋が出し直されるたびに点が増えるので、既定では最新の1件だけ描く
   latestOnly: true,
-  // 推移の粒度と、点にまとめる下限の件数。押した点は pick に覚える
-  step: 'month', minCount: 3, pick: null, span: 7,
+  // 推移の粒度と、点にまとめる下限の件数。押した点は pick に覚える。
+  // 分譲は売り出しが少なく、月ごとだと1〜2件の月が跳ねる。3か月ごとを既定にする
+  step: 'quarter', minCount: 3, pick: null, span: 7,
   // 凡例を押して消した分類。線が重なって読めないときに落とす
   hide: [],
   // 下の表から選んで、必ず線にする分類。件数の順では出てこないエリアを見るため
