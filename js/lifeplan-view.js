@@ -181,18 +181,30 @@ function propertyPicker(plan, room, building, rerender, view = 'plan') {
  */
 const RATE_BUMPS = [0, 0.25, 0.5, 0.75, 1, 1.5];
 
+const round3 = (v) => Math.round(v * 1000) / 1000;
+
 function rateRow(rerender) {
   const base = Number(store.loanTerms.rate) || 0;
   const cur = planTerms().rate;
+  const bump = round3(ui.rateBump);
   return el('div', { class: 'ctlrow' },
     el('span', { class: 'ctllabel' }, el('i', { class: 'ctlicon' }, '％'), '試算金利'),
     el('div', { style: 'display:flex;gap:16px;align-items:center;flex-wrap:wrap' },
+      // 刻みに無い金利も試せるように、数字で直に入れられるようにしている。
+      // 上乗せ幅ではなく金利そのものを打つ（頭の中で足し算しないで済む）
+      el('div', { class: 'offerrow' },
+        numberInput({
+          value: cur, cls: 'offerinput', fkey: 'plan-rate',
+          onInput: (num) => { ui.rateBump = rateBumpOf(num, base); preserveFocus(rerender); },
+        }),
+        el('span', { class: 'tiny muted' }, '%')),
       el('div', { class: 'pillrow', style: 'margin:0' }, RATE_BUMPS.map((o) => el('button', {
-        class: 'pill' + (ui.rateBump === o ? ' is-on' : ''),
+        class: 'pill' + (bump === o ? ' is-on' : ''),
         onclick: () => { ui.rateBump = o; rerender(); },
-      }, `${Math.round((base + o) * 1000) / 1000}%`))),
+      }, `${round3(base + o)}%`))),
       el('span', { class: 'tiny muted' },
-        ui.rateBump ? `設定は ${base}%。このタブだけ +${ui.rateBump}% で試算中` : `設定どおり ${cur}%`)),
+        bump ? `設定は ${base}%。このタブだけ ${bump > 0 ? '+' : ''}${bump}% で試算中`
+          : `設定どおり ${cur}%`)),
   );
 }
 
@@ -201,6 +213,28 @@ function rateRow(rerender) {
  * 交渉の当たりを付けるとき、率から金額を暗算するのが手間になるため。
  */
 const OFFER_STEPS = [3, 5, 8, 10];
+
+/**
+ * 指値欄に出す数字。指値を入れていなければ元値を出す。
+ * 以前は元値を placeholder で出していたが、消しても打ち直せないため
+ * 「自分で入力できない」欄に見えていた。
+ */
+export function offerFieldValue(room) {
+  return room?.offerPrice ?? (Number(room?.price) || null);
+}
+
+/** 指値欄に打たれた数字を入れる。空にしたときと元値と同じときは「指値なし」 */
+export function setOfferPrice(room, num) {
+  const base = Number(room.price) || 0;
+  room.offerPrice = num == null || num === base ? null : num;
+  return room.offerPrice;
+}
+
+/** 打たれた金利を、設定の金利からの上乗せ幅に直す。空にしたら設定どおりに戻す */
+export function rateBumpOf(typed, base) {
+  if (typed == null) return 0;
+  return round3(Math.max(0, typed) - (Number(base) || 0));
+}
 
 function offerRow(room, rerender) {
   const base = Number(room.price) || 0;
@@ -215,9 +249,13 @@ function offerRow(room, rerender) {
     el('span', { class: 'ctllabel' }, el('i', { class: 'ctlicon' }, '¥'), '指値'),
     el('div', { class: 'offerrow' },
       numberInput({
-        value: room.offerPrice, cls: 'offerinput', fkey: `offer-${room.id}`,
+        value: offerFieldValue(room), cls: 'offerinput', fkey: `offer-${room.id}`,
         placeholder: fmt.man1(base),
-        onInput: (num) => { room.offerPrice = num; store.markDirty(); preserveFocus(rerender); },
+        onInput: (num) => {
+          setOfferPrice(room, num);
+          store.markDirty();
+          preserveFocus(rerender);
+        },
       }),
       el('span', { class: 'tiny muted' }, '万円'),
       el('div', { class: 'tagwrap' },

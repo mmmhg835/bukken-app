@@ -157,6 +157,26 @@ const checks = [
     if (numOrNull('0') !== 0) throw new Error('0 を null にしてしまっている');
     if (numOrNull('1.5') !== 1.5) throw new Error('小数を読めていない');
   }],
+  ['指値も金利も、自分で打って入れられる', () => {
+    const lv = mods['lifeplan-view'];
+    const room = { id: 'x1', price: 12580, offerPrice: null };
+    // 指値を入れていなければ元値が欄に出る（placeholder だと消しても打ち直せなかった）
+    if (lv.offerFieldValue(room) !== 12580) throw new Error('元値が欄に出ていない');
+    lv.setOfferPrice(room, 12000);
+    if (room.offerPrice !== 12000) throw new Error('打った指値が入らない');
+    if (lv.offerFieldValue(room) !== 12000) throw new Error('打った指値が欄に出ない');
+    // 空にしたときと、元値と同じ数字を打ったときは「指値なし」
+    lv.setOfferPrice(room, null);
+    if (room.offerPrice !== null) throw new Error('空にしても指値が残る');
+    lv.setOfferPrice(room, 12580);
+    if (room.offerPrice !== null) throw new Error('元値と同じ数字を指値として持っている');
+    if (lv.offerFieldValue({ price: null }) !== null) throw new Error('価格が無いのに数字を出している');
+    // 金利は、上乗せ幅ではなく金利そのものを打つ
+    if (lv.rateBumpOf(1.9, 1.275) !== 0.625) throw new Error('打った金利が上乗せ幅になっていない');
+    if (lv.rateBumpOf(1, 1.275) !== -0.275) throw new Error('設定より低い金利を打てない');
+    if (lv.rateBumpOf(null, 1.275) !== 0) throw new Error('空にしても設定どおりに戻らない');
+    if (lv.rateBumpOf(-5, 1.275) !== -1.275) throw new Error('負の金利を止めていない');
+  }],
   ['指値', () => {
     const { defaultLifeplan, calcPlan, housingCost } = mods.lifeplan;
     const plan = defaultLifeplan();
